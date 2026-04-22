@@ -1,4 +1,5 @@
 import { PRESETS } from "../data/presets.generated.js";
+import { fetchExternalPreset, type FetchResult } from "./externalPresetFetcher.js";
 
 export interface UnresolvedPreset {
   preset: string;
@@ -11,44 +12,81 @@ export interface ResolveResult {
   presetsUnresolved: UnresolvedPreset[];
 }
 
-interface ParsedPreset {
-  /** Normalized catalogue key, e.g. ":pinAll" → "default:pinAll" */
-  key: string;
-  /** Original (un-normalized) string as it appeared in `extends` */
-  original: string;
-  args: string[];
+export interface ResolveOptions {
+  /** When true, fetch external presets (github>, gitlab>, …) over the network. */
+  fetchExternal?: boolean;
+  /** Per-request fetch timeout; forwarded to the external fetcher. */
+  timeoutMs?: number;
 }
 
-const EXTERNAL_SOURCE_RE = /^[a-z]+>/i;
+export type ExternalSource =
+  | "github"
+  | "gitlab"
+  | "bitbucket"
+  | "gitea"
+  | "local"
+  | "npm";
+
+export interface ParsedPreset {
+  /** Canonical identifier used as map key and for cycle detection. */
+  key: string;
+  /** Original un-normalized string as it appeared in `extends`. */
+  original: string;
+  args: string[];
+  /** For external (non-builtin) presets. */
+  source?: ExternalSource;
+  /** Git sources: "owner/repo". npm: the package name. */
+  repoPath?: string;
+  /** Optional `:presetName` fragment. */
+  presetName?: string;
+  /** Optional `//subpath` fragment. */
+  subpath?: string;
+  /** Optional `#ref` (branch/tag/commit) fragment. */
+  ref?: string;
+}
+
+interface ExpandContext {
+  fetchExternal: boolean;
+  timeoutMs: number | undefined;
+  cache: Map<string, Promise<FetchResult>>;
+}
 
 /**
- * Resolve a Renovate config by expanding every built-in preset in `extends`
- * against the committed catalogue. Never touches the network and never shells
- * out — external presets (github>, gitlab>, local>, npm) are flagged in
- * `presetsUnresolved` instead.
+ * Resolve a Renovate config by expanding every preset in `extends`. Built-in
+ * presets resolve offline against the committed catalogue; external presets
+ * (`github>`, `gitlab>`, …) are only fetched when `fetchExternal` is true —
+ * otherwise they land in `presetsUnresolved` with a network reason.
  */
-export function resolveConfig(config: Record<string, unknown>): ResolveResult {
+export async function resolveConfig(
+  config: Record<string, unknown>,
+  options: ResolveOptions = {},
+): Promise<ResolveResult> {
   const presetsResolved: string[] = [];
   const presetsUnresolved: UnresolvedPreset[] = [];
   const stack: string[] = [];
+  const ctx: ExpandContext = {
+    fetchExternal: options.fetchExternal ?? false,
+    timeoutMs: options.timeoutMs,
+    cache: new Map(),
+  };
 
-  const resolved = expand(config, presetsResolved, presetsUnresolved, stack);
+  const resolved = await expand(config, presetsResolved, presetsUnresolved, stack, ctx);
   return { resolved, presetsResolved, presetsUnresolved };
 }
 
-function expand(
+async function expand(
   input: Record<string, unknown>,
   resolvedList: string[],
   unresolvedList: UnresolvedPreset[],
   stack: string[],
-): Record<string, unknown> {
+  ctx: ExpandContext,
+): Promise<Record<string, unknown>> {
   const rawExtends = input.extends;
   if (!Array.isArray(rawExtends) || rawExtends.length === 0) {
     const { extends: _drop, ...rest } = input;
     return rest;
   }
 
-  // Accumulator for everything the extends chain contributes.
   let accumulated: Record<string, unknown> = {};
 
   for (const entry of rawExtends) {
@@ -62,15 +100,6 @@ function expand(
 
     const parsed = parsePreset(entry);
 
-    if (isExternal(parsed.key)) {
-      unresolvedList.push({
-        preset: entry,
-        reason:
-          "External preset (github>, gitlab>, bitbucket>, gitea>, local>, or npm). Fetching requires network access and potentially credentials, which this tool does not perform.",
-      });
-      continue;
-    }
-
     if (stack.includes(parsed.key)) {
       unresolvedList.push({
         preset: entry,
@@ -79,52 +108,149 @@ function expand(
       continue;
     }
 
-    const preset = PRESETS[parsed.key];
-    if (!preset) {
-      unresolvedList.push({
-        preset: entry,
-        reason: `Unknown built-in preset. Not present in the committed catalogue.`,
-      });
-      continue;
-    }
+    const body = await loadPresetBody(parsed, ctx, unresolvedList);
+    if (!body) continue;
 
-    const substituted = applyArgs(preset.body, parsed.args) as Record<string, unknown>;
+    const substituted = applyArgs(body, parsed.args) as Record<string, unknown>;
     stack.push(parsed.key);
-    const subResolved = expand(substituted, resolvedList, unresolvedList, stack);
+    const subResolved = await expand(substituted, resolvedList, unresolvedList, stack, ctx);
     stack.pop();
 
     accumulated = mergeConfig(accumulated, subResolved);
     resolvedList.push(entry);
   }
 
-  // Merge the caller's own keys (everything except `extends`) on top of the
-  // expanded chain. This matches Renovate's precedence: outer config wins.
   const { extends: _drop, ...ownKeys } = input;
   return mergeConfig(accumulated, ownKeys);
 }
 
-function parsePreset(raw: string): ParsedPreset {
-  const original = raw;
-  const match = /^([^()]+?)(?:\(([^)]*)\))?$/.exec(raw.trim());
-  const name = (match?.[1] ?? raw).trim();
-  const argsRaw = match?.[2];
-  const args = argsRaw == null
-    ? []
-    : argsRaw.split(",").map((a) => a.trim()).filter((a) => a.length > 0);
+async function loadPresetBody(
+  parsed: ParsedPreset,
+  ctx: ExpandContext,
+  unresolvedList: UnresolvedPreset[],
+): Promise<Record<string, unknown> | null> {
+  if (!parsed.source) {
+    const preset = PRESETS[parsed.key];
+    if (!preset) {
+      unresolvedList.push({
+        preset: parsed.original,
+        reason: `Unknown built-in preset. Not present in the committed catalogue.`,
+      });
+      return null;
+    }
+    return preset.body;
+  }
 
-  // `:foo` is Renovate shorthand for `default:foo`.
-  const key = name.startsWith(":") ? `default${name}` : name;
+  if (!ctx.fetchExternal) {
+    unresolvedList.push({
+      preset: parsed.original,
+      reason:
+        "External preset (github>, gitlab>, bitbucket>, gitea>, local>, or npm). Fetching requires network access and potentially credentials; pass externalPresets: true to enable.",
+    });
+    return null;
+  }
+
+  const result = await fetchExternalPreset(parsed, {
+    timeoutMs: ctx.timeoutMs,
+    cache: ctx.cache,
+  });
+
+  if (!result.ok) {
+    unresolvedList.push({ preset: parsed.original, reason: result.reason });
+    return null;
+  }
+  return result.body;
+}
+
+const SOURCE_PREFIX_RE = /^([a-z]+)>/i;
+const KNOWN_SOURCES = new Set<ExternalSource>([
+  "github",
+  "gitlab",
+  "bitbucket",
+  "gitea",
+  "local",
+  "npm",
+]);
+
+export function parsePreset(raw: string): ParsedPreset {
+  const original = raw;
+  let rest = raw.trim();
+
+  // Trailing "(arg1, arg2)"
+  let args: string[] = [];
+  const argMatch = /\(([^)]*)\)\s*$/.exec(rest);
+  if (argMatch) {
+    args = argMatch[1]!
+      .split(",")
+      .map((a) => a.trim())
+      .filter((a) => a.length > 0);
+    rest = rest.slice(0, argMatch.index).trim();
+  }
+
+  const srcMatch = SOURCE_PREFIX_RE.exec(rest);
+  if (srcMatch) {
+    return parseExternal(rest, original, args, srcMatch[1]!.toLowerCase());
+  }
+
+  // Built-in: `:foo` is shorthand for `default:foo`.
+  const key = rest.startsWith(":") ? `default${rest}` : rest;
+
+  // An entry with no `>` prefix and no `:` namespace is an npm preset.
+  if (!key.includes(":")) {
+    return {
+      key: `npm>${key}`,
+      original,
+      args,
+      source: "npm",
+      repoPath: key,
+    };
+  }
+
   return { key, original, args };
 }
 
-function isExternal(key: string): boolean {
-  if (EXTERNAL_SOURCE_RE.test(key)) return true;
-  // Built-in keys always contain a namespace colon (e.g. "config:recommended").
-  // Anything without one points at an npm preset package.
-  return !key.includes(":");
+function parseExternal(
+  rest: string,
+  original: string,
+  args: string[],
+  sourceRaw: string,
+): ParsedPreset {
+  const source = (KNOWN_SOURCES.has(sourceRaw as ExternalSource)
+    ? sourceRaw
+    : sourceRaw) as ExternalSource;
+
+  let spec = rest.slice(sourceRaw.length + 1);
+
+  let ref: string | undefined;
+  const hashIdx = spec.indexOf("#");
+  if (hashIdx !== -1) {
+    ref = spec.slice(hashIdx + 1);
+    spec = spec.slice(0, hashIdx);
+  }
+
+  let subpath: string | undefined;
+  const slashSlashIdx = spec.indexOf("//");
+  if (slashSlashIdx !== -1) {
+    subpath = spec.slice(slashSlashIdx + 2);
+    spec = spec.slice(0, slashSlashIdx);
+  }
+
+  let presetName: string | undefined;
+  const colonIdx = spec.indexOf(":");
+  if (colonIdx !== -1) {
+    presetName = spec.slice(colonIdx + 1);
+    spec = spec.slice(0, colonIdx);
+  }
+
+  const repoPath = spec;
+  let key = `${source}>${repoPath}`;
+  if (presetName) key += `:${presetName}`;
+  if (subpath) key += `//${subpath}`;
+  if (ref) key += `#${ref}`;
+
+  return { key, original, args, source, repoPath, presetName, subpath, ref };
 }
 
-/** Deep-substitute `{{argN}}` placeholders inside any string values. */
 function applyArgs(value: unknown, args: string[]): unknown {
   if (typeof value === "string") {
     return value.replace(/\{\{\s*arg(\d+)\s*\}\}/g, (_, idx) => {

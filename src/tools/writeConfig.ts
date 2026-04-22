@@ -13,7 +13,7 @@ export function registerWriteConfig(server: McpServer): void {
         "Write a Renovate config to disk. Runs renovate-config-validator first — refuses to write if validation fails unless force=true.",
       inputSchema: {
         repoPath: z.string().describe("Absolute path to the repository root"),
-        config: z.record(z.unknown()).describe("The Renovate config object"),
+        config: z.record(z.string(), z.unknown()).describe("The Renovate config object"),
         filename: z
           .string()
           .default("renovate.json")

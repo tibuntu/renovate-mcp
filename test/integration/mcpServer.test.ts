@@ -11,13 +11,14 @@ afterEach(async () => {
 });
 
 describe("MCP server stdio handshake", () => {
-  it("lists all six tools with expected names", async () => {
+  it("lists all seven tools with expected names", async () => {
     session = await startServer();
     const res = await session.request<{ tools: Array<{ name: string }> }>("tools/list");
     const names = (res.result?.tools ?? []).map((t) => t.name).sort();
     expect(names).toEqual([
       "check_setup",
       "dry_run",
+      "preview_custom_manager",
       "read_config",
       "resolve_config",
       "validate_config",
@@ -69,6 +70,63 @@ describe("read_config end-to-end", () => {
       content: Array<{ type: string; text: string }>;
     }>("tools/call", { name: "read_config", arguments: { repoPath: repo } });
     expect(res.result?.content[0]?.text).toContain("No Renovate configuration found");
+  });
+});
+
+describe("preview_custom_manager end-to-end", () => {
+  let repo: string;
+  beforeEach(async () => {
+    repo = await mkdtemp(path.join(tmpdir(), "rmcp-pcm-"));
+  });
+  afterEach(async () => {
+    await rm(repo, { recursive: true, force: true });
+  });
+
+  it("extracts deps from a Dockerfile via a regex custom manager", async () => {
+    await writeFile(path.join(repo, "Dockerfile"), "FROM alpine:3.19\n");
+    session = await startServer();
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+    }>("tools/call", {
+      name: "preview_custom_manager",
+      arguments: {
+        repoPath: repo,
+        manager: {
+          customType: "regex",
+          fileMatch: ["(^|/)Dockerfile$"],
+          matchStrings: ["FROM (?<depName>[^:\\s]+):(?<currentValue>\\S+)"],
+          datasourceTemplate: "docker",
+        },
+      },
+    });
+    const parsed = JSON.parse(res.result?.content[0]?.text ?? "{}");
+    expect(parsed.filesMatched).toEqual(["Dockerfile"]);
+    expect(parsed.extractedDeps).toHaveLength(1);
+    expect(parsed.extractedDeps[0]).toMatchObject({
+      depName: "alpine",
+      currentValue: "3.19",
+      datasource: "docker",
+    });
+  });
+
+  it("rejects non-regex customType with isError", async () => {
+    session = await startServer();
+    const res = await session.request<{
+      isError?: boolean;
+      content: Array<{ type: string; text: string }>;
+    }>("tools/call", {
+      name: "preview_custom_manager",
+      arguments: {
+        repoPath: repo,
+        manager: {
+          customType: "jsonata",
+          fileMatch: ["x"],
+          matchStrings: ["x"],
+        },
+      },
+    });
+    expect(res.result?.isError).toBe(true);
+    expect(res.result?.content[0]?.text).toMatch(/customType="regex"/);
   });
 });
 

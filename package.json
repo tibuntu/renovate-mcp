@@ -21,7 +21,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "generate:presets": "node scripts/generate-presets.mjs",
-    "prepack": "npm run build"
+    "prepack": "npm run build && chmod +x dist/index.js"
   },
   "keywords": [
     "mcp",

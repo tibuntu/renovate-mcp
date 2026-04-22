@@ -19,7 +19,7 @@ export function registerValidateConfig(server: McpServer): void {
           .optional()
           .describe("Absolute path to a config file to validate"),
         configContent: z
-          .record(z.unknown())
+          .record(z.string(), z.unknown())
           .optional()
           .describe("Inline config object to validate (written to a temp file)"),
         strict: z

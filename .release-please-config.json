@@ -4,6 +4,9 @@
       "release-type": "node",
       "include-component-in-tag": false,
       "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        "src/index.ts"
+      ],
       "changelog-sections": [
         {
           "type": "feat",

@@ -9,7 +9,7 @@ export function registerResolveConfig(server: McpServer): void {
     {
       title: "Resolve Renovate config (expand presets)",
       description:
-        "Expand every built-in preset referenced by `extends` against the committed preset catalogue (offline). Returns the fully resolved config plus which presets were expanded and which couldn't be resolved (external github>/gitlab>/local>/npm presets, unknown names, or cycles). Pass either repoPath (reads the repo's config) or configContent (an inline config object).",
+        "Expand every preset referenced by `extends` and return the fully resolved config. Built-in presets resolve offline against the committed catalogue. External presets (`github>`, `gitlab>`, `bitbucket>`, `gitea>`, `local>`, npm) are listed in `presetsUnresolved` by default; pass `externalPresets: true` to fetch `github>` / `gitlab>` over HTTPS (with optional `GITHUB_TOKEN` / `GITLAB_TOKEN` / `RENOVATE_TOKEN` for private repos). Pass either `repoPath` (reads the repo's config) or `configContent` (an inline config object).",
       inputSchema: {
         repoPath: z
           .string()
@@ -18,12 +18,18 @@ export function registerResolveConfig(server: McpServer): void {
             "Absolute path to the repository root. The tool will locate the repo's renovate config automatically.",
           ),
         configContent: z
-          .record(z.unknown())
+          .record(z.string(), z.unknown())
           .optional()
           .describe("Inline config object to resolve — use instead of repoPath."),
+        externalPresets: z
+          .boolean()
+          .optional()
+          .describe(
+            "When true, fetch external presets (github>, gitlab>) over HTTPS. Credentials are read from GITHUB_TOKEN / GITLAB_TOKEN / RENOVATE_TOKEN env vars. Default false.",
+          ),
       },
     },
-    async ({ repoPath, configContent }) => {
+    async ({ repoPath, configContent, externalPresets }) => {
       if (!repoPath && !configContent) {
         return {
           isError: true,
@@ -54,7 +60,9 @@ export function registerResolveConfig(server: McpServer): void {
         sourcePath = located.relPath;
       }
 
-      const { resolved, presetsResolved, presetsUnresolved } = resolveConfig(source);
+      const { resolved, presetsResolved, presetsUnresolved } = await resolveConfig(source, {
+        fetchExternal: externalPresets ?? false,
+      });
 
       return {
         content: [
