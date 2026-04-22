@@ -11,7 +11,7 @@ afterEach(async () => {
 });
 
 describe("MCP server stdio handshake", () => {
-  it("lists all five tools with expected names", async () => {
+  it("lists all six tools with expected names", async () => {
     session = await startServer();
     const res = await session.request<{ tools: Array<{ name: string }> }>("tools/list");
     const names = (res.result?.tools ?? []).map((t) => t.name).sort();
@@ -19,6 +19,7 @@ describe("MCP server stdio handshake", () => {
       "check_setup",
       "dry_run",
       "read_config",
+      "resolve_config",
       "validate_config",
       "write_config",
     ]);
@@ -68,5 +69,38 @@ describe("read_config end-to-end", () => {
       content: Array<{ type: string; text: string }>;
     }>("tools/call", { name: "read_config", arguments: { repoPath: repo } });
     expect(res.result?.content[0]?.text).toContain("No Renovate configuration found");
+  });
+});
+
+describe("resolve_config end-to-end", () => {
+  it("expands built-in presets from inline configContent", async () => {
+    session = await startServer();
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+    }>("tools/call", {
+      name: "resolve_config",
+      arguments: {
+        configContent: { extends: ["default:automergeAll"], schedule: ["weekly"] },
+      },
+    });
+    const parsed = JSON.parse(res.result?.content[0]?.text ?? "{}");
+    expect(parsed.resolved).toMatchObject({ automerge: true, schedule: ["weekly"] });
+    expect(parsed.resolved).not.toHaveProperty("extends");
+    expect(parsed.presetsResolved).toContain("default:automergeAll");
+    expect(parsed.presetsUnresolved).toEqual([]);
+  });
+
+  it("flags external presets without failing the call", async () => {
+    session = await startServer();
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+    }>("tools/call", {
+      name: "resolve_config",
+      arguments: { configContent: { extends: ["github>some/repo"] } },
+    });
+    const parsed = JSON.parse(res.result?.content[0]?.text ?? "{}");
+    expect(parsed.presetsUnresolved).toHaveLength(1);
+    expect(parsed.presetsUnresolved[0].preset).toBe("github>some/repo");
+    expect(res.result).not.toHaveProperty("isError", true);
   });
 });
