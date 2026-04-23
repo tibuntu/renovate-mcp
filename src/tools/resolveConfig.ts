@@ -25,7 +25,7 @@ export function registerResolveConfig(server: McpServer): void {
           .boolean()
           .optional()
           .describe(
-            "When true, fetch external presets (github>, gitlab>) over HTTPS. Credentials are read from GITHUB_TOKEN / GITLAB_TOKEN / RENOVATE_TOKEN env vars. Default false.",
+            "When true, fetch external presets (github>, gitlab>) over HTTPS. Credentials come from GITHUB_TOKEN / GITLAB_TOKEN / RENOVATE_TOKEN env vars set on the MCP server process — via the `env` key in claude_desktop_config.json / .mcp.json, not your shell, since the MCP server runs as a child of Claude and does not inherit shell env. Default false.",
           ),
         endpoint: z
           .string()
