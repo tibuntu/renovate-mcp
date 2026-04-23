@@ -9,7 +9,7 @@ export function registerResolveConfig(server: McpServer): void {
     {
       title: "Resolve Renovate config (expand presets)",
       description:
-        "Expand every preset referenced by `extends` and return the fully resolved config. Built-in presets resolve offline against the committed catalogue. External presets (`github>`, `gitlab>`, `bitbucket>`, `gitea>`, `local>`, npm) are listed in `presetsUnresolved` by default; pass `externalPresets: true` to fetch `github>` / `gitlab>` over HTTPS (with optional `GITHUB_TOKEN` / `GITLAB_TOKEN` / `RENOVATE_TOKEN` for private repos). Pass either `repoPath` (reads the repo's config) or `configContent` (an inline config object).",
+        "Expand every preset referenced by `extends` and return the fully resolved config. Built-in presets resolve offline against the committed catalogue. Pass `externalPresets: true` to fetch `github>` and `gitlab>` presets over HTTPS (with optional `GITHUB_TOKEN` / `GITLAB_TOKEN` / `RENOVATE_TOKEN` for private repos). `local>`, `bitbucket>`, `gitea>`, and npm presets are structurally unsupported by this tool and remain in `presetsUnresolved` regardless of the flag. Pass either `repoPath` (reads the repo's config) or `configContent` (an inline config object).",
       inputSchema: {
         repoPath: z
           .string()
