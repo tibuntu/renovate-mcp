@@ -27,6 +27,53 @@ export type ExternalSource =
   | "local"
   | "npm";
 
+export type SourceClassification =
+  | { fetchable: true }
+  | { fetchable: false; reason: string };
+
+/**
+ * Single source of truth for "can resolve_config ever fetch this external
+ * preset?". Used by both the resolver (to short-circuit before branching on the
+ * `externalPresets` flag) and the fetcher (to produce the same reason once the
+ * flag is on) — so a `local>` preset, say, returns the identical unresolved
+ * reason regardless of the flag.
+ *
+ * - `github`, `gitlab`: fetchable over HTTPS.
+ * - `local`: structurally unsupported — requires platform/repo context the
+ *   tool does not have.
+ * - `bitbucket`, `gitea`, `npm`: not yet implemented.
+ */
+export function classifyExternalSource(source: string): SourceClassification {
+  switch (source) {
+    case "github":
+    case "gitlab":
+      return { fetchable: true };
+    case "local":
+      return {
+        fetchable: false,
+        reason:
+          "local> presets require platform/repo context that resolve_config does not have; out of scope.",
+      };
+    case "bitbucket":
+    case "gitea":
+      return {
+        fetchable: false,
+        reason: `${source}> presets are not yet supported. Track progress in issue #10.`,
+      };
+    case "npm":
+      return {
+        fetchable: false,
+        reason:
+          "npm-hosted presets are not yet supported. Host the preset on GitHub or GitLab, or track progress in issue #10.",
+      };
+    default:
+      return {
+        fetchable: false,
+        reason: `Unknown preset source: ${source}`,
+      };
+  }
+}
+
 export interface ParsedPreset {
   /** Canonical identifier used as map key and for cycle detection. */
   key: string;
@@ -141,11 +188,17 @@ async function loadPresetBody(
     return preset.body;
   }
 
+  const classification = classifyExternalSource(parsed.source);
+  if (!classification.fetchable) {
+    unresolvedList.push({ preset: parsed.original, reason: classification.reason });
+    return null;
+  }
+
   if (!ctx.fetchExternal) {
     unresolvedList.push({
       preset: parsed.original,
       reason:
-        "External preset (github>, gitlab>, bitbucket>, gitea>, local>, or npm). Fetching requires network access and potentially credentials; pass externalPresets: true to enable.",
+        "External preset (github>, gitlab>). Fetching requires network access and potentially credentials; pass externalPresets: true to enable.",
     });
     return null;
   }

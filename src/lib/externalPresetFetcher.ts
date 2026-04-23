@@ -1,4 +1,4 @@
-import type { ParsedPreset } from "./presetResolver.js";
+import { classifyExternalSource, type ParsedPreset } from "./presetResolver.js";
 
 export interface FetchOptions {
   timeoutMs?: number;
@@ -28,6 +28,15 @@ export async function fetchExternalPreset(
 }
 
 function dispatch(parsed: ParsedPreset, options: FetchOptions): Promise<FetchResult> {
+  if (!parsed.source) {
+    return Promise.resolve({ ok: false, reason: "Unknown preset source: (none)" });
+  }
+
+  const classification = classifyExternalSource(parsed.source);
+  if (!classification.fetchable) {
+    return Promise.resolve({ ok: false, reason: classification.reason });
+  }
+
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
 
@@ -36,28 +45,10 @@ function dispatch(parsed: ParsedPreset, options: FetchOptions): Promise<FetchRes
       return fetchGitHub(parsed, timeoutMs, fetchImpl);
     case "gitlab":
       return fetchGitLab(parsed, timeoutMs, fetchImpl);
-    case "bitbucket":
-    case "gitea":
-      return Promise.resolve({
-        ok: false,
-        reason: `${parsed.source}> presets are not yet supported. Track progress in issue #10.`,
-      });
-    case "local":
-      return Promise.resolve({
-        ok: false,
-        reason:
-          "local> presets require platform/repo context that resolve_config does not have; out of scope.",
-      });
-    case "npm":
-      return Promise.resolve({
-        ok: false,
-        reason:
-          "npm-hosted presets are not yet supported. Host the preset on GitHub or GitLab, or track progress in issue #10.",
-      });
     default:
       return Promise.resolve({
         ok: false,
-        reason: `Unknown preset source: ${parsed.source ?? "(none)"}`,
+        reason: `Unknown preset source: ${parsed.source}`,
       });
   }
 }
