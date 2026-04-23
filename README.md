@@ -78,6 +78,39 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 }
 ```
 
+## Example prompts
+
+Once the server is wired up, try prompts like these. They're written for Claude but work with any MCP-capable client.
+
+**Understanding an existing config**
+
+- "Read the Renovate config in this repo and summarize what it actually does — expand every preset so I can see the real effective behavior."
+- "Resolve my config and list anything that landed in `presetsUnresolved`, with the reason for each."
+
+**Browsing presets**
+
+- "List the presets in the `config` namespace." (uses the `renovate://presets/config` sub-resource — cheaper than pulling the whole index)
+- "What does `config:recommended` actually enable? Show me its expanded JSON."
+- "Find a built-in preset that pins GitHub Actions digests."
+
+**Self-hosted GitLab / GitHub Enterprise**
+
+- "Resolve my config with external presets enabled, fetching `gitlab>platform/renovate-presets` from our self-hosted GitLab at `https://gitlab.example.com/api/v4`. Route `local>` presets through the same host."
+- "Expand `github>acme/renovate-config//base` from our GitHub Enterprise at `https://github.acme.corp/api/v3`."
+
+(Reminder: auth tokens must be set on the MCP server process — via the `env` key in `.mcp.json` / `claude_desktop_config.json`, not your shell.)
+
+**Authoring a custom manager (regex)**
+
+- "I have `# renovate: datasource=docker depName=...` comments above image tags in my Dockerfiles. Draft a `customManagers` regex entry and preview it against this repo so I can see what it extracts."
+- "Here's a `customManagers` entry — preview it and tell me which files match, which lines hit each `matchStrings` regex, and what dep info gets extracted."
+
+**Validating, previewing, saving**
+
+- "Validate this proposed config against Renovate's schema without writing it anywhere."
+- "Do a dry run and show me which PRs Renovate would open — no pushes."
+- "Add `:semanticCommits` to my `extends`, validate it, and save back to `renovate.json`."
+
 ## Development
 
 ```bash
