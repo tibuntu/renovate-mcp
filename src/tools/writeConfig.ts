@@ -4,6 +4,27 @@ import { promises as fs } from "node:fs";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { run, resolveRenovateTool, formatMissingBinaryError } from "../lib/renovateCli.js";
 
+// Resolve symlinks in `p`, walking up to the nearest existing ancestor when
+// tail components don't exist yet (e.g. a new subdir we're about to mkdir).
+// This matters for the escape check: `fs.rename` follows symlinks along the
+// parent path, so the check must compare the same canonical tree.
+async function resolveWithExistingAncestor(p: string): Promise<string> {
+  const suffixes: string[] = [];
+  let current = p;
+  while (true) {
+    try {
+      const resolved = await fs.realpath(current);
+      return suffixes.length ? path.join(resolved, ...suffixes) : resolved;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+      const parent = path.dirname(current);
+      if (parent === current) throw err;
+      suffixes.unshift(path.basename(current));
+      current = parent;
+    }
+  }
+}
+
 export function registerWriteConfig(server: McpServer): void {
   server.registerTool(
     "write_config",
@@ -28,7 +49,11 @@ export function registerWriteConfig(server: McpServer): void {
       const repoAbs = path.resolve(repoPath);
       const target = path.resolve(repoAbs, filename);
       const rel = path.relative(repoAbs, target);
-      if (rel.startsWith("..") || path.isAbsolute(rel)) {
+
+      const repoReal = await resolveWithExistingAncestor(repoAbs);
+      const parentReal = await resolveWithExistingAncestor(path.dirname(target));
+      const checkRel = path.relative(repoReal, parentReal);
+      if (checkRel.startsWith("..") || path.isAbsolute(checkRel)) {
         return {
           isError: true,
           content: [{ type: "text", text: "filename escapes repoPath" }],

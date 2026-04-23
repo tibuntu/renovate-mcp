@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, rm, writeFile, readFile, readdir, chmod } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, readFile, readdir, chmod, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { startServer, type McpSession } from "../helpers/mcpSession.js";
@@ -85,6 +85,35 @@ describe("write_config", () => {
     const files = await readdir(repo);
     expect(files).not.toContain("renovate.json");
     expect(files.some((f) => f.endsWith(".renovate-mcp-tmp"))).toBe(false);
+  });
+
+  it("rejects a filename whose resolved parent escapes repoPath via a symlink", async () => {
+    session = await startServer();
+
+    const outside = await mkdtemp(path.join(tmpdir(), "rmcp-outside-"));
+    try {
+      await symlink(outside, path.join(repo, "escape"));
+
+      const res = await session.request<{
+        content: Array<{ type: string; text: string }>;
+        isError?: boolean;
+      }>("tools/call", {
+        name: "write_config",
+        arguments: {
+          repoPath: repo,
+          filename: "escape/renovate.json",
+          config: { extends: ["config:recommended"] },
+        },
+      });
+
+      expect(res.result?.isError).toBe(true);
+      expect(res.result!.content[0]!.text).toContain("escapes repoPath");
+
+      const leaked = await readdir(outside);
+      expect(leaked).toHaveLength(0);
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
   });
 
   it("writes anyway when force=true and validation fails", async () => {
