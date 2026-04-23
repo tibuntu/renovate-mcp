@@ -10,7 +10,7 @@ Seven tools plus a preset reference:
 | --- | --- |
 | `check_setup` | Report Renovate CLI + validator availability, versions, env overrides, and install hints. Also runs at server startup and embeds the result in the server's `instructions` when anything's missing. |
 | `read_config` | Locate and parse `renovate.json` / `renovate.json5` / `.renovaterc*` / `.github/renovate.json` / `.gitlab/renovate.json` / `package.json#renovate` in a repo — in Renovate's priority order. |
-| `resolve_config` | Expand every `extends` preset against the committed catalogue and return the fully resolved config (offline; no `renovate` invocation). Flags unresolvable entries with a reason. Opt in to fetching `github>` / `gitlab>` presets over HTTPS with `externalPresets: true` (auth via `GITHUB_TOKEN` / `GITLAB_TOKEN` / `RENOVATE_TOKEN`); `local>`, `bitbucket>`, `gitea>`, and npm presets remain in `presetsUnresolved` regardless of the flag. |
+| `resolve_config` | Expand every `extends` preset against the committed catalogue and return the fully resolved config (offline; no `renovate` invocation). Flags unresolvable entries with a reason. Opt in to fetching `github>` / `gitlab>` presets over HTTPS with `externalPresets: true` (auth via `GITHUB_TOKEN` / `GITLAB_TOKEN` / `RENOVATE_TOKEN`). For GitHub Enterprise or self-hosted GitLab, pass `endpoint` (API base URL) — and `platform` in addition to route `local>` presets through the same host. `bitbucket>`, `gitea>`, and npm presets remain in `presetsUnresolved` regardless. |
 | `preview_custom_manager` | Preview a `customManagers` (regex) entry against a local repo — offline, no `renovate` invocation. Shows which files match `fileMatch`, which lines match each `matchStrings` regex with named capture groups, and what dep info the template fields produce. Intended for fast regex iteration; run `dry_run` afterwards for full-fidelity confirmation. |
 | `validate_config` | Run `renovate-config-validator` against a file or inline object. |
 | `dry_run` | Run Renovate with `--platform=local --dry-run`, return the structured JSON report (no PRs, no pushes). |
@@ -23,7 +23,7 @@ Seven tools plus a preset reference:
 - Node.js ≥ 24 (aligns with Renovate's own engine requirement).
 - Renovate available on your `PATH` — either a global install (`npm i -g renovate`) or a project-local install that exposes `renovate` and `renovate-config-validator` via `npm exec`. Only needed for `validate_config`, `dry_run`, and `write_config`; the offline tools (`read_config`, `resolve_config`, `preview_custom_manager`) work without it.
 - Override binary locations with env vars if needed: `RENOVATE_BIN`, `RENOVATE_CONFIG_VALIDATOR_BIN`.
-- Optional for `resolve_config` with `externalPresets: true`: `GITHUB_TOKEN` / `GITLAB_TOKEN` (or `RENOVATE_TOKEN` as a fallback) for fetching presets from private repos or to avoid rate limits.
+- Optional for `resolve_config` with `externalPresets: true`: `GITHUB_TOKEN` / `GITLAB_TOKEN` (or `RENOVATE_TOKEN` as a fallback) for fetching presets from private repos or to avoid rate limits. For GitHub Enterprise / self-hosted GitLab, pass the `endpoint` tool input (and `platform` if you also want `local>` presets routed there) — env vars like `RENOVATE_ENDPOINT` are **not** read, since the MCP server runs under Claude rather than in your shell.
 
 ## Install
 
@@ -110,6 +110,6 @@ Secrets required on the repo: `RELEASE_PLEASE_TOKEN` (a PAT for release-please).
 
 - `validate_config`, `dry_run`, and `write_config` shell out to the Renovate CLI rather than importing Renovate as a library — this decouples our Node version from Renovate's (currently Node 24).
 - `resolve_config` and `preview_custom_manager` are fully in-process and never invoke the Renovate CLI, so they work without a Renovate install.
-- `resolve_config` expands `extends` against a committed snapshot of Renovate's built-in presets (`src/data/presets.generated.ts`). External `github>` / `gitlab>` fetching is opt-in, uses each platform's contents API with a 10 s timeout, and caches results per call.
+- `resolve_config` expands `extends` against a committed snapshot of Renovate's built-in presets (`src/data/presets.generated.ts`). External `github>` / `gitlab>` fetching is opt-in, uses each platform's contents API with a 10 s timeout, and caches results per call. The `endpoint` input swaps in a custom API base for GHE / self-hosted GitLab; `platform` additionally rewrites `local>` presets to be fetched against that endpoint.
 - `dry_run` uses `--report-type=file` so we get a structured JSON report instead of scraping stdout.
 - `write_config` writes to a temp file, validates, then atomically renames — so a failed validation never leaves a broken config on disk.

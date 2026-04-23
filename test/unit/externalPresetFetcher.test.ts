@@ -141,6 +141,46 @@ describe("fetchExternalPreset — gitlab", () => {
   });
 });
 
+describe("fetchExternalPreset — endpoint override", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("uses a GHE endpoint as API base for github> fetches", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({ automerge: true }));
+    await fetchExternalPreset(parsePreset("github>acme/cfg"), {
+      fetchImpl,
+      endpoint: "https://ghe.example.com/api/v3",
+    });
+    const [url] = fetchImpl.mock.calls[0]!;
+    expect(url).toBe(
+      "https://ghe.example.com/api/v3/repos/acme/cfg/contents/default.json?ref=HEAD",
+    );
+  });
+
+  it("uses a self-hosted endpoint as API base for gitlab> fetches", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({ automerge: true }));
+    await fetchExternalPreset(parsePreset("gitlab>acme/cfg:strict#main"), {
+      fetchImpl,
+      endpoint: "https://gitlab.example.com/api/v4",
+    });
+    const [url] = fetchImpl.mock.calls[0]!;
+    expect(url).toBe(
+      "https://gitlab.example.com/api/v4/projects/acme%2Fcfg/repository/files/strict.json/raw?ref=main",
+    );
+  });
+
+  it("strips a trailing slash from the endpoint before concatenation", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({ automerge: true }));
+    await fetchExternalPreset(parsePreset("github>acme/cfg"), {
+      fetchImpl,
+      endpoint: "https://ghe.example.com/api/v3/",
+    });
+    const [url] = fetchImpl.mock.calls[0]!;
+    expect(url).toBe(
+      "https://ghe.example.com/api/v3/repos/acme/cfg/contents/default.json?ref=HEAD",
+    );
+  });
+});
+
 describe("fetchExternalPreset — unsupported sources", () => {
   it("returns a clear error for bitbucket", async () => {
     const result = await fetchExternalPreset(parsePreset("bitbucket>acme/cfg"));
