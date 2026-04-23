@@ -257,3 +257,38 @@ describe("resolveConfig with externalPresets: true", () => {
     expect(presetsResolved).toEqual(["default:automergeAll", "github>acme/cfg"]);
   });
 });
+
+describe("structurally-unsupported sources: identical reason across flag values", () => {
+  // These sources can never be fetched by resolve_config — flipping the flag
+  // must not change the reason the user sees.
+  const cases: Array<{ preset: string; matcher: RegExp }> = [
+    { preset: "local>acme/cfg", matcher: /out of scope/i },
+    { preset: "bitbucket>acme/cfg", matcher: /not yet supported/i },
+    { preset: "gitea>acme/cfg", matcher: /not yet supported/i },
+    { preset: "some-npm-preset", matcher: /npm-hosted/i },
+  ];
+
+  for (const { preset, matcher } of cases) {
+    it(`${preset}: reason is identical with externalPresets false vs true`, async () => {
+      const off = await resolveConfig({ extends: [preset] });
+      const on = await resolveConfig({ extends: [preset] }, { fetchExternal: true });
+
+      expect(off.presetsUnresolved).toHaveLength(1);
+      expect(on.presetsUnresolved).toHaveLength(1);
+      expect(off.presetsUnresolved[0]?.reason).toBe(on.presetsUnresolved[0]?.reason);
+      expect(off.presetsUnresolved[0]?.reason).toMatch(matcher);
+      // The misleading "pass externalPresets: true to enable" phrasing must
+      // not appear for structurally-unsupported sources.
+      expect(off.presetsUnresolved[0]?.reason).not.toMatch(/externalPresets: true/i);
+    });
+  }
+
+  it("does not make a network call for structurally-unsupported sources even with externalPresets: true", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    await resolveConfig(
+      { extends: ["local>a/b", "bitbucket>a/b", "gitea>a/b", "some-npm-preset"] },
+      { fetchExternal: true },
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
