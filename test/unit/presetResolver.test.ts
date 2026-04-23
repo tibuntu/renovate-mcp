@@ -292,3 +292,95 @@ describe("structurally-unsupported sources: identical reason across flag values"
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
+
+describe("resolveConfig with endpoint / platform", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it("routes github> fetches through a custom endpoint (GitHub Enterprise)", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ automerge: true }), { status: 200 }),
+    );
+    const { resolved, presetsResolved } = await resolveConfig(
+      { extends: ["github>acme/cfg"] },
+      { fetchExternal: true, endpoint: "https://ghe.example.com/api/v3" },
+    );
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [url] = fetchSpy.mock.calls[0]!;
+    expect(url).toBe(
+      "https://ghe.example.com/api/v3/repos/acme/cfg/contents/default.json?ref=HEAD",
+    );
+    expect(resolved).toMatchObject({ automerge: true });
+    expect(presetsResolved).toEqual(["github>acme/cfg"]);
+  });
+
+  it("routes gitlab> fetches through a custom endpoint (self-hosted GitLab)", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ automerge: true }), { status: 200 }),
+    );
+    await resolveConfig(
+      { extends: ["gitlab>acme/cfg"] },
+      { fetchExternal: true, endpoint: "https://gitlab.example.com/api/v4" },
+    );
+    const [url] = fetchSpy.mock.calls[0]!;
+    expect(url).toBe(
+      "https://gitlab.example.com/api/v4/projects/acme%2Fcfg/repository/files/default.json/raw?ref=HEAD",
+    );
+  });
+
+  it("rewrites local> through platform + endpoint (self-hosted GitLab)", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ automerge: true }), { status: 200 }),
+    );
+    const { resolved, presetsResolved, presetsUnresolved } = await resolveConfig(
+      { extends: ["local>acme/cfg"] },
+      {
+        fetchExternal: true,
+        endpoint: "https://gitlab.example.com/api/v4",
+        platform: "gitlab",
+      },
+    );
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [url] = fetchSpy.mock.calls[0]!;
+    expect(url).toBe(
+      "https://gitlab.example.com/api/v4/projects/acme%2Fcfg/repository/files/default.json/raw?ref=HEAD",
+    );
+    expect(resolved).toMatchObject({ automerge: true });
+    // The original local> string stays in presetsResolved so users see what
+    // they wrote, not what we rewrote it to.
+    expect(presetsResolved).toEqual(["local>acme/cfg"]);
+    expect(presetsUnresolved).toEqual([]);
+  });
+
+  it("rewrites local> through platform=github", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ automerge: true }), { status: 200 }),
+    );
+    await resolveConfig(
+      { extends: ["local>acme/cfg"] },
+      {
+        fetchExternal: true,
+        endpoint: "https://ghe.example.com/api/v3",
+        platform: "github",
+      },
+    );
+    const [url] = fetchSpy.mock.calls[0]!;
+    expect(url).toBe(
+      "https://ghe.example.com/api/v3/repos/acme/cfg/contents/default.json?ref=HEAD",
+    );
+  });
+
+  it("leaves local> unsupported when platform is not set, even with a custom endpoint", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const { presetsResolved, presetsUnresolved } = await resolveConfig(
+      { extends: ["local>acme/cfg"] },
+      { fetchExternal: true, endpoint: "https://gitlab.example.com/api/v4" },
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(presetsResolved).toEqual([]);
+    expect(presetsUnresolved).toHaveLength(1);
+    expect(presetsUnresolved[0]?.reason).toMatch(/out of scope/i);
+  });
+});

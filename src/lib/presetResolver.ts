@@ -12,11 +12,27 @@ export interface ResolveResult {
   presetsUnresolved: UnresolvedPreset[];
 }
 
+export type FetchPlatform = "github" | "gitlab";
+
 export interface ResolveOptions {
   /** When true, fetch external presets (github>, gitlab>, …) over the network. */
   fetchExternal?: boolean;
   /** Per-request fetch timeout; forwarded to the external fetcher. */
   timeoutMs?: number;
+  /**
+   * Override the API base URL used for `github>` / `gitlab>` fetches — e.g.
+   * `https://ghe.example.com/api/v3` for GitHub Enterprise or
+   * `https://gitlab.example.com/api/v4` for self-hosted GitLab. When unset,
+   * defaults to `https://api.github.com` and `https://gitlab.com/api/v4`.
+   */
+  endpoint?: string;
+  /**
+   * Platform flavour of `endpoint`. Required only when it's not derivable from
+   * the preset source (e.g. to resolve `local>` presets against a self-hosted
+   * GitHub/GitLab). When set, `local>owner/repo` is fetched as if it were
+   * `<platform>>owner/repo`.
+   */
+  platform?: FetchPlatform;
 }
 
 export type ExternalSource =
@@ -95,6 +111,8 @@ export interface ParsedPreset {
 interface ExpandContext {
   fetchExternal: boolean;
   timeoutMs: number | undefined;
+  endpoint: string | undefined;
+  platform: FetchPlatform | undefined;
   cache: Map<string, Promise<FetchResult>>;
 }
 
@@ -114,6 +132,8 @@ export async function resolveConfig(
   const ctx: ExpandContext = {
     fetchExternal: options.fetchExternal ?? false,
     timeoutMs: options.timeoutMs,
+    endpoint: options.endpoint,
+    platform: options.platform,
     cache: new Map(),
   };
 
@@ -188,7 +208,15 @@ async function loadPresetBody(
     return preset.body;
   }
 
-  const classification = classifyExternalSource(parsed.source);
+  // If a `platform` is configured, route `local>` presets through it — the
+  // self-hosted case where the user's "local" presets actually live on their
+  // private GitHub/GitLab at `endpoint`.
+  const effective =
+    parsed.source === "local" && ctx.platform
+      ? { ...parsed, source: ctx.platform }
+      : parsed;
+
+  const classification = classifyExternalSource(effective.source!);
   if (!classification.fetchable) {
     unresolvedList.push({ preset: parsed.original, reason: classification.reason });
     return null;
@@ -203,8 +231,9 @@ async function loadPresetBody(
     return null;
   }
 
-  const result = await fetchExternalPreset(parsed, {
+  const result = await fetchExternalPreset(effective, {
     timeoutMs: ctx.timeoutMs,
+    endpoint: ctx.endpoint,
     cache: ctx.cache,
   });
 

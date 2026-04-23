@@ -3,6 +3,13 @@ import { classifyExternalSource, type ParsedPreset } from "./presetResolver.js";
 export interface FetchOptions {
   timeoutMs?: number;
   cache?: Map<string, Promise<FetchResult>>;
+  /**
+   * Override the API base URL. For `github>` presets, defaults to
+   * `https://api.github.com` (pass `https://ghe.example.com/api/v3` for GitHub
+   * Enterprise). For `gitlab>`, defaults to `https://gitlab.com/api/v4` (pass
+   * `https://gitlab.example.com/api/v4` for self-hosted).
+   */
+  endpoint?: string;
   /** Injectable for tests. Defaults to globalThis.fetch. */
   fetchImpl?: typeof fetch;
 }
@@ -12,6 +19,12 @@ export type FetchResult =
   | { ok: false; reason: string };
 
 const DEFAULT_TIMEOUT_MS = 10_000;
+const DEFAULT_GITHUB_API_BASE = "https://api.github.com";
+const DEFAULT_GITLAB_API_BASE = "https://gitlab.com/api/v4";
+
+function trimTrailingSlash(url: string): string {
+  return url.replace(/\/+$/, "");
+}
 
 export async function fetchExternalPreset(
   parsed: ParsedPreset,
@@ -39,12 +52,13 @@ function dispatch(parsed: ParsedPreset, options: FetchOptions): Promise<FetchRes
 
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
+  const endpoint = options.endpoint ? trimTrailingSlash(options.endpoint) : undefined;
 
   switch (parsed.source) {
     case "github":
-      return fetchGitHub(parsed, timeoutMs, fetchImpl);
+      return fetchGitHub(parsed, timeoutMs, fetchImpl, endpoint);
     case "gitlab":
-      return fetchGitLab(parsed, timeoutMs, fetchImpl);
+      return fetchGitLab(parsed, timeoutMs, fetchImpl, endpoint);
     default:
       return Promise.resolve({
         ok: false,
@@ -57,13 +71,15 @@ async function fetchGitHub(
   parsed: ParsedPreset,
   timeoutMs: number,
   fetchImpl: typeof fetch,
+  endpoint: string | undefined,
 ): Promise<FetchResult> {
   if (!parsed.repoPath || !parsed.repoPath.includes("/")) {
     return { ok: false, reason: `Invalid github preset: ${parsed.original}` };
   }
   const file = presetFileName(parsed);
   const ref = parsed.ref ?? "HEAD";
-  const url = `https://api.github.com/repos/${parsed.repoPath}/contents/${encodeFilePath(
+  const apiBase = endpoint ?? DEFAULT_GITHUB_API_BASE;
+  const url = `${apiBase}/repos/${parsed.repoPath}/contents/${encodeFilePath(
     file,
   )}?ref=${encodeURIComponent(ref)}`;
   const token = process.env.GITHUB_TOKEN || process.env.RENOVATE_TOKEN;
@@ -79,13 +95,15 @@ async function fetchGitLab(
   parsed: ParsedPreset,
   timeoutMs: number,
   fetchImpl: typeof fetch,
+  endpoint: string | undefined,
 ): Promise<FetchResult> {
   if (!parsed.repoPath) {
     return { ok: false, reason: `Invalid gitlab preset: ${parsed.original}` };
   }
   const file = presetFileName(parsed);
   const ref = parsed.ref ?? "HEAD";
-  const url = `https://gitlab.com/api/v4/projects/${encodeURIComponent(
+  const apiBase = endpoint ?? DEFAULT_GITLAB_API_BASE;
+  const url = `${apiBase}/projects/${encodeURIComponent(
     parsed.repoPath,
   )}/repository/files/${encodeURIComponent(file)}/raw?ref=${encodeURIComponent(ref)}`;
   const token = process.env.GITLAB_TOKEN || process.env.RENOVATE_TOKEN;
