@@ -23,7 +23,7 @@ Seven tools plus a preset reference:
 - Node.js ≥ 24 (aligns with Renovate's own engine requirement).
 - Renovate available on your `PATH` — either a global install (`npm i -g renovate`) or a project-local install that exposes `renovate` and `renovate-config-validator` via `npm exec`. Only needed for `validate_config`, `dry_run`, and `write_config`; the offline tools (`read_config`, `resolve_config`, `preview_custom_manager`) work without it.
 - Override binary locations with env vars if needed: `RENOVATE_BIN`, `RENOVATE_CONFIG_VALIDATOR_BIN`.
-- Optional for `resolve_config` with `externalPresets: true`: `GITHUB_TOKEN` / `GITLAB_TOKEN` (or `RENOVATE_TOKEN` as a fallback) for fetching presets from private repos or to avoid rate limits. For GitHub Enterprise / self-hosted GitLab, pass the `endpoint` tool input (and `platform` if you also want `local>` presets routed there) — env vars like `RENOVATE_ENDPOINT` are **not** read, since the MCP server runs under Claude rather than in your shell.
+- Optional for `resolve_config` with `externalPresets: true`: `GITHUB_TOKEN` / `GITLAB_TOKEN` (or `RENOVATE_TOKEN` as a fallback) for fetching presets from private repos or to avoid rate limits. For GitHub Enterprise / self-hosted GitLab, pass the `endpoint` tool input (and `platform` if you also want `local>` presets routed there); `RENOVATE_ENDPOINT` is **not** read. Any env vars the tool does read must be set on the MCP server process itself — via the `env` key in `claude_desktop_config.json` / `.mcp.json`, not your shell, since the MCP server runs as a child of Claude and does not inherit shell env.
 
 ## Install
 
