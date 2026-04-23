@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import ignore, { type Ignore } from "ignore";
 
 export interface CustomManager {
   customType: string;
@@ -206,26 +207,104 @@ function lineNumberAt(content: string, index: number): number {
   return line;
 }
 
+/**
+ * Honor `.gitignore` like git does: each `.gitignore` applies to the subtree it
+ * lives in, patterns are resolved relative to that directory. We keep a stack
+ * of `(prefix, Ignore)` levels as we descend. `.git/info/exclude` is loaded at
+ * the root level. `SKIP_DIRS` stays as a safety net so `.git/` and
+ * `node_modules/` get pruned even when no `.gitignore` is present (e.g. the
+ * user pointed the tool at a non-git directory).
+ */
+interface IgnoreLevel {
+  /** Prefix relative to repo root, with trailing `/` (empty string for root). */
+  prefix: string;
+  ig: Ignore;
+}
+
+async function readMaybe(abs: string): Promise<string | null> {
+  try {
+    return await fs.readFile(abs, "utf8");
+  } catch {
+    return null;
+  }
+}
+
+async function loadGitignore(
+  root: string,
+  relDir: string,
+  levels: IgnoreLevel[],
+): Promise<IgnoreLevel[]> {
+  const content = await readMaybe(path.join(root, relDir, ".gitignore"));
+  if (!content) return levels;
+  const posixPrefix = relDir === "" ? "" : `${toPosix(relDir)}/`;
+  return [...levels, { prefix: posixPrefix, ig: ignore().add(content) }];
+}
+
+function isIgnored(
+  relPath: string,
+  isDir: boolean,
+  levels: IgnoreLevel[],
+): boolean {
+  for (const level of levels) {
+    const sub =
+      level.prefix === ""
+        ? relPath
+        : relPath.startsWith(level.prefix)
+          ? relPath.slice(level.prefix.length)
+          : null;
+    if (sub === null || sub === "") continue;
+    // `ignore` treats a trailing slash as "this is a directory", which is what
+    // lets patterns like `dist/` match directory paths.
+    if (level.ig.ignores(isDir ? `${sub}/` : sub)) return true;
+  }
+  return false;
+}
+
+function toPosix(p: string): string {
+  return p.split(path.sep).join("/");
+}
+
 async function* walk(root: string): AsyncGenerator<string> {
-  const stack: string[] = [""];
-  while (stack.length > 0) {
-    const relDir = stack.pop()!;
-    const absDir = path.join(root, relDir);
-    let entries;
-    try {
-      entries = await fs.readdir(absDir, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      if (entry.isDirectory()) {
-        if (SKIP_DIRS.has(entry.name)) continue;
-        stack.push(path.join(relDir, entry.name));
-      } else if (entry.isFile()) {
-        // Always emit POSIX-style paths so users on macOS/Linux/Windows write
-        // the same fileMatch regexes.
-        yield path.join(relDir, entry.name).split(path.sep).join("/");
-      }
+  // Seed the root level with `.gitignore` plus `.git/info/exclude` (the
+  // per-clone exclude file). Both are optional.
+  const rootIg = ignore();
+  const rootGitignore = await readMaybe(path.join(root, ".gitignore"));
+  if (rootGitignore) rootIg.add(rootGitignore);
+  const infoExclude = await readMaybe(path.join(root, ".git", "info", "exclude"));
+  if (infoExclude) rootIg.add(infoExclude);
+  const rootLevels: IgnoreLevel[] = [{ prefix: "", ig: rootIg }];
+
+  yield* walkDir(root, "", rootLevels);
+}
+
+async function* walkDir(
+  root: string,
+  relDir: string,
+  levels: IgnoreLevel[],
+): AsyncGenerator<string> {
+  let entries;
+  try {
+    entries = await fs.readdir(path.join(root, relDir), { withFileTypes: true });
+  } catch {
+    return;
+  }
+
+  // A nested `.gitignore` only affects this directory's subtree — add it to
+  // the stack on entry. (The root `.gitignore` is already in `levels`.)
+  const dirLevels = relDir === "" ? levels : await loadGitignore(root, relDir, levels);
+
+  for (const entry of entries) {
+    const relPath =
+      relDir === "" ? entry.name : `${toPosix(relDir)}/${entry.name}`;
+    if (entry.isDirectory()) {
+      if (SKIP_DIRS.has(entry.name)) continue;
+      if (isIgnored(relPath, true, dirLevels)) continue;
+      yield* walkDir(root, path.join(relDir, entry.name), dirLevels);
+    } else if (entry.isFile()) {
+      if (isIgnored(relPath, false, dirLevels)) continue;
+      // Always emit POSIX-style paths so users on macOS/Linux/Windows write
+      // the same fileMatch regexes.
+      yield toPosix(relPath);
     }
   }
 }

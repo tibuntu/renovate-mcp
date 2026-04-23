@@ -110,6 +110,7 @@ Secrets required on the repo: `RELEASE_PLEASE_TOKEN` (a PAT for release-please).
 
 - `validate_config`, `dry_run`, and `write_config` shell out to the Renovate CLI rather than importing Renovate as a library — this decouples our Node version from Renovate's (currently Node 24).
 - `resolve_config` and `preview_custom_manager` are fully in-process and never invoke the Renovate CLI, so they work without a Renovate install.
+- `preview_custom_manager` honors `.gitignore` (including nested `.gitignore`s and `.git/info/exclude`) when walking the repo, so generated/vendored directories like `dist/`, `.next/`, `target/`, `__pycache__/` don't crowd out real hits against the `maxFilesScanned` cap. `node_modules/` and `.git/` are always skipped as a safety net even when no `.gitignore` is present.
 - `resolve_config` expands `extends` against a committed snapshot of Renovate's built-in presets (`src/data/presets.generated.ts`). External `github>` / `gitlab>` fetching is opt-in, uses each platform's contents API with a 10 s timeout, and caches results per call. The `endpoint` input swaps in a custom API base for GHE / self-hosted GitLab; `platform` additionally rewrites `local>` presets to be fetched against that endpoint.
 - `dry_run` uses `--report-type=file` so we get a structured JSON report instead of scraping stdout.
 - `write_config` writes to a temp file, validates, then atomically renames — so a failed validation never leaves a broken config on disk.

@@ -36,7 +36,7 @@ export function registerPreviewCustomManager(server: McpServer): void {
         "  - Only `customType: \"regex\"` is supported.",
         "  - `matchStringsStrategy` other than `any` (the default) is not implemented; a warning is emitted.",
         "  - Template substitution handles only `{{groupName}}` references, not full Handlebars helpers.",
-        "  - `.gitignore` is not honored; `node_modules/` and `.git/` are always skipped.",
+        "  - `.gitignore` (and `.git/info/exclude`, plus nested `.gitignore`s) is honored like `git` does. `node_modules/` and `.git/` are always skipped as a safety net, even without a `.gitignore`.",
         "",
         "Run the `dry_run` tool afterwards for full-fidelity confirmation.",
       ].join("\n"),
