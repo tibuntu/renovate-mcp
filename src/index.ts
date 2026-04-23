@@ -32,7 +32,7 @@ const instructions = setup.ok
   ? BASE_INSTRUCTIONS
   : [BASE_INSTRUCTIONS, "", "Startup setup check:", describeSetup(setup)].join("\n");
 
-const SERVER_VERSION = "0.2.0"; // x-release-please-version
+const SERVER_VERSION = "0.3.0"; // x-release-please-version
 
 const server = new McpServer({ name: "renovate-mcp", version: SERVER_VERSION }, { instructions });
 
