@@ -143,6 +143,74 @@ describe("previewCustomManager", () => {
     ).rejects.toThrow(/Invalid regex/);
   });
 
+  it("honors a root .gitignore — generated dirs don't crowd out real hits", async () => {
+    // Acceptance from issue #21: 3000 junk files in a gitignored dist/ must
+    // not burn the maxFilesScanned budget. We use a lower cap (500) to keep
+    // the test fast while still proving the point.
+    await writeFile(path.join(repo, ".gitignore"), "dist/\ncoverage/\n");
+    await mkdir(path.join(repo, "dist"), { recursive: true });
+    for (let i = 0; i < 3000; i++) {
+      await writeFile(path.join(repo, `dist/junk-${i}.txt`), "noise");
+    }
+    await writeFile(path.join(repo, "Dockerfile"), "FROM alpine:3.19");
+
+    const result = await previewCustomManager(
+      repo,
+      {
+        customType: "regex",
+        fileMatch: ["(^|/)Dockerfile$"],
+        matchStrings: ["FROM (?<depName>[^:\\s]+):(?<currentValue>\\S+)"],
+      },
+      { maxFilesScanned: 500 },
+    );
+    expect(result.filesMatched).toEqual(["Dockerfile"]);
+    expect(result.warnings.some((w) => /Stopped after scanning/.test(w))).toBe(false);
+    // We walked the real files, not the 3000 junk ones.
+    expect(result.filesScanned).toBeLessThan(10);
+  });
+
+  it("honors .git/info/exclude in addition to .gitignore", async () => {
+    await mkdir(path.join(repo, ".git/info"), { recursive: true });
+    await writeFile(path.join(repo, ".git/info/exclude"), "secret.txt\n");
+    await writeFile(path.join(repo, "secret.txt"), "shh");
+    await writeFile(path.join(repo, "public.txt"), "ok");
+
+    const result = await previewCustomManager(repo, {
+      customType: "regex",
+      fileMatch: ["\\.txt$"],
+      matchStrings: ["(?<depName>\\w+)"],
+    });
+    expect(result.filesMatched).toEqual(["public.txt"]);
+  });
+
+  it("honors a nested .gitignore only within its own subtree", async () => {
+    // `foo.txt` in `sub/.gitignore` must NOT match `foo.txt` at the root.
+    await mkdir(path.join(repo, "sub"), { recursive: true });
+    await writeFile(path.join(repo, "sub/.gitignore"), "foo.txt\n");
+    await writeFile(path.join(repo, "sub/foo.txt"), "hidden");
+    await writeFile(path.join(repo, "foo.txt"), "visible");
+
+    const result = await previewCustomManager(repo, {
+      customType: "regex",
+      fileMatch: ["foo\\.txt$"],
+      matchStrings: ["(?<v>\\S+)"],
+    });
+    expect(result.filesMatched).toEqual(["foo.txt"]);
+  });
+
+  it("respects negation in .gitignore", async () => {
+    await writeFile(path.join(repo, ".gitignore"), "*.log\n!keep.log\n");
+    await writeFile(path.join(repo, "drop.log"), "x");
+    await writeFile(path.join(repo, "keep.log"), "x");
+
+    const result = await previewCustomManager(repo, {
+      customType: "regex",
+      fileMatch: ["\\.log$"],
+      matchStrings: ["(?<v>\\S+)"],
+    });
+    expect(result.filesMatched).toEqual(["keep.log"]);
+  });
+
   it("honors maxHitsPerFile and records a warning", async () => {
     const lines = Array.from({ length: 20 }, (_, i) => `pkg=foo${i} ver=${i}`).join("\n");
     await writeFile(path.join(repo, "many.txt"), lines);
