@@ -1,0 +1,50 @@
+{
+  "packages": {
+    ".": {
+      "release-type": "node",
+      "include-component-in-tag": false,
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        "src/index.ts"
+      ],
+      "changelog-sections": [
+        {
+          "type": "feat",
+          "section": "Features",
+          "hidden": false
+        },
+        {
+          "type": "fix",
+          "section": "Bug Fixes",
+          "hidden": false
+        },
+        {
+          "type": "docs",
+          "section": "Documentation",
+          "hidden": true
+        },
+        {
+          "type": "refactor",
+          "section": "Other",
+          "hidden": true
+        },
+        {
+          "type": "test",
+          "section": "Other",
+          "hidden": true
+        },
+        {
+          "type": "build",
+          "section": "Other",
+          "hidden": true
+        },
+        {
+          "type": "chore",
+          "section": "Other",
+          "hidden": true
+        }
+      ]
+    }
+  },
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json"
+}

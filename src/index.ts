@@ -1,0 +1,49 @@
+#!/usr/bin/env node
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { registerCheckSetup } from "./tools/checkSetup.js";
+import { registerReadConfig } from "./tools/readConfig.js";
+import { registerValidateConfig } from "./tools/validateConfig.js";
+import { registerResolveConfig } from "./tools/resolveConfig.js";
+import { registerPreviewCustomManager } from "./tools/previewCustomManager.js";
+import { registerDryRun } from "./tools/dryRun.js";
+import { registerWriteConfig } from "./tools/writeConfig.js";
+import { registerPresetResources } from "./resources/presets.js";
+import { checkSetup, describeSetup } from "./lib/setupCheck.js";
+
+const BASE_INSTRUCTIONS = [
+  "Design and debug Renovate configurations interactively.",
+  "",
+  "Workflow:",
+  "  1. read_config            — inspect the current config in a repo",
+  "  2. resolve_config         — expand built-in presets to see what a config actually becomes (offline)",
+  "  3. preview_custom_manager — iterate on a regex-based customManagers entry; shows file/line hits and extracted deps",
+  "  4. validate_config        — check a proposed config against Renovate's schema",
+  "  5. dry_run                — preview what Renovate would actually do (no PRs)",
+  "  6. write_config           — save the agreed-upon config (validates first)",
+  "",
+  "If any tool fails unexpectedly, call check_setup to diagnose CLI availability.",
+  "Built-in preset reference is available at renovate://presets.",
+].join("\n");
+
+const setup = await checkSetup();
+
+const instructions = setup.ok
+  ? BASE_INSTRUCTIONS
+  : [BASE_INSTRUCTIONS, "", "Startup setup check:", describeSetup(setup)].join("\n");
+
+const SERVER_VERSION = "0.1.0"; // x-release-please-version
+
+const server = new McpServer({ name: "renovate-mcp", version: SERVER_VERSION }, { instructions });
+
+registerCheckSetup(server);
+registerReadConfig(server);
+registerResolveConfig(server);
+registerPreviewCustomManager(server);
+registerValidateConfig(server);
+registerDryRun(server);
+registerWriteConfig(server);
+registerPresetResources(server);
+
+const transport = new StdioServerTransport();
+await server.connect(transport);

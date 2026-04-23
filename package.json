@@ -1,0 +1,63 @@
+{
+  "name": "renovate-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for designing Renovate configurations interactively.",
+  "type": "module",
+  "bin": {
+    "renovate-mcp": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "pretest": "npm run build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "generate:presets": "node scripts/generate-presets.mjs",
+    "prepack": "npm run build && chmod +x dist/index.js"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "renovate",
+    "renovatebot",
+    "claude",
+    "llm",
+    "dependencies"
+  ],
+  "author": "Timo Hankamer",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tibuntu/renovate-mcp.git"
+  },
+  "homepage": "https://github.com/tibuntu/renovate-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/tibuntu/renovate-mcp/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "json5": "^2.2.3",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "renovate": "^43.139.5",
+    "typescript": "^6.0.0",
+    "vitest": "^4.1.0"
+  },
+  "license": "MIT"
+}
