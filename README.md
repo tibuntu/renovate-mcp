@@ -15,7 +15,8 @@ Seven tools plus a preset reference:
 | `validate_config` | Run `renovate-config-validator` against a file or inline object. |
 | `dry_run` | Run Renovate with `--platform=local --dry-run`, return the structured JSON report (no PRs, no pushes). |
 | `write_config` | Validate, then write a config to disk (temp-file → validate → atomic rename). Refuses to save invalid configs unless `force: true`. |
-| `renovate://presets` (resource) | Markdown index of every built-in preset (1000+), grouped by namespace. Snapshot from the installed `renovate` devDep. |
+| `renovate://presets` (resource) | Thin markdown index of every namespace (with preset counts) covering all 1000+ built-in presets. Snapshot from the installed `renovate` devDep. |
+| `renovate://presets/{namespace}` (resource template) | Markdown listing of every preset in a single namespace (e.g. `renovate://presets/config`). Fetch this instead of the full index when the LLM only cares about one namespace — cuts token cost by roughly 1/N where N is the number of namespaces. |
 | `renovate://preset/{name}` (resource template) | Expanded JSON body (description, extends, packageRules, …) for any single built-in preset. E.g. `renovate://preset/config:recommended`. |
 
 ## Requirements

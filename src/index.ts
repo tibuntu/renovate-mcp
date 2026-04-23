@@ -23,7 +23,7 @@ const BASE_INSTRUCTIONS = [
   "  6. write_config           — save the agreed-upon config (validates first)",
   "",
   "If any tool fails unexpectedly, call check_setup to diagnose CLI availability.",
-  "Built-in preset reference is available at renovate://presets.",
+  "Built-in preset reference: renovate://presets (namespace index), renovate://presets/{namespace} (one namespace), renovate://preset/{name} (one preset's expanded JSON).",
 ].join("\n");
 
 const setup = await checkSetup();
