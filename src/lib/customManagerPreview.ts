@@ -45,20 +45,22 @@ export interface ExtractedDep {
 }
 
 export interface PreviewOptions {
-  maxFilesScanned?: number;
+  maxFilesWalked?: number;
+  maxFilesMatched?: number;
   maxHitsPerFile?: number;
   matchTimeoutMs?: number;
 }
 
 export interface PreviewResult {
-  filesScanned: number;
+  filesWalked: number;
   filesMatched: string[];
   hits: PreviewHit[];
   extractedDeps: ExtractedDep[];
   warnings: string[];
 }
 
-const DEFAULT_MAX_FILES_SCANNED = 2000;
+const DEFAULT_MAX_FILES_WALKED = 2000;
+const DEFAULT_MAX_FILES_MATCHED = 500;
 const DEFAULT_MAX_HITS_PER_FILE = 100;
 const DEFAULT_MATCH_TIMEOUT_MS = 2000;
 const SKIP_DIRS = new Set([".git", "node_modules"]);
@@ -82,7 +84,8 @@ export async function previewCustomManager(
   options: PreviewOptions = {},
 ): Promise<PreviewResult> {
   const warnings: string[] = [];
-  const maxFilesScanned = options.maxFilesScanned ?? DEFAULT_MAX_FILES_SCANNED;
+  const maxFilesWalked = options.maxFilesWalked ?? DEFAULT_MAX_FILES_WALKED;
+  const maxFilesMatched = options.maxFilesMatched ?? DEFAULT_MAX_FILES_MATCHED;
   const maxHitsPerFile = options.maxHitsPerFile ?? DEFAULT_MAX_HITS_PER_FILE;
   const matchTimeoutMs = options.matchTimeoutMs ?? DEFAULT_MATCH_TIMEOUT_MS;
 
@@ -101,15 +104,15 @@ export async function previewCustomManager(
   // pattern can't pin the event loop on the path-testing phase.
   const allPaths: string[] = [];
   for await (const rel of walk(repoPath)) {
-    if (allPaths.length >= maxFilesScanned) {
+    if (allPaths.length >= maxFilesWalked) {
       warnings.push(
-        `Stopped after scanning ${maxFilesScanned} files. Increase maxFilesScanned to widen the search.`,
+        `Stopped walking the repo after ${maxFilesWalked} files; remaining files were never tested against fileMatch. Add ignores (or a .gitignore) to prune irrelevant directories, or raise maxFilesWalked.`,
       );
       break;
     }
     allPaths.push(rel);
   }
-  const filesScanned = allPaths.length;
+  const filesWalked = allPaths.length;
 
   const matchedSet = new Set<string>();
   for (let i = 0; i < manager.fileMatch.length; i++) {
@@ -124,7 +127,16 @@ export async function previewCustomManager(
     for (const p of res.paths) matchedSet.add(p);
   }
   // Preserve walk order so output is stable.
-  const filesMatched = allPaths.filter((p) => matchedSet.has(p));
+  const allFilesMatched = allPaths.filter((p) => matchedSet.has(p));
+  // Distinct from the walk cap: this caps the *result set*. A broad fileMatch
+  // regex over a large repo can produce thousands of hits; truncate with a
+  // dedicated warning so the user can tell which cap tripped.
+  const filesMatched = allFilesMatched.slice(0, maxFilesMatched);
+  if (allFilesMatched.length > maxFilesMatched) {
+    warnings.push(
+      `fileMatch matched ${allFilesMatched.length} files; capped result set at maxFilesMatched=${maxFilesMatched}. Narrow fileMatch to target the intended paths, or raise maxFilesMatched.`,
+    );
+  }
 
   const hits: PreviewHit[] = [];
   const extractedDeps: ExtractedDep[] = [];
@@ -171,7 +183,7 @@ export async function previewCustomManager(
     }
   }
 
-  return { filesScanned, filesMatched, hits, extractedDeps, warnings };
+  return { filesWalked, filesMatched, hits, extractedDeps, warnings };
 }
 
 function buildExtractedDep(
