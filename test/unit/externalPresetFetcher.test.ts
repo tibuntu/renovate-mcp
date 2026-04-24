@@ -69,13 +69,22 @@ describe("fetchExternalPreset — github", () => {
     expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer ghp_example");
   });
 
-  it("falls back to RENOVATE_TOKEN when GITHUB_TOKEN is unset", async () => {
-    vi.stubEnv("GITHUB_TOKEN", "");
-    vi.stubEnv("RENOVATE_TOKEN", "rnv_example");
+  it("falls back to GITHUB_TOKEN when RENOVATE_TOKEN is unset", async () => {
+    vi.stubEnv("RENOVATE_TOKEN", "");
+    vi.stubEnv("GITHUB_TOKEN", "ghp_fallback");
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
     await fetchExternalPreset(parsePreset("github>acme/cfg"), { fetchImpl });
     const [, init] = fetchImpl.mock.calls[0]!;
-    expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer rnv_example");
+    expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer ghp_fallback");
+  });
+
+  it("prefers RENOVATE_TOKEN over GITHUB_TOKEN when both are set", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "ghp_platform");
+    vi.stubEnv("RENOVATE_TOKEN", "rnv_override");
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
+    await fetchExternalPreset(parsePreset("github>acme/cfg"), { fetchImpl });
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer rnv_override");
   });
 
   it("surfaces a 404 as an unresolved reason", async () => {
@@ -221,7 +230,11 @@ describe("fetchExternalPreset — rate limits", () => {
 });
 
 describe("fetchExternalPreset — gitlab", () => {
-  afterEach(() => vi.restoreAllMocks());
+  beforeEach(() => vi.unstubAllEnvs());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
 
   it("url-encodes the project path and file, and sends PRIVATE-TOKEN when available", async () => {
     vi.stubEnv("GITLAB_TOKEN", "glpat_example");
@@ -232,7 +245,24 @@ describe("fetchExternalPreset — gitlab", () => {
       "https://gitlab.com/api/v4/projects/acme%2Fmy-cfg/repository/files/strict.json/raw?ref=main",
     );
     expect((init?.headers as Record<string, string>)["PRIVATE-TOKEN"]).toBe("glpat_example");
-    vi.unstubAllEnvs();
+  });
+
+  it("prefers RENOVATE_TOKEN over GITLAB_TOKEN when both are set", async () => {
+    vi.stubEnv("GITLAB_TOKEN", "glpat_platform");
+    vi.stubEnv("RENOVATE_TOKEN", "rnv_override");
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
+    await fetchExternalPreset(parsePreset("gitlab>acme/cfg"), { fetchImpl });
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect((init?.headers as Record<string, string>)["PRIVATE-TOKEN"]).toBe("rnv_override");
+  });
+
+  it("falls back to GITLAB_TOKEN when RENOVATE_TOKEN is unset", async () => {
+    vi.stubEnv("RENOVATE_TOKEN", "");
+    vi.stubEnv("GITLAB_TOKEN", "glpat_fallback");
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
+    await fetchExternalPreset(parsePreset("gitlab>acme/cfg"), { fetchImpl });
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect((init?.headers as Record<string, string>)["PRIVATE-TOKEN"]).toBe("glpat_fallback");
   });
 });
 
@@ -302,7 +332,7 @@ describe("fetchExternalPreset — auth failures (401/403)", () => {
         /URL:\s+https:\/\/api\.github\.com\/repos\/acme\/cfg\/contents\/default\.json\?ref=HEAD/,
       );
       expect(result.reason).toMatch(
-        /Credential:\s+none \(tried GITHUB_TOKEN, RENOVATE_TOKEN\)/,
+        /Credential:\s+none \(tried RENOVATE_TOKEN, GITHUB_TOKEN\)/,
       );
       expect(result.reason).toMatch(/Response:\s+.*Requires authentication/);
     }
@@ -321,8 +351,8 @@ describe("fetchExternalPreset — auth failures (401/403)", () => {
     }
   });
 
-  it("names RENOVATE_TOKEN when it supplied the GitHub token (GITHUB_TOKEN unset)", async () => {
-    vi.stubEnv("GITHUB_TOKEN", "");
+  it("names RENOVATE_TOKEN when it wins over GITHUB_TOKEN (both set)", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "ghp_secret_value");
     vi.stubEnv("RENOVATE_TOKEN", "rnv_secret_value");
     const fetchImpl = vi
       .fn<typeof fetch>()
@@ -332,6 +362,7 @@ describe("fetchExternalPreset — auth failures (401/403)", () => {
     if (!result.ok) {
       expect(result.reason).toMatch(/Credential:\s+RENOVATE_TOKEN \(present\)/);
       expect(result.reason).not.toMatch(/rnv_secret_value/);
+      expect(result.reason).not.toMatch(/ghp_secret_value/);
     }
   });
 

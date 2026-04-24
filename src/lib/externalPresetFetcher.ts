@@ -84,7 +84,7 @@ async function fetchGitHub(
   const url = `${apiBase}/repos/${parsed.repoPath}/contents/${encodeFilePath(
     file,
   )}?ref=${encodeURIComponent(ref)}`;
-  const credential = resolveCredential(["GITHUB_TOKEN", "RENOVATE_TOKEN"]);
+  const credential = resolveCredential(["RENOVATE_TOKEN", "GITHUB_TOKEN"]);
   const headers: Record<string, string> = {
     Accept: "application/vnd.github.raw",
     "User-Agent": "renovate-mcp",
@@ -108,7 +108,7 @@ async function fetchGitLab(
   const url = `${apiBase}/projects/${encodeURIComponent(
     parsed.repoPath,
   )}/repository/files/${encodeURIComponent(file)}/raw?ref=${encodeURIComponent(ref)}`;
-  const credential = resolveCredential(["GITLAB_TOKEN", "RENOVATE_TOKEN"]);
+  const credential = resolveCredential(["RENOVATE_TOKEN", "GITLAB_TOKEN"]);
   const headers: Record<string, string> = { "User-Agent": "renovate-mcp" };
   if (credential.token) headers["PRIVATE-TOKEN"] = credential.token;
   return fetchJson(url, headers, timeoutMs, parsed.original, fetchImpl, "gitlab", credential);
