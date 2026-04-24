@@ -31,7 +31,11 @@ export function registerDryRun(server: McpServer): void {
       description:
         "Run Renovate in dry-run mode against a local repository to preview what it would do — no PRs opened, no git pushes. Uses --platform=local so no host token is required. Emits a structured JSON report of the updates Renovate would create.\n\nCredentials for private registries (e.g. `COMPOSER_AUTH` for Packagist/Satis proxies, `NPM_TOKEN` / `.npmrc` for npm, Docker registry creds, `RENOVATE_HOST_RULES` for anything else) must be set on the MCP server process itself — via the `env` key in `claude_desktop_config.json` / `.mcp.json`, not your shell, since the MCP server runs as a child of Claude and does not inherit shell env. Alternatively, encode credentials as `hostRules` in the Renovate config, or pass them per-call via the `hostRules` input on this tool (written to a mode-0600 temp file that is cleaned up after the run; token/password values are scrubbed from `logTail` and `problems`). Per-call `hostRules` are appended to any the repo's own config already declares. If a lookup can't auth to a registry, Renovate often reports 0 updates without a loud error; when that happens this tool surfaces detected auth failures under `problems` in the output so callers can distinguish a genuine \"no updates\" from a silent registry-auth failure.",
       inputSchema: {
-        repoPath: z.string().describe("Absolute path to the repository root"),
+        repoPath: z
+          .string()
+          .describe(
+            "Absolute path to the repository root. Required for the default `platform=local` mode. When `platform` is overridden (e.g. `gitlab` / `github`), Renovate runs against the remote `repository` instead — `repoPath` is still used as the child's working directory but its manifest files are ignored.",
+          ),
         dryRunMode: z
           .enum(["extract", "lookup", "full"])
           .default("full")
@@ -46,6 +50,30 @@ export function registerDryRun(server: McpServer): void {
           .max(15 * 60_000)
           .default(5 * 60_000)
           .describe("Max wait time in ms (default 5 minutes, capped at 15)"),
+        platform: z
+          .enum(["local", "github", "gitlab"])
+          .optional()
+          .describe(
+            "Renovate platform to run as. Default `local` runs against the filesystem at `repoPath`. Set `github` or `gitlab` (with `endpoint` + `token` + `repository`) to run a full remote dry-run — this is what you need when your config extends `local>` presets that live on a private GitHub Enterprise / self-hosted GitLab. Still no PRs opened because `--dry-run` is always set.",
+          ),
+        endpoint: z
+          .string()
+          .optional()
+          .describe(
+            "API base URL for the chosen platform (e.g. `https://gitlab.example.com/api/v4/` or `https://ghe.example.com/api/v3/`). Required with non-default GitHub/GitLab hosts. Ignored when `platform=local`.",
+          ),
+        token: z
+          .string()
+          .optional()
+          .describe(
+            "Platform auth token. Scrubbed from any log output this tool returns. Ignored when `platform=local`.",
+          ),
+        repository: z
+          .string()
+          .optional()
+          .describe(
+            "`owner/repo` identifier of the repository Renovate should operate on. Required when `platform` is not `local`. Ignored when `platform=local`.",
+          ),
         hostRules: z
           .array(hostRuleSchema)
           .optional()
@@ -54,12 +82,30 @@ export function registerDryRun(server: McpServer): void {
           ),
       },
     },
-    async ({ repoPath, dryRunMode, logLevel, timeoutMs, hostRules }, extra) => {
+    async (
+      { repoPath, dryRunMode, logLevel, timeoutMs, platform, endpoint, token, repository, hostRules },
+      extra,
+    ) => {
       const reportPath = path.join(tmpdir(), `renovate-mcp-report-${randomUUID()}.json`);
       const bin = resolveRenovateTool("renovate");
       const ruleList: HostRule[] = hostRules ?? [];
+      const effectivePlatform = platform ?? "local";
+      const isRemotePlatform = effectivePlatform !== "local";
       const secrets = collectSecrets(ruleList);
+      if (token) secrets.push(token);
       let hostRulesConfigPath: string | undefined;
+
+      if (isRemotePlatform && !repository) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text: `\`repository\` is required when \`platform\` is \`${effectivePlatform}\`. Pass the target repo as \`owner/repo\`, or unset \`platform\` to run against the local filesystem at \`repoPath\`.`,
+            },
+          ],
+        };
+      }
 
       // Hybrid progress reporter: a heartbeat tick every HEARTBEAT_MS keeps
       // MCP clients informed during long runs, and each tick enriches its
@@ -90,7 +136,7 @@ export function registerDryRun(server: McpServer): void {
 
       try {
         const args = [
-          "--platform=local",
+          `--platform=${effectivePlatform}`,
           `--dry-run=${dryRunMode}`,
           "--report-type=file",
           `--report-path=${reportPath}`,
@@ -99,6 +145,11 @@ export function registerDryRun(server: McpServer): void {
           LOG_LEVEL: logLevel,
           LOG_FORMAT: "json",
         };
+        if (isRemotePlatform) {
+          if (endpoint) args.push(`--endpoint=${endpoint}`);
+          args.push(`--repository=${repository}`);
+          if (token) childEnv.RENOVATE_TOKEN = token;
+        }
         if (ruleList.length > 0) {
           hostRulesConfigPath = await writeHostRulesConfig(ruleList);
           // Renovate reads this config file via the RENOVATE_CONFIG_FILE env
