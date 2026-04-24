@@ -11,8 +11,10 @@ export type HostRule = Record<string, unknown>;
  * responsible for unlinking the file (in a `finally` block) once Renovate has
  * consumed it — we do not keep a reference here.
  *
- * Renovate merges CLI `--config-file` rules with any repo-level `hostRules`
- * (array concatenation, most-specific match wins), so callers can combine
+ * The caller points Renovate at this file via the `RENOVATE_CONFIG_FILE` env
+ * var (not a CLI flag — `--config-file` is not a real Renovate option).
+ * Renovate merges its rules with any repo-level `hostRules` via array
+ * concatenation (most-specific match wins), so callers can combine
  * per-invocation credentials with whatever the repo itself already declares.
  */
 export async function writeHostRulesConfig(hostRules: HostRule[]): Promise<string> {

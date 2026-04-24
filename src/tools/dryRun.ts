@@ -50,7 +50,7 @@ export function registerDryRun(server: McpServer): void {
           .array(hostRuleSchema)
           .optional()
           .describe(
-            "Optional per-invocation Renovate hostRules for private registry auth. Written to a mode-0600 temp file that is passed via --config-file and deleted after the run. Token/password values are scrubbed from any log output this tool returns. Appended to (not replacing) any hostRules declared in the repo's own config.",
+            "Optional per-invocation Renovate hostRules for private registry auth. Written to a mode-0600 temp file that is passed via the RENOVATE_CONFIG_FILE env var and deleted after the run. Token/password values are scrubbed from any log output this tool returns. Appended to (not replacing) any hostRules declared in the repo's own config.",
           ),
       },
     },
@@ -95,9 +95,16 @@ export function registerDryRun(server: McpServer): void {
           "--report-type=file",
           `--report-path=${reportPath}`,
         ];
+        const childEnv: NodeJS.ProcessEnv = {
+          LOG_LEVEL: logLevel,
+          LOG_FORMAT: "json",
+        };
         if (ruleList.length > 0) {
           hostRulesConfigPath = await writeHostRulesConfig(ruleList);
-          args.push(`--config-file=${hostRulesConfigPath}`);
+          // Renovate reads this config file via the RENOVATE_CONFIG_FILE env
+          // var, not a CLI flag — `--config-file` is not a real Renovate flag
+          // and passing it crashes the CLI with "unknown option".
+          childEnv.RENOVATE_CONFIG_FILE = hostRulesConfigPath;
         }
 
         if (progressEnabled) {
@@ -110,7 +117,7 @@ export function registerDryRun(server: McpServer): void {
 
         const result = await run(bin, args, {
           cwd: repoPath,
-          env: { LOG_LEVEL: logLevel, LOG_FORMAT: "json" },
+          env: childEnv,
           timeoutMs,
           onStdoutLine: progressEnabled
             ? (line) => {
