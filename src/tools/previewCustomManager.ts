@@ -59,9 +59,18 @@ export function registerPreviewCustomManager(server: McpServer): void {
           .max(10_000)
           .optional()
           .describe("Safety cap on matches per file (default 100)"),
+        matchTimeoutMs: z
+          .number()
+          .int()
+          .positive()
+          .max(60_000)
+          .optional()
+          .describe(
+            "Wall-clock budget per regex operation, in milliseconds (default 2000). User-supplied patterns run in a worker thread so catastrophic backtracking can't pin the server; this cap decides how long we wait before aborting a single pattern and emitting a warning.",
+          ),
       },
     },
-    async ({ repoPath, manager, maxFilesScanned, maxHitsPerFile }) => {
+    async ({ repoPath, manager, maxFilesScanned, maxHitsPerFile, matchTimeoutMs }) => {
       if (manager.customType !== "regex") {
         return {
           isError: true,
@@ -78,6 +87,7 @@ export function registerPreviewCustomManager(server: McpServer): void {
         const result = await previewCustomManager(repoPath, manager as CustomManager, {
           maxFilesScanned,
           maxHitsPerFile,
+          matchTimeoutMs,
         });
         return {
           content: [

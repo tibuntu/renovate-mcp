@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { Worker } from "node:worker_threads";
 import ignore, { type Ignore } from "ignore";
 
 export interface CustomManager {
@@ -46,6 +47,7 @@ export interface ExtractedDep {
 export interface PreviewOptions {
   maxFilesScanned?: number;
   maxHitsPerFile?: number;
+  matchTimeoutMs?: number;
 }
 
 export interface PreviewResult {
@@ -58,6 +60,7 @@ export interface PreviewResult {
 
 const DEFAULT_MAX_FILES_SCANNED = 2000;
 const DEFAULT_MAX_HITS_PER_FILE = 100;
+const DEFAULT_MATCH_TIMEOUT_MS = 2000;
 const SKIP_DIRS = new Set([".git", "node_modules"]);
 
 const TEMPLATE_FIELD_MAP: Array<[keyof CustomManager, keyof ExtractedDep]> = [
@@ -81,6 +84,7 @@ export async function previewCustomManager(
   const warnings: string[] = [];
   const maxFilesScanned = options.maxFilesScanned ?? DEFAULT_MAX_FILES_SCANNED;
   const maxHitsPerFile = options.maxHitsPerFile ?? DEFAULT_MAX_HITS_PER_FILE;
+  const matchTimeoutMs = options.matchTimeoutMs ?? DEFAULT_MATCH_TIMEOUT_MS;
 
   if (manager.matchStringsStrategy && manager.matchStringsStrategy !== "any") {
     warnings.push(
@@ -88,24 +92,39 @@ export async function previewCustomManager(
     );
   }
 
-  const fileMatchRes = manager.fileMatch.map((s) => compileRegex(s));
-  const matchStringRes = manager.matchStrings.map((s) => compileRegex(s, "gm"));
+  // Surface malformed user regexes eagerly, before we do any filesystem work.
+  // The Worker path otherwise reports these as generic worker errors.
+  for (const src of manager.fileMatch) validateRegex(src);
+  for (const src of manager.matchStrings) validateRegex(src);
 
-  const filesMatched: string[] = [];
-  let filesScanned = 0;
-
+  // Walk first, then run fileMatch regexes in a worker so a pathological
+  // pattern can't pin the event loop on the path-testing phase.
+  const allPaths: string[] = [];
   for await (const rel of walk(repoPath)) {
-    if (filesScanned >= maxFilesScanned) {
+    if (allPaths.length >= maxFilesScanned) {
       warnings.push(
         `Stopped after scanning ${maxFilesScanned} files. Increase maxFilesScanned to widen the search.`,
       );
       break;
     }
-    filesScanned++;
-    if (fileMatchRes.some((re) => re.test(rel))) {
-      filesMatched.push(rel);
-    }
+    allPaths.push(rel);
   }
+  const filesScanned = allPaths.length;
+
+  const matchedSet = new Set<string>();
+  for (let i = 0; i < manager.fileMatch.length; i++) {
+    const source = manager.fileMatch[i]!;
+    const res = await runTestInWorker(source, "", allPaths, matchTimeoutMs);
+    if (res.timedOut) {
+      warnings.push(
+        `fileMatch[${i}] /${source}/ exceeded ${matchTimeoutMs}ms and was aborted; no paths were matched against this pattern. Simplify the regex (e.g. avoid nested quantifiers like (a+)+) or raise matchTimeoutMs.`,
+      );
+      continue;
+    }
+    for (const p of res.paths) matchedSet.add(p);
+  }
+  // Preserve walk order so output is stable.
+  const filesMatched = allPaths.filter((p) => matchedSet.has(p));
 
   const hits: PreviewHit[] = [];
   const extractedDeps: ExtractedDep[] = [];
@@ -121,23 +140,31 @@ export async function previewCustomManager(
     }
 
     let perFileHits = 0;
-    for (let i = 0; i < matchStringRes.length; i++) {
-      const re = matchStringRes[i]!;
-      // RegExp objects with the `g` flag are stateful — reset before iterating
-      // each file so that previous calls don't shift lastIndex.
-      re.lastIndex = 0;
-      for (const m of content.matchAll(re)) {
+    for (let i = 0; i < manager.matchStrings.length; i++) {
+      const source = manager.matchStrings[i]!;
+      const res = await runMatchAllInWorker(source, "gm", content, matchTimeoutMs);
+      if (res.timedOut) {
+        warnings.push(
+          `${rel}: matchStrings[${i}] /${source}/ exceeded ${matchTimeoutMs}ms and was aborted; any matches in this file for this pattern were skipped. Simplify the regex (e.g. avoid nested quantifiers like (.*)*) or raise matchTimeoutMs.`,
+        );
+        continue;
+      }
+      for (const m of res.matches) {
         if (perFileHits >= maxHitsPerFile) {
           warnings.push(
             `${rel}: capped at ${maxHitsPerFile} hits. Increase maxHitsPerFile to see more.`,
           );
           break;
         }
-        const groups = (m.groups ?? {}) as Record<string, string>;
-        const line = lineNumberAt(content, m.index ?? 0);
-        const matchStr = m[0];
-        hits.push({ file: rel, matchStringIndex: i, line, match: matchStr, groups });
-        extractedDeps.push(buildExtractedDep(rel, line, groups, manager));
+        const line = lineNumberAt(content, m.index);
+        hits.push({
+          file: rel,
+          matchStringIndex: i,
+          line,
+          match: m.match,
+          groups: m.groups,
+        });
+        extractedDeps.push(buildExtractedDep(rel, line, m.groups, manager));
         perFileHits++;
       }
       if (perFileHits >= maxHitsPerFile) break;
@@ -184,16 +211,9 @@ function applyTemplate(tmpl: string, groups: Record<string, string>): string {
   );
 }
 
-function compileRegex(source: string, extraFlags = ""): RegExp {
+function validateRegex(source: string): void {
   try {
-    // De-duplicate flags in case the source already had `g`/`m`.
-    const seen = new Set<string>();
-    const flags = (extraFlags).split("").filter((c) => {
-      if (seen.has(c)) return false;
-      seen.add(c);
-      return true;
-    }).join("");
-    return new RegExp(source, flags);
+    new RegExp(source);
   } catch (err) {
     throw new Error(`Invalid regex /${source}/: ${(err as Error).message}`);
   }
@@ -205,6 +225,116 @@ function lineNumberAt(content: string, index: number): number {
     if (content.charCodeAt(i) === 10 /* \n */) line++;
   }
   return line;
+}
+
+/**
+ * User-supplied regex runs on its own thread with a wall-clock budget. This
+ * keeps catastrophic backtracking (e.g. `(a+)+b` against `aaaa…c`) from
+ * pinning the MCP server's event loop — see issue #56. Inline-eval worker
+ * source avoids any build/dist resolution drift and keeps the worker
+ * dependency-free.
+ */
+type MatchResult = { index: number; match: string; groups: Record<string, string> };
+type WorkerRequest =
+  | { mode: "test"; pattern: string; flags: string; paths: string[] }
+  | { mode: "matchAll"; pattern: string; flags: string; content: string };
+type TestResponse = { ok: true; mode: "test"; paths: string[] };
+type MatchAllResponse = { ok: true; mode: "matchAll"; matches: MatchResult[] };
+type ErrorResponse = { ok: false; error: string };
+type WorkerResponse = TestResponse | MatchAllResponse | ErrorResponse;
+
+const WORKER_SOURCE = `
+const { parentPort, workerData } = require('node:worker_threads');
+try {
+  const { mode, pattern, flags } = workerData;
+  const re = new RegExp(pattern, flags);
+  if (mode === 'test') {
+    const out = [];
+    for (const p of workerData.paths) {
+      re.lastIndex = 0;
+      if (re.test(p)) out.push(p);
+    }
+    parentPort.postMessage({ ok: true, mode: 'test', paths: out });
+  } else {
+    const out = [];
+    for (const m of workerData.content.matchAll(re)) {
+      out.push({
+        index: m.index == null ? 0 : m.index,
+        match: m[0],
+        groups: m.groups == null ? {} : Object.assign({}, m.groups),
+      });
+    }
+    parentPort.postMessage({ ok: true, mode: 'matchAll', matches: out });
+  }
+} catch (err) {
+  parentPort.postMessage({ ok: false, error: err && err.message ? err.message : String(err) });
+}
+`;
+
+async function runWorker(
+  request: WorkerRequest,
+  timeoutMs: number,
+): Promise<WorkerResponse | "timeout"> {
+  const worker = new Worker(WORKER_SOURCE, {
+    eval: true,
+    workerData: request,
+  });
+
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await new Promise<WorkerResponse | "timeout">((resolve, reject) => {
+      timer = setTimeout(() => resolve("timeout"), timeoutMs);
+      worker.once("message", (msg: WorkerResponse) => resolve(msg));
+      worker.once("error", (err) => reject(err));
+      worker.once("exit", (code) => {
+        if (code !== 0 && code !== 1) {
+          // code 1 is the normal exit after terminate(); anything else is a
+          // crash we haven't already captured via 'error'.
+          reject(new Error(`Regex worker exited unexpectedly with code ${code}`));
+        }
+      });
+    });
+  } finally {
+    if (timer) clearTimeout(timer);
+    // terminate() is idempotent and safe to call after the worker already exited.
+    await worker.terminate().catch(() => {});
+  }
+}
+
+async function runTestInWorker(
+  pattern: string,
+  flags: string,
+  paths: string[],
+  timeoutMs: number,
+): Promise<{ timedOut: true } | { timedOut: false; paths: string[] }> {
+  const response = await runWorker(
+    { mode: "test", pattern, flags, paths },
+    timeoutMs,
+  );
+  if (response === "timeout") return { timedOut: true };
+  if (!response.ok) throw new Error(`Regex worker error: ${response.error}`);
+  if (response.mode !== "test") {
+    throw new Error(`Regex worker returned wrong mode: ${response.mode}`);
+  }
+  return { timedOut: false, paths: response.paths };
+}
+
+async function runMatchAllInWorker(
+  pattern: string,
+  flags: string,
+  content: string,
+  timeoutMs: number,
+): Promise<{ timedOut: true } | { timedOut: false; matches: MatchResult[] }> {
+  const response = await runWorker(
+    { mode: "matchAll", pattern, flags, content },
+    timeoutMs,
+  );
+  if (response === "timeout") return { timedOut: true };
+  if (!response.ok) throw new Error(`Regex worker error: ${response.error}`);
+  if (response.mode !== "matchAll") {
+    throw new Error(`Regex worker returned wrong mode: ${response.mode}`);
+  }
+  return { timedOut: false, matches: response.matches };
 }
 
 /**

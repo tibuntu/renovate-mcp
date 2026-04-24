@@ -211,6 +211,65 @@ describe("previewCustomManager", () => {
     expect(result.filesMatched).toEqual(["keep.log"]);
   });
 
+  it("aborts a pathological matchStrings regex within the timeout budget", async () => {
+    // Catastrophic backtracking: `^(a+)+b$` over "aaaa…c" tries exponentially
+    // many partitions of `a`s before failing. With 40 a's this would never
+    // return in a reasonable time on the main thread — but the worker + wall
+    // clock caps it.
+    const pathological = `${"a".repeat(40)}c`;
+    await writeFile(path.join(repo, "victim.txt"), pathological);
+
+    const start = Date.now();
+    const result = await previewCustomManager(
+      repo,
+      {
+        customType: "regex",
+        fileMatch: ["victim\\.txt$"],
+        matchStrings: ["^(a+)+b$"],
+      },
+      { matchTimeoutMs: 300 },
+    );
+    const elapsed = Date.now() - start;
+
+    // The 300ms budget + worker startup + terminate overhead. Allow generous
+    // slack so CI jitter doesn't flake this — the point is it DOES NOT hang.
+    expect(elapsed).toBeLessThan(5_000);
+    expect(result.hits).toEqual([]);
+    expect(
+      result.warnings.some(
+        (w) => /matchStrings\[0\].*exceeded 300ms/.test(w),
+      ),
+    ).toBe(true);
+  });
+
+  it("aborts a pathological fileMatch regex within the timeout budget", async () => {
+    // Same backtracking pathology, but applied during the fileMatch phase
+    // against a long path. The walk happens on the main thread, but the
+    // regex testing is in a worker — so the pathological pattern can't hang
+    // the server.
+    const dir = "a".repeat(60);
+    await mkdir(path.join(repo, dir), { recursive: true });
+    await writeFile(path.join(repo, dir, "x.txt"), "irrelevant");
+
+    const start = Date.now();
+    const result = await previewCustomManager(
+      repo,
+      {
+        customType: "regex",
+        fileMatch: ["^(a+)+b$"],
+        matchStrings: ["(?<v>\\S+)"],
+      },
+      { matchTimeoutMs: 300 },
+    );
+    const elapsed = Date.now() - start;
+
+    expect(elapsed).toBeLessThan(5_000);
+    expect(result.filesMatched).toEqual([]);
+    expect(
+      result.warnings.some((w) => /fileMatch\[0\].*exceeded 300ms/.test(w)),
+    ).toBe(true);
+  });
+
   it("honors maxHitsPerFile and records a warning", async () => {
     const lines = Array.from({ length: 20 }, (_, i) => `pkg=foo${i} ver=${i}`).join("\n");
     await writeFile(path.join(repo, "many.txt"), lines);
