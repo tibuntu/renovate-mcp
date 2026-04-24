@@ -1,5 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, rm, writeFile, readFile, readdir, chmod, symlink } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  rm,
+  writeFile,
+  readFile,
+  readdir,
+  chmod,
+  symlink,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { startServer, type McpSession } from "../helpers/mcpSession.js";
@@ -114,6 +123,31 @@ describe("write_config", () => {
     } finally {
       await rm(outside, { recursive: true, force: true });
     }
+  });
+
+  it("cleans up the tmp file when the final rename fails (issue #57)", async () => {
+    // Simulate a rename failure by pre-creating a non-empty directory at the
+    // target path — fs.rename(tmp, target) fails with ENOTEMPTY / EISDIR on
+    // POSIX. Before the fix, the .renovate-mcp-tmp file was left behind.
+    const validator = await makeFakeValidator(repo, "fake-pass.mjs", 0);
+    session = await startServer({ RENOVATE_CONFIG_VALIDATOR_BIN: validator });
+
+    const targetAsDir = path.join(repo, "renovate.json");
+    await mkdir(targetAsDir);
+    await writeFile(path.join(targetAsDir, "placeholder"), "x");
+
+    await session
+      .request("tools/call", {
+        name: "write_config",
+        arguments: {
+          repoPath: repo,
+          config: { extends: ["config:recommended"] },
+        },
+      })
+      .catch(() => undefined);
+
+    const files = await readdir(repo);
+    expect(files.some((f) => f.endsWith(".renovate-mcp-tmp"))).toBe(false);
   });
 
   it("writes anyway when force=true and validation fails", async () => {

@@ -65,34 +65,55 @@ export function registerWriteConfig(server: McpServer): void {
       await fs.mkdir(path.dirname(target), { recursive: true });
       await fs.writeFile(tmp, payload);
 
-      let valid = false;
-      let validationOutput = "";
-      let validatorMissing = false;
       try {
-        const bin = resolveRenovateTool("renovate-config-validator");
-        const v = await run(bin, [tmp], { timeoutMs: 30_000 });
-        validationOutput = (v.stdout + v.stderr).trim();
-        valid = v.exitCode === 0;
-      } catch (err) {
-        validatorMissing = true;
-        validationOutput = formatMissingBinaryError("renovate-config-validator", err as Error);
-      }
+        let valid = false;
+        let validationOutput = "";
+        let validatorMissing = false;
+        try {
+          const bin = resolveRenovateTool("renovate-config-validator");
+          const v = await run(bin, [tmp], { timeoutMs: 30_000 });
+          validationOutput = (v.stdout + v.stderr).trim();
+          valid = v.exitCode === 0;
+        } catch (err) {
+          validatorMissing = true;
+          validationOutput = formatMissingBinaryError("renovate-config-validator", err as Error);
+        }
 
-      if (!valid && !force) {
-        await fs.unlink(tmp).catch(() => undefined);
+        if (!valid && !force) {
+          return {
+            isError: true,
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  {
+                    wrote: false,
+                    reason: validatorMissing ? "validator-unavailable" : "validation-failed",
+                    validationOutput,
+                    hint: validatorMissing
+                      ? "Install renovate-config-validator (or set RENOVATE_CONFIG_VALIDATOR_BIN), then retry. Pass force=true to skip validation entirely."
+                      : "Pass force=true to write anyway.",
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          };
+        }
+
+        await fs.rename(tmp, target);
         return {
-          isError: true,
           content: [
             {
               type: "text",
               text: JSON.stringify(
                 {
-                  wrote: false,
-                  reason: validatorMissing ? "validator-unavailable" : "validation-failed",
-                  validationOutput,
-                  hint: validatorMissing
-                    ? "Install renovate-config-validator (or set RENOVATE_CONFIG_VALIDATOR_BIN), then retry. Pass force=true to skip validation entirely."
-                    : "Pass force=true to write anyway.",
+                  wrote: true,
+                  path: rel,
+                  bytes: payload.length,
+                  valid,
+                  validationOutput: valid ? undefined : validationOutput,
                 },
                 null,
                 2,
@@ -100,27 +121,11 @@ export function registerWriteConfig(server: McpServer): void {
             },
           ],
         };
+      } finally {
+        // No-op when rename already moved tmp (ENOENT); otherwise cleans up on
+        // validation failure or a mid-flight rename error (see #57).
+        await fs.unlink(tmp).catch(() => undefined);
       }
-
-      await fs.rename(tmp, target);
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(
-              {
-                wrote: true,
-                path: rel,
-                bytes: payload.length,
-                valid,
-                validationOutput: valid ? undefined : validationOutput,
-              },
-              null,
-              2,
-            ),
-          },
-        ],
-      };
     },
   );
 }
