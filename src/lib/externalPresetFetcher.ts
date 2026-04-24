@@ -84,13 +84,13 @@ async function fetchGitHub(
   const url = `${apiBase}/repos/${parsed.repoPath}/contents/${encodeFilePath(
     file,
   )}?ref=${encodeURIComponent(ref)}`;
-  const token = process.env.GITHUB_TOKEN || process.env.RENOVATE_TOKEN;
+  const credential = resolveCredential(["GITHUB_TOKEN", "RENOVATE_TOKEN"]);
   const headers: Record<string, string> = {
     Accept: "application/vnd.github.raw",
     "User-Agent": "renovate-mcp",
   };
-  if (token) headers.Authorization = `Bearer ${token}`;
-  return fetchJson(url, headers, timeoutMs, parsed.original, fetchImpl, "github");
+  if (credential.token) headers.Authorization = `Bearer ${credential.token}`;
+  return fetchJson(url, headers, timeoutMs, parsed.original, fetchImpl, "github", credential);
 }
 
 async function fetchGitLab(
@@ -108,10 +108,24 @@ async function fetchGitLab(
   const url = `${apiBase}/projects/${encodeURIComponent(
     parsed.repoPath,
   )}/repository/files/${encodeURIComponent(file)}/raw?ref=${encodeURIComponent(ref)}`;
-  const token = process.env.GITLAB_TOKEN || process.env.RENOVATE_TOKEN;
+  const credential = resolveCredential(["GITLAB_TOKEN", "RENOVATE_TOKEN"]);
   const headers: Record<string, string> = { "User-Agent": "renovate-mcp" };
-  if (token) headers["PRIVATE-TOKEN"] = token;
-  return fetchJson(url, headers, timeoutMs, parsed.original, fetchImpl, "gitlab");
+  if (credential.token) headers["PRIVATE-TOKEN"] = credential.token;
+  return fetchJson(url, headers, timeoutMs, parsed.original, fetchImpl, "gitlab", credential);
+}
+
+interface Credential {
+  envVar: string | null;
+  token: string | undefined;
+  triedVars: string[];
+}
+
+function resolveCredential(vars: string[]): Credential {
+  for (const envVar of vars) {
+    const value = process.env[envVar];
+    if (value) return { envVar, token: value, triedVars: vars };
+  }
+  return { envVar: null, token: undefined, triedVars: vars };
 }
 
 function presetFileName(parsed: ParsedPreset): string {
@@ -163,6 +177,7 @@ async function fetchJson(
   presetName: string,
   fetchImpl: typeof fetch,
   platform: Platform,
+  credential: Credential,
 ): Promise<FetchResult> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -171,6 +186,13 @@ async function fetchJson(
     if (!res.ok) {
       const rateLimit = detectRateLimit(res, platform, presetName);
       if (rateLimit) return { ok: false, reason: rateLimit };
+      if (res.status === 401 || res.status === 403) {
+        const body = await safeReadText(res);
+        return {
+          ok: false,
+          reason: formatAuthFailure(res.status, presetName, url, credential, body),
+        };
+      }
       return {
         ok: false,
         reason: `HTTP ${res.status}${res.statusText ? ` ${res.statusText}` : ""} when fetching ${presetName}`,
@@ -207,4 +229,40 @@ async function fetchJson(
   } finally {
     clearTimeout(timer);
   }
+}
+
+const AUTH_BODY_MAX = 500;
+
+async function safeReadText(res: Response): Promise<string> {
+  try {
+    return await res.text();
+  } catch {
+    return "";
+  }
+}
+
+function formatAuthFailure(
+  status: number,
+  presetName: string,
+  url: string,
+  credential: Credential,
+  body: string,
+): string {
+  const lines: string[] = [`HTTP ${status} when fetching ${presetName}`];
+  lines.push(`  URL:         ${url}`);
+  lines.push(`  Credential:  ${formatCredential(credential)}`);
+  const trimmed = body.trim();
+  if (trimmed) {
+    const snippet =
+      trimmed.length > AUTH_BODY_MAX
+        ? `${trimmed.slice(0, AUTH_BODY_MAX)}… [truncated]`
+        : trimmed;
+    lines.push(`  Response:    ${snippet}`);
+  }
+  return lines.join("\n");
+}
+
+function formatCredential(credential: Credential): string {
+  if (credential.envVar) return `${credential.envVar} (present)`;
+  return `none (tried ${credential.triedVars.join(", ")})`;
 }
