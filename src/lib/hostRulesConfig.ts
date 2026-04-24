@@ -44,16 +44,23 @@ export function collectSecrets(hostRules: HostRule[]): string[] {
   return [...out];
 }
 
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 /**
  * Replace every literal occurrence of any secret in `text` with `[REDACTED]`.
  * No-op when `secrets` is empty.
  */
 export function scrubSecrets(text: string, secrets: string[]): string {
-  if (!secrets.length) return text;
-  let result = text;
-  for (const secret of secrets) {
-    if (!secret) continue;
-    result = result.split(secret).join("[REDACTED]");
-  }
-  return result;
+  // Sort by length descending so that when one secret is a substring of
+  // another, the longer one wins the greedy regex alternation instead of
+  // being partially chewed up by the shorter one.
+  const alternatives = secrets
+    .filter((s) => s.length > 0)
+    .sort((a, b) => b.length - a.length)
+    .map(escapeRegex);
+  if (!alternatives.length) return text;
+  const pattern = new RegExp(alternatives.join("|"), "g");
+  return text.replace(pattern, "[REDACTED]");
 }

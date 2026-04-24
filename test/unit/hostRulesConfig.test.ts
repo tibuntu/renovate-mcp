@@ -104,4 +104,18 @@ describe("scrubSecrets", () => {
     const input = "abcdef";
     expect(scrubSecrets(input, [""])).toBe(input);
   });
+
+  it("prefers the longer secret when one is a substring of another", () => {
+    // "tok" appears inside "tok-long". Without a length-desc sort, the shorter
+    // secret could chew a prefix out of the longer one and leave a stray
+    // suffix behind.
+    const out = scrubSecrets("value=tok-long and also tok alone", ["tok", "tok-long"]);
+    expect(out).toBe("value=[REDACTED] and also [REDACTED] alone");
+  });
+
+  it("treats regex metacharacters in secrets as literal text", () => {
+    const secret = "a.b*c+?|$(d)";
+    const out = scrubSecrets(`before ${secret} after`, [secret]);
+    expect(out).toBe("before [REDACTED] after");
+  });
 });
