@@ -38,7 +38,7 @@ const suppressBanner = requireCliRaw === "false" || requireCliRaw === "0";
 const banner = suppressBanner ? null : startupBanner(setup);
 const instructions = banner ? [BASE_INSTRUCTIONS, "", banner].join("\n") : BASE_INSTRUCTIONS;
 
-const SERVER_VERSION = "0.4.0"; // x-release-please-version
+const SERVER_VERSION = "0.5.0"; // x-release-please-version
 
 const server = new McpServer({ name: "renovate-mcp", version: SERVER_VERSION }, { instructions });
 
