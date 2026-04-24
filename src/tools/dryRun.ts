@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { run, resolveRenovateTool, formatMissingBinaryError } from "../lib/renovateCli.js";
+import { detectLookupProblems } from "../lib/lookupProblems.js";
 
 export function registerDryRun(server: McpServer): void {
   server.registerTool(
@@ -12,7 +13,7 @@ export function registerDryRun(server: McpServer): void {
     {
       title: "Dry-run Renovate",
       description:
-        "Run Renovate in dry-run mode against a local repository to preview what it would do — no PRs opened, no git pushes. Uses --platform=local so no host token is required. Emits a structured JSON report of the updates Renovate would create.",
+        "Run Renovate in dry-run mode against a local repository to preview what it would do — no PRs opened, no git pushes. Uses --platform=local so no host token is required. Emits a structured JSON report of the updates Renovate would create.\n\nCredentials for private registries (e.g. `COMPOSER_AUTH` for Packagist/Satis proxies, `NPM_TOKEN` / `.npmrc` for npm, Docker registry creds, `RENOVATE_HOST_RULES` for anything else) must be set on the MCP server process itself — via the `env` key in `claude_desktop_config.json` / `.mcp.json`, not your shell, since the MCP server runs as a child of Claude and does not inherit shell env. Alternatively, encode credentials as `hostRules` in the Renovate config. If a lookup can't auth to a registry, Renovate often reports 0 updates without a loud error; when that happens this tool surfaces detected auth failures under `problems` in the output so callers can distinguish a genuine \"no updates\" from a silent registry-auth failure.",
       inputSchema: {
         repoPath: z.string().describe("Absolute path to the repository root"),
         dryRunMode: z
@@ -64,6 +65,11 @@ export function registerDryRun(server: McpServer): void {
           hasReport: report !== null,
           report,
         };
+
+        const problems = detectLookupProblems(`${result.stderr}\n${result.stdout}`);
+        if (problems.length > 0) {
+          summary.problems = problems;
+        }
 
         // If no structured report, surface the last bit of stderr so Claude can
         // debug without blowing up the context with Renovate's verbose logs.
