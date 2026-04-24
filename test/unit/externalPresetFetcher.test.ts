@@ -157,14 +157,14 @@ describe("fetchExternalPreset — rate limits", () => {
     }
   });
 
-  it("keeps the generic HTTP message for a GitHub 403 without the rate-limit header", async () => {
+  it("does not classify a GitHub 403 without the rate-limit header as rate-limited", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
       makeResponse("forbidden", { status: 403, statusText: "Forbidden" }),
     );
     const result = await fetchExternalPreset(parsePreset("github>acme/cfg"), { fetchImpl });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.reason).toMatch(/HTTP 403 Forbidden/);
+      expect(result.reason).toMatch(/HTTP 403 when fetching/);
       expect(result.reason).not.toMatch(/rate limit/i);
     }
   });
@@ -273,6 +273,143 @@ describe("fetchExternalPreset — endpoint override", () => {
     expect(url).toBe(
       "https://ghe.example.com/api/v3/repos/acme/cfg/contents/default.json?ref=HEAD",
     );
+  });
+});
+
+describe("fetchExternalPreset — auth failures (401/403)", () => {
+  beforeEach(() => vi.unstubAllEnvs());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it("reports 'none (tried …)' credential source when no GitHub token is set", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "");
+    vi.stubEnv("RENOVATE_TOKEN", "");
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        makeResponse({ message: "Requires authentication" }, {
+          status: 401,
+          statusText: "Unauthorized",
+        }),
+      );
+    const result = await fetchExternalPreset(parsePreset("github>acme/cfg"), { fetchImpl });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toMatch(/HTTP 401 when fetching github>acme\/cfg/);
+      expect(result.reason).toMatch(
+        /URL:\s+https:\/\/api\.github\.com\/repos\/acme\/cfg\/contents\/default\.json\?ref=HEAD/,
+      );
+      expect(result.reason).toMatch(
+        /Credential:\s+none \(tried GITHUB_TOKEN, RENOVATE_TOKEN\)/,
+      );
+      expect(result.reason).toMatch(/Response:\s+.*Requires authentication/);
+    }
+  });
+
+  it("names the specific env var that supplied the GitHub token", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "ghp_secret_value");
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(makeResponse("Bad credentials", { status: 401, statusText: "Unauthorized" }));
+    const result = await fetchExternalPreset(parsePreset("github>acme/cfg"), { fetchImpl });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toMatch(/Credential:\s+GITHUB_TOKEN \(present\)/);
+      expect(result.reason).not.toMatch(/ghp_secret_value/);
+    }
+  });
+
+  it("names RENOVATE_TOKEN when it supplied the GitHub token (GITHUB_TOKEN unset)", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "");
+    vi.stubEnv("RENOVATE_TOKEN", "rnv_secret_value");
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(makeResponse("Bad credentials", { status: 401, statusText: "Unauthorized" }));
+    const result = await fetchExternalPreset(parsePreset("github>acme/cfg"), { fetchImpl });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toMatch(/Credential:\s+RENOVATE_TOKEN \(present\)/);
+      expect(result.reason).not.toMatch(/rnv_secret_value/);
+    }
+  });
+
+  it("includes JSON response body verbatim on a GitLab 401", async () => {
+    vi.stubEnv("GITLAB_TOKEN", "glpat_secret");
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      makeResponse(
+        { message: "401 Unauthorized" },
+        { status: 401, statusText: "Unauthorized" },
+      ),
+    );
+    const result = await fetchExternalPreset(parsePreset("gitlab>foo/bar"), { fetchImpl });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toMatch(/HTTP 401 when fetching gitlab>foo\/bar/);
+      expect(result.reason).toMatch(
+        /URL:\s+https:\/\/gitlab\.com\/api\/v4\/projects\/foo%2Fbar\/repository\/files\/default\.json\/raw\?ref=HEAD/,
+      );
+      expect(result.reason).toMatch(/Credential:\s+GITLAB_TOKEN \(present\)/);
+      expect(result.reason).toMatch(/Response:\s+\{"message":"401 Unauthorized"\}/);
+      expect(result.reason).not.toMatch(/glpat_secret/);
+    }
+  });
+
+  it("omits the Response line when the body is empty", async () => {
+    vi.stubEnv("GITLAB_TOKEN", "glpat_secret");
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(makeResponse("", { status: 401, statusText: "Unauthorized" }));
+    const result = await fetchExternalPreset(parsePreset("gitlab>foo/bar"), { fetchImpl });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toMatch(/HTTP 401 when fetching gitlab>foo\/bar/);
+      expect(result.reason).toMatch(/Credential:\s+GITLAB_TOKEN \(present\)/);
+      expect(result.reason).not.toMatch(/Response:/);
+    }
+  });
+
+  it("enriches a non-rate-limit GitHub 403 with credential and URL context", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "ghp_secret");
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        makeResponse("Resource not accessible by integration", {
+          status: 403,
+          statusText: "Forbidden",
+        }),
+      );
+    const result = await fetchExternalPreset(parsePreset("github>acme/cfg"), { fetchImpl });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toMatch(/HTTP 403 when fetching github>acme\/cfg/);
+      expect(result.reason).toMatch(/Credential:\s+GITHUB_TOKEN \(present\)/);
+      expect(result.reason).toMatch(/Response:\s+Resource not accessible by integration/);
+      expect(result.reason).not.toMatch(/ghp_secret/);
+      expect(result.reason).not.toMatch(/rate limit/i);
+    }
+  });
+
+  it("leaves the rate-limit message untouched on a GitHub 403 with X-RateLimit-Remaining: 0", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "ghp_secret");
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      makeResponse(
+        { message: "API rate limit exceeded" },
+        {
+          status: 403,
+          statusText: "Forbidden",
+          headers: { "X-RateLimit-Remaining": "0" },
+        },
+      ),
+    );
+    const result = await fetchExternalPreset(parsePreset("github>acme/cfg"), { fetchImpl });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toMatch(/GitHub API rate limit exceeded/);
+      expect(result.reason).not.toMatch(/Credential:/);
+      expect(result.reason).not.toMatch(/^\s+URL:/m);
+    }
   });
 });
 
