@@ -2,6 +2,20 @@
 
 An MCP server for designing [Renovate](https://github.com/renovatebot/renovate) configurations interactively. Point it at a local repo and let an LLM help you read, validate, preview, and save `renovate.json`.
 
+## Contents
+
+- [What it does](#what-it-does)
+- [What this is NOT](#what-this-is-not)
+- [Requirements](#requirements)
+- [Install](#install)
+- [Use with Claude Code](#use-with-claude-code)
+- [Use with Claude Desktop](#use-with-claude-desktop)
+- [Example prompts](#example-prompts)
+- [Example session](#example-session)
+- [Development](#development)
+- [Release flow](#release-flow)
+- [Design notes](#design-notes)
+
 ## What it does
 
 Eight tools plus a preset reference:
