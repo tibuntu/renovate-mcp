@@ -22,6 +22,23 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_GITHUB_API_BASE = "https://api.github.com";
 const DEFAULT_GITLAB_API_BASE = "https://gitlab.com/api/v4";
 
+let defaultFetchImpl: typeof fetch | undefined;
+
+/**
+ * Test-only seam: override the default fetch implementation used when
+ * `FetchOptions.fetchImpl` is not passed. Lets the integration suite drive
+ * `resolve_config` end-to-end without a real HTTP server, since the tool
+ * handler doesn't accept a `fetchImpl` argument. Pair with
+ * `resetDefaultFetchImpl()` in afterEach so nothing leaks between tests.
+ */
+export function setDefaultFetchImpl(impl: typeof fetch): void {
+  defaultFetchImpl = impl;
+}
+
+export function resetDefaultFetchImpl(): void {
+  defaultFetchImpl = undefined;
+}
+
 function trimTrailingSlash(url: string): string {
   return url.replace(/\/+$/, "");
 }
@@ -51,7 +68,7 @@ function dispatch(parsed: ParsedPreset, options: FetchOptions): Promise<FetchRes
   }
 
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const fetchImpl = options.fetchImpl ?? globalThis.fetch;
+  const fetchImpl = options.fetchImpl ?? defaultFetchImpl ?? globalThis.fetch;
   const endpoint = options.endpoint ? trimTrailingSlash(options.endpoint) : undefined;
 
   switch (parsed.source) {
