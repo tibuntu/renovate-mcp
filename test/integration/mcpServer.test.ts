@@ -228,6 +228,58 @@ describe("lint_config end-to-end", () => {
     });
   });
 
+  it("lints a .renovaterc.json5 file with JSON5-only syntax via configPath", async () => {
+    const configPath = path.join(repo, ".renovaterc.json5");
+    await writeFile(
+      configPath,
+      [
+        "// Renovate config authored in JSON5",
+        "{",
+        "  extends: ['config:recommended'],",
+        "  packageRules: [",
+        "    {",
+        "      // unwrapped regex — should trip the linter",
+        "      matchDepNames: ['foo.+'],",
+        "    },",
+        "  ],",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    session = await startServer();
+    const res = await session.request<{
+      isError?: boolean;
+      content: Array<{ type: string; text: string }>;
+    }>("tools/call", {
+      name: "lint_config",
+      arguments: { configPath },
+    });
+    expect(res.result?.isError).toBeFalsy();
+    const parsed = JSON.parse(res.result?.content[0]?.text ?? "{}");
+    expect(parsed.clean).toBe(false);
+    expect(parsed.findings[0]).toMatchObject({
+      ruleId: "unwrapped-regex",
+      path: "packageRules[0].matchDepNames[0]",
+    });
+  });
+
+  it("reports isError with a helpful message for malformed JSON5", async () => {
+    const configPath = path.join(repo, ".renovaterc.json5");
+    await writeFile(configPath, "{ extends: ['config:recommended', }");
+    session = await startServer();
+    const res = await session.request<{
+      isError?: boolean;
+      content: Array<{ type: string; text: string }>;
+    }>("tools/call", {
+      name: "lint_config",
+      arguments: { configPath },
+    });
+    expect(res.result?.isError).toBe(true);
+    expect(res.result?.content[0]?.text).toContain("Failed to read or parse config at");
+    expect(res.result?.content[0]?.text).toContain(configPath);
+    expect(res.result?.content[0]?.text).toContain("JSON5:");
+  });
+
   it("reports isError when neither input is supplied", async () => {
     session = await startServer();
     const res = await session.request<{
