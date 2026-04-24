@@ -79,6 +79,15 @@ export function registerPreviewCustomManager(server: McpServer): void {
           .describe(
             "Wall-clock budget per regex operation, in milliseconds (default 2000). User-supplied patterns run in a worker thread so catastrophic backtracking can't pin the server; this cap decides how long we wait before aborting a single pattern and emitting a warning.",
           ),
+        maxFileBytes: z
+          .number()
+          .int()
+          .positive()
+          .max(1024 * 1024 * 1024)
+          .optional()
+          .describe(
+            "Per-file size cap in bytes (default 5242880 = 5 MiB). Files whose size exceeds this are skipped with a warning instead of being read into memory — protects against OOM when fileMatch catches a lockfile, generated artifact, or other oversized file.",
+          ),
       },
     },
     async ({
@@ -88,6 +97,7 @@ export function registerPreviewCustomManager(server: McpServer): void {
       maxFilesMatched,
       maxHitsPerFile,
       matchTimeoutMs,
+      maxFileBytes,
     }) => {
       if (manager.customType !== "regex") {
         return {
@@ -107,6 +117,7 @@ export function registerPreviewCustomManager(server: McpServer): void {
           maxFilesMatched,
           maxHitsPerFile,
           matchTimeoutMs,
+          maxFileBytes,
         });
         return {
           content: [
