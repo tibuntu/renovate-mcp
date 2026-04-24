@@ -25,6 +25,52 @@ const hostRuleSchema = z
   );
 
 /**
+ * Walk Renovate's JSON report looking for `problems` arrays and collect the
+ * ones that represent failed runs — not informational notices. Criteria:
+ *   - `level >= 40` (Renovate's bunyan-derived ERROR/FATAL bands), or
+ *   - `message === "config-validation"` (Renovate's canonical config-failure
+ *     marker — it can appear with lower levels but still means the run was
+ *     effectively a no-op), or
+ *   - the problem object has a `validationError` field (preset/extends
+ *     resolution failures carry their explanation here).
+ *
+ * The report shape isn't a stable Renovate API, so we walk defensively: any
+ * nested `problems` array anywhere in the tree is inspected.
+ */
+function collectReportErrors(report: unknown): Array<Record<string, unknown>> {
+  const out: Array<Record<string, unknown>> = [];
+  const seen = new Set<object>();
+  const visit = (node: unknown): void => {
+    if (node === null || typeof node !== "object") return;
+    if (seen.has(node)) return;
+    seen.add(node);
+    if (Array.isArray(node)) {
+      for (const entry of node) visit(entry);
+      return;
+    }
+    const obj = node as Record<string, unknown>;
+    const problems = obj.problems;
+    if (Array.isArray(problems)) {
+      for (const raw of problems) {
+        if (!raw || typeof raw !== "object") continue;
+        const p = raw as Record<string, unknown>;
+        const level = typeof p.level === "number" ? p.level : 0;
+        const isErrorLevel = level >= 40;
+        const isConfigValidation = p.message === "config-validation";
+        const hasValidationError =
+          typeof p.validationError === "string" && p.validationError.length > 0;
+        if (isErrorLevel || isConfigValidation || hasValidationError) {
+          out.push(p);
+        }
+      }
+    }
+    for (const value of Object.values(obj)) visit(value);
+  };
+  visit(report);
+  return out;
+}
+
+/**
  * Scan the repo's Renovate config for `extends` entries of the form
  * `local>owner/repo[:preset]` and return them along with the config-file path
  * they were found in. Returns `null` if no config is found (Renovate will
@@ -246,7 +292,16 @@ export function registerDryRun(server: McpServer): void {
           // no report produced (e.g., renovate errored before writing)
         }
 
+        const reportErrors = collectReportErrors(report);
+
         const summary: Record<string, unknown> = {
+          // `ok` collapses the three failure modes (spawn error, non-zero
+          // exit, in-report validation/error-level problems) into a single
+          // field so callers don't need to know which one fired. Renovate
+          // frequently writes a report with exitCode=0 while its `problems`
+          // array records a validation/config failure — judging only by
+          // exitCode hides those runs.
+          ok: result.exitCode === 0 && reportErrors.length === 0,
           exitCode: result.exitCode,
           hasReport: report !== null,
           report,
@@ -258,6 +313,10 @@ export function registerDryRun(server: McpServer): void {
         const problems = detectLookupProblems(`${scrubbedStderr}\n${scrubbedStdout}`);
         if (problems.length > 0) {
           summary.problems = problems;
+        }
+
+        if (reportErrors.length > 0) {
+          summary.reportErrors = reportErrors;
         }
 
         // If no structured report, surface the last bit of stderr so Claude can
@@ -286,7 +345,7 @@ export function registerDryRun(server: McpServer): void {
               text: JSON.stringify(summary, null, 2),
             },
           ],
-          isError: result.exitCode !== 0,
+          isError: !summary.ok,
         };
       } catch (err) {
         return {

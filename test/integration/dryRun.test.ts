@@ -393,6 +393,83 @@ process.exit(0);
     expect(res.result?.isError).toBeFalsy();
   });
 
+  it("reports ok=false and isError=true when the report contains a validationError even with exitCode=0", async () => {
+    // Fake Renovate that writes a report containing a config-validation
+    // problem and exits 0 — exactly the failure mode the original feedback
+    // flagged (exit 0, empty branches, but the run did nothing useful).
+    const fakeBin = path.join(repo, "validation-error-renovate.mjs");
+    await writeFile(
+      fakeBin,
+      `#!/usr/bin/env node
+import { writeFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+const reportArg = args.find(a => a.startsWith('--report-path='));
+const report = {
+  repositories: {
+    'local': {
+      problems: [
+        {
+          level: 30,
+          message: 'config-validation',
+          validationError: 'Preset caused unexpected error (local>devops/bots/renovate)',
+        },
+      ],
+      branches: [],
+      packageFiles: {},
+    },
+  },
+};
+if (reportArg) {
+  writeFileSync(reportArg.slice('--report-path='.length), JSON.stringify(report));
+}
+process.exit(0);
+`,
+    );
+    await chmod(fakeBin, 0o755);
+    session = await startServer({ RENOVATE_BIN: fakeBin });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: { repoPath: repo },
+    });
+
+    expect(res.result?.isError).toBe(true);
+    const body = JSON.parse(res.result!.content[0]!.text) as {
+      ok: boolean;
+      exitCode: number;
+      reportErrors?: unknown[];
+    };
+    expect(body.ok).toBe(false);
+    expect(body.exitCode).toBe(0);
+    expect(body.reportErrors).toBeDefined();
+    expect(Array.isArray(body.reportErrors)).toBe(true);
+    expect(body.reportErrors!.length).toBeGreaterThan(0);
+  });
+
+  it("reports ok=true when the report is clean and exit is 0", async () => {
+    const fakeBin = await makeArgvEnvDump(repo);
+    session = await startServer({ RENOVATE_BIN: fakeBin });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: { repoPath: repo },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    const body = JSON.parse(res.result!.content[0]!.text) as {
+      ok: boolean;
+      reportErrors?: unknown[];
+    };
+    expect(body.ok).toBe(true);
+    expect(body.reportErrors).toBeUndefined();
+  });
+
   it("scrubs platform token from stderr logTail", async () => {
     const leakyBin = path.join(repo, "leaky-token.mjs");
     await writeFile(
