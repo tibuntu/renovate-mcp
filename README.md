@@ -19,6 +19,13 @@ Seven tools plus a preset reference:
 | `renovate://presets/{namespace}` (resource template) | Markdown listing of every preset in a single namespace (e.g. `renovate://presets/config`). Fetch this instead of the full index when the LLM only cares about one namespace — cuts token cost by roughly 1/N where N is the number of namespaces. |
 | `renovate://preset/{name}` (resource template) | Expanded JSON body (description, extends, packageRules, …) for any single built-in preset. E.g. `renovate://preset/config:recommended`. |
 
+## What this is NOT
+
+- **Not a Renovate replacement.** This server doesn't open PRs, run scheduled updates, or execute in CI — it's a design-time companion for a local `renovate.json`. Use the real Renovate for the actual dependency-update pipeline.
+- **`resolve_config` is preview-quality.** Preset expansion runs against a committed snapshot, and template substitution implements only positional `{{argN}}` placeholders — non-positional tokens and Handlebars helpers are flagged in `warnings` and pass through verbatim. For authoritative output, run `dry_run`.
+- **`preview_custom_manager` is a subset of Renovate's regex manager.** It covers `customType: "regex"`, `matchStringsStrategy: "any"`, and `{{groupName}}` template substitution only — other custom types, other strategies, and full Handlebars (helpers, conditionals) are not implemented. Use it for fast regex iteration; confirm with `dry_run`.
+- **`validate_config` / `dry_run` aren't exercised in CI.** CI deliberately doesn't install Renovate, so tools that shell out to it are only covered by unit/integration tests that don't require the binary. Run them locally against the Renovate install you intend to deploy with.
+
 ## Requirements
 
 - Node.js ≥ 24 (aligns with Renovate's own engine requirement).
@@ -113,6 +120,32 @@ Once the server is wired up, try prompts like these. They're written for Claude 
 - "Do a dry run and show me which PRs Renovate would open — no pushes."
 - "Add `:semanticCommits` to my `extends`, validate it, and save back to `renovate.json`."
 
+## Example session
+
+A transcript-style walkthrough: design a Dockerfile custom manager from scratch, validate it, dry-run, and save. Turns are abbreviated — your client will show the actual tool-call JSON.
+
+> **You:** I've got `# renovate: datasource=docker depName=<image>` comments above `FROM` lines in my Dockerfiles. Draft a `customManagers` entry and preview it against this repo.
+>
+> **Claude** calls `preview_custom_manager` with a first-draft `fileMatch` + `matchStrings`.
+> → 4 Dockerfiles matched `fileMatch`, 0 lines matched `matchStrings`. The regex anchored on `ARG`, but the Dockerfiles use `FROM`.
+>
+> **You:** Rewrite `matchStrings` to anchor on the renovate comment, then `FROM <image>:<version>` on the next line.
+>
+> **Claude** calls `preview_custom_manager` again with the fixed regex.
+> → 4 files, 4 line hits. Extracted: `postgres:15.3-alpine`, `redis:7.2`, `nginx:1.25`, `node:20.11`. Named groups `depName` and `currentValue` populated on every hit.
+>
+> **You:** Good. Validate the full config inline, with this `customManagers` entry alongside my existing `extends`.
+>
+> **Claude** calls `validate_config` with the inline config. → valid.
+>
+> **You:** Now dry-run so I can see what Renovate would actually open.
+>
+> **Claude** calls `dry_run`. → 2 updates: `postgres` 15.3-alpine → 15.5-alpine, `redis` 7.2 → 7.4. No entries in `problems`.
+>
+> **You:** Save it.
+>
+> **Claude** calls `write_config` on `renovate.json`. → validated, written atomically.
+
 ## Development
 
 ```bash
@@ -144,10 +177,12 @@ Secrets required on the repo: `RELEASE_PLEASE_TOKEN` (a PAT for release-please).
 
 ## Design notes
 
+Scope and non-goals are summarized in [What this is NOT](#what-this-is-not); this section covers implementation decisions behind the scope that *is* supported.
+
 - `validate_config`, `dry_run`, and `write_config` shell out to the Renovate CLI rather than importing Renovate as a library — this decouples our Node version from Renovate's (currently Node 24).
 - `resolve_config` and `preview_custom_manager` are fully in-process and never invoke the Renovate CLI, so they work without a Renovate install.
 - `preview_custom_manager` honors `.gitignore` (including nested `.gitignore`s and `.git/info/exclude`) when walking the repo, so generated/vendored directories like `dist/`, `.next/`, `target/`, `__pycache__/` don't crowd out real hits against the `maxFilesScanned` cap. `node_modules/` and `.git/` are always skipped as a safety net even when no `.gitignore` is present.
 - `resolve_config` expands `extends` against a committed snapshot of Renovate's built-in presets (`src/data/presets.generated.ts`). External `github>` / `gitlab>` fetching is opt-in, uses each platform's contents API with a 10 s timeout, and caches results per call. The `endpoint` input swaps in a custom API base for GHE / self-hosted GitLab; `platform` additionally rewrites `local>` presets to be fetched against that endpoint.
-- `resolve_config`'s template substitution is intentionally a subset of Renovate's: only positional `{{argN}}` placeholders are filled. Under-argument cases (`{{arg2}}` referenced when only one arg was passed) and non-positional tokens (`{{packageRules}}`, Handlebars helpers like `{{#if …}}`) surface as structured entries in the response's `warnings` array — the former substitutes an empty string; the latter passes through verbatim. Run `dry_run` for a full-fidelity expansion via the Renovate CLI.
+- When `resolve_config` encounters template tokens outside its supported subset, it records a structured entry in `warnings`: under-argument cases (`{{arg2}}` referenced when only one arg was passed) substitute an empty string, while non-positional tokens (`{{packageRules}}`, Handlebars helpers like `{{#if …}}`) pass through verbatim.
 - `dry_run` uses `--report-type=file` so we get a structured JSON report instead of scraping stdout. When a `hostRules` input is passed it's written to a mode-0600 temp file in `os.tmpdir()`, handed to Renovate via `--config-file=`, and deleted in a `finally` block. Token/password values are scrubbed from both the detected `problems` list and the `logTail` fallback before returning.
 - `write_config` writes to a temp file, validates, then atomically renames — so a failed validation never leaves a broken config on disk.
