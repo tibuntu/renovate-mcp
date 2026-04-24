@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { Worker } from "node:worker_threads";
 import ignore, { type Ignore } from "ignore";
+import { toMessage } from "./errors.js";
 
 export interface CustomManager {
   customType: string;
@@ -150,7 +151,7 @@ export async function previewCustomManager(
     try {
       stat = await fs.stat(abs);
     } catch (err) {
-      warnings.push(`Could not stat ${rel}: ${(err as Error).message}`);
+      warnings.push(`Could not stat ${rel}: ${toMessage(err)}`);
       continue;
     }
     if (stat.size > maxFileBytes) {
@@ -163,7 +164,7 @@ export async function previewCustomManager(
     try {
       content = await fs.readFile(abs, "utf8");
     } catch (err) {
-      warnings.push(`Could not read ${rel}: ${(err as Error).message}`);
+      warnings.push(`Could not read ${rel}: ${toMessage(err)}`);
       continue;
     }
 
@@ -243,7 +244,7 @@ function validateRegex(source: string): void {
   try {
     new RegExp(source);
   } catch (err) {
-    throw new Error(`Invalid regex /${source}/: ${(err as Error).message}`);
+    throw new Error(`Invalid regex /${source}/: ${toMessage(err)}`);
   }
 }
 

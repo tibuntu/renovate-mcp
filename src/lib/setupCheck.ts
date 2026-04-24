@@ -1,4 +1,5 @@
 import { run, resolveRenovateTool } from "./renovateCli.js";
+import { toMessage } from "./errors.js";
 
 export type RenovateBinary = "renovate" | "renovate-config-validator";
 
@@ -47,7 +48,7 @@ async function checkBinary(tool: RenovateBinary): Promise<BinaryStatus> {
       tool,
       command,
       found: false,
-      error: (err as Error).message,
+      error: toMessage(err),
     };
   }
 }

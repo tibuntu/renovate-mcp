@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { toMessage } from "./errors.js";
 
 export interface RunResult {
   stdout: string;
@@ -84,11 +85,11 @@ export function resolveRenovateTool(tool: "renovate" | "renovate-config-validato
  */
 export function formatMissingBinaryError(
   tool: "renovate" | "renovate-config-validator",
-  cause: Error,
+  cause: unknown,
 ): string {
   const envKey = tool === "renovate" ? "RENOVATE_BIN" : "RENOVATE_CONFIG_VALIDATOR_BIN";
   return [
-    `Failed to run \`${tool}\`: ${cause.message}.`,
+    `Failed to run \`${tool}\`: ${toMessage(cause)}.`,
     `Install Renovate globally with \`npm i -g renovate\`, or set ${envKey} to point at an existing binary.`,
     "Call the `check_setup` tool for a full diagnostic.",
   ].join(" ");

@@ -1,4 +1,5 @@
 import { classifyExternalSource, type ParsedPreset } from "./presetResolver.js";
+import { toMessage } from "./errors.js";
 
 export interface FetchOptions {
   timeoutMs?: number;
@@ -228,12 +229,11 @@ async function fetchJson(
     } catch (e) {
       return {
         ok: false,
-        reason: `Preset body for ${presetName} is not valid JSON: ${(e as Error).message}`,
+        reason: `Preset body for ${presetName} is not valid JSON: ${toMessage(e)}`,
       };
     }
   } catch (e) {
-    const err = e as Error;
-    if (err.name === "AbortError") {
+    if (e instanceof Error && e.name === "AbortError") {
       return {
         ok: false,
         reason: `Timed out after ${timeoutMs}ms fetching ${presetName}`,
@@ -241,7 +241,7 @@ async function fetchJson(
     }
     return {
       ok: false,
-      reason: `Network error fetching ${presetName}: ${err.message}`,
+      reason: `Network error fetching ${presetName}: ${toMessage(e)}`,
     };
   } finally {
     clearTimeout(timer);
