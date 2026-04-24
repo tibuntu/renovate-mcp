@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.5.0](https://github.com/tibuntu/renovate-mcp/compare/v0.4.0...v0.5.0) (2026-04-24)
+
+
+### Features
+
+* **dry_run:** emit MCP progress notifications during long runs ([328ee52](https://github.com/tibuntu/renovate-mcp/commit/328ee528c75bc9c4cf523a346e9fe9cf76a88397)), closes [#81](https://github.com/tibuntu/renovate-mcp/issues/81)
+
+
+### Bug Fixes
+
+* **preview_custom_manager:** cap per-file read size to prevent OOM ([1d5a844](https://github.com/tibuntu/renovate-mcp/commit/1d5a84425fd7d670f2f3337987b01f17f97481e4)), closes [#62](https://github.com/tibuntu/renovate-mcp/issues/62)
+* **preview_custom_manager:** cap user regex with worker + wall-clock timeout ([2283a6a](https://github.com/tibuntu/renovate-mcp/commit/2283a6a9a5add1a523a63e90304cab867e74d5a9)), closes [#56](https://github.com/tibuntu/renovate-mcp/issues/56)
+* **preview_custom_manager:** split maxFilesScanned into walked + matched caps ([c0b07ca](https://github.com/tibuntu/renovate-mcp/commit/c0b07caf353af6f3f46b779340e21e386c72c5f3)), closes [#58](https://github.com/tibuntu/renovate-mcp/issues/58)
+* **resolve_config:** reject unknown preset source prefixes at parse time ([0fa864c](https://github.com/tibuntu/renovate-mcp/commit/0fa864c96556082f9efb18bf0c43f65d0b25ea36)), closes [#54](https://github.com/tibuntu/renovate-mcp/issues/54)
+* **test-helpers:** reject pending requests on server crash or timeout ([eee76a9](https://github.com/tibuntu/renovate-mcp/commit/eee76a9bf8afbaa69c006441d8b593b4bc0d5b66)), closes [#55](https://github.com/tibuntu/renovate-mcp/issues/55)
+* **write_config:** clean up tmp file when final rename fails ([2127780](https://github.com/tibuntu/renovate-mcp/commit/21277809ceaabed4d0e6b1bf655375084ab10890)), closes [#57](https://github.com/tibuntu/renovate-mcp/issues/57)
+
 ## [0.4.0](https://github.com/tibuntu/renovate-mcp/compare/v0.3.0...v0.4.0) (2026-04-24)
 
 
