@@ -1,5 +1,14 @@
 name: CI
 
+# NOTE: This workflow deliberately does NOT install the `renovate` CLI.
+# The `validate_config` and `dry_run` tools shell out to Renovate (see
+# src/lib/renovateCli.ts) and therefore are NOT exercised end-to-end here.
+# Integration tests for those paths use fake binaries via
+# RENOVATE_BIN / RENOVATE_CONFIG_VALIDATOR_BIN instead (see
+# test/helpers/mcpSession.ts). Rationale and the broader design decision
+# live in CLAUDE.md ("Integration tests use stdio + fake binaries").
+# If you add a job that does install Renovate, update CLAUDE.md too.
+
 on:
   push:
     branches: [main]
