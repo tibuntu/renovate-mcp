@@ -6,10 +6,16 @@ export interface UnresolvedPreset {
   reason: string;
 }
 
+export interface PresetWarning {
+  preset: string;
+  message: string;
+}
+
 export interface ResolveResult {
   resolved: Record<string, unknown>;
   presetsResolved: string[];
   presetsUnresolved: UnresolvedPreset[];
+  warnings: PresetWarning[];
 }
 
 export type FetchPlatform = "github" | "gitlab";
@@ -128,6 +134,7 @@ export async function resolveConfig(
 ): Promise<ResolveResult> {
   const presetsResolved: string[] = [];
   const presetsUnresolved: UnresolvedPreset[] = [];
+  const warnings: PresetWarning[] = [];
   const stack: string[] = [];
   const ctx: ExpandContext = {
     fetchExternal: options.fetchExternal ?? false,
@@ -137,14 +144,22 @@ export async function resolveConfig(
     cache: new Map(),
   };
 
-  const resolved = await expand(config, presetsResolved, presetsUnresolved, stack, ctx);
-  return { resolved, presetsResolved, presetsUnresolved };
+  const resolved = await expand(
+    config,
+    presetsResolved,
+    presetsUnresolved,
+    warnings,
+    stack,
+    ctx,
+  );
+  return { resolved, presetsResolved, presetsUnresolved, warnings };
 }
 
 async function expand(
   input: Record<string, unknown>,
   resolvedList: string[],
   unresolvedList: UnresolvedPreset[],
+  warningsList: PresetWarning[],
   stack: string[],
   ctx: ExpandContext,
 ): Promise<Record<string, unknown>> {
@@ -178,9 +193,18 @@ async function expand(
     const body = await loadPresetBody(parsed, ctx, unresolvedList);
     if (!body) continue;
 
-    const substituted = applyArgs(body, parsed.args) as Record<string, unknown>;
+    const { value, missingArgs, unknownTemplates } = applyArgs(body, parsed.args);
+    recordTemplateWarnings(entry, parsed.args.length, missingArgs, unknownTemplates, warningsList);
+    const substituted = value as Record<string, unknown>;
     stack.push(parsed.key);
-    const subResolved = await expand(substituted, resolvedList, unresolvedList, stack, ctx);
+    const subResolved = await expand(
+      substituted,
+      resolvedList,
+      unresolvedList,
+      warningsList,
+      stack,
+      ctx,
+    );
     stack.pop();
 
     accumulated = mergeConfig(accumulated, subResolved);
@@ -189,6 +213,33 @@ async function expand(
 
   const { extends: _drop, ...ownKeys } = input;
   return mergeConfig(accumulated, ownKeys);
+}
+
+function recordTemplateWarnings(
+  entry: string,
+  suppliedArgs: number,
+  missingArgs: Set<number>,
+  unknownTemplates: Set<string>,
+  warningsList: PresetWarning[],
+): void {
+  for (const idx of [...missingArgs].sort((a, b) => a - b)) {
+    warningsList.push({
+      preset: entry,
+      message:
+        `Preset references {{arg${idx}}} but only ${suppliedArgs} argument(s) were supplied; ` +
+        `the placeholder was substituted with an empty string. Pass more arguments, ` +
+        `e.g. "${entry.replace(/\([^)]*\)\s*$/, "")}(arg0, arg1, ...)".`,
+    });
+  }
+  for (const token of [...unknownTemplates].sort()) {
+    warningsList.push({
+      preset: entry,
+      message:
+        `Preset uses template "{{${token}}}" which resolve_config does not expand ` +
+        `(only positional {{argN}} is supported). The token was left verbatim; ` +
+        `run dry_run for full-fidelity expansion via the Renovate CLI.`,
+    });
+  }
 }
 
 async function loadPresetBody(
@@ -333,20 +384,50 @@ function parseExternal(
   return { key, original, args, source, repoPath, presetName, subpath, ref };
 }
 
-function applyArgs(value: unknown, args: string[]): unknown {
+interface ApplyArgsResult {
+  value: unknown;
+  /** Indices referenced by `{{argN}}` where N ≥ args.length. */
+  missingArgs: Set<number>;
+  /** Non-argN tokens (e.g. `{{packageRules}}`, block helpers) left verbatim. */
+  unknownTemplates: Set<string>;
+}
+
+function applyArgs(value: unknown, args: string[]): ApplyArgsResult {
+  const missingArgs = new Set<number>();
+  const unknownTemplates = new Set<string>();
+  const out = applyArgsInner(value, args, missingArgs, unknownTemplates);
+  return { value: out, missingArgs, unknownTemplates };
+}
+
+const TEMPLATE_TOKEN_RE = /\{\{\s*([^{}]+?)\s*\}\}/g;
+const ARG_TOKEN_RE = /^arg(\d+)$/;
+
+function applyArgsInner(
+  value: unknown,
+  args: string[],
+  missingArgs: Set<number>,
+  unknownTemplates: Set<string>,
+): unknown {
   if (typeof value === "string") {
-    return value.replace(/\{\{\s*arg(\d+)\s*\}\}/g, (_, idx) => {
-      const i = Number(idx);
-      return i < args.length ? args[i]! : "";
+    return value.replace(TEMPLATE_TOKEN_RE, (match, inner: string) => {
+      const argMatch = ARG_TOKEN_RE.exec(inner);
+      if (argMatch) {
+        const i = Number(argMatch[1]);
+        if (i < args.length) return args[i]!;
+        missingArgs.add(i);
+        return "";
+      }
+      unknownTemplates.add(inner);
+      return match;
     });
   }
   if (Array.isArray(value)) {
-    return value.map((v) => applyArgs(v, args));
+    return value.map((v) => applyArgsInner(v, args, missingArgs, unknownTemplates));
   }
   if (value && typeof value === "object") {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      out[k] = applyArgs(v, args);
+      out[k] = applyArgsInner(v, args, missingArgs, unknownTemplates);
     }
     return out;
   }

@@ -72,11 +72,12 @@ export function registerResolveConfig(server: McpServer): void {
         sourcePath = located.relPath;
       }
 
-      const { resolved, presetsResolved, presetsUnresolved } = await resolveConfig(source, {
-        fetchExternal: externalPresets ?? false,
-        endpoint,
-        platform,
-      });
+      const { resolved, presetsResolved, presetsUnresolved, warnings } =
+        await resolveConfig(source, {
+          fetchExternal: externalPresets ?? false,
+          endpoint,
+          platform,
+        });
 
       return {
         content: [
@@ -88,6 +89,7 @@ export function registerResolveConfig(server: McpServer): void {
                 resolved,
                 presetsResolved,
                 presetsUnresolved,
+                warnings,
               },
               null,
               2,
