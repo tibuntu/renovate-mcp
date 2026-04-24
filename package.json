@@ -20,6 +20,8 @@
     "pretest": "npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
+    "pretest:coverage": "npm run build",
+    "test:coverage": "vitest run --coverage",
     "generate:presets": "node scripts/generate-presets.mjs",
     "prepack": "npm run build && chmod +x dist/index.js"
   },
@@ -56,6 +58,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "@vitest/coverage-v8": "^4.1.0",
     "renovate": "^43.139.5",
     "typescript": "^6.0.0",
     "vitest": "^4.1.0"

@@ -22,6 +22,7 @@ npm run dev               # build watch mode
 npm start                 # run built server over stdio
 npm test                  # vitest run (auto-builds via pretest)
 npm run test:watch        # vitest watch mode
+npm run test:coverage     # vitest run --coverage (writes coverage/ report)
 npm run generate:presets  # regenerate src/data/presets.generated.ts
 ```
 
