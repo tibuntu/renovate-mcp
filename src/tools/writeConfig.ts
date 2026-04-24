@@ -76,7 +76,7 @@ export function registerWriteConfig(server: McpServer): void {
           valid = v.exitCode === 0;
         } catch (err) {
           validatorMissing = true;
-          validationOutput = formatMissingBinaryError("renovate-config-validator", err);
+          validationOutput = formatMissingBinaryError("renovate-config-validator", err as Error);
         }
 
         if (!valid && !force) {

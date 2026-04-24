@@ -72,7 +72,7 @@ export function registerValidateConfig(server: McpServer): void {
           content: [
             {
               type: "text",
-              text: formatMissingBinaryError("renovate-config-validator", err),
+              text: formatMissingBinaryError("renovate-config-validator", err as Error),
             },
           ],
         };

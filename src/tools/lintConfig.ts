@@ -4,7 +4,6 @@ import path from "node:path";
 import JSON5 from "json5";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { lintConfig } from "../lib/configLinter.js";
-import { toMessage } from "../lib/errors.js";
 
 export function registerLintConfig(server: McpServer): void {
   server.registerTool(
@@ -49,7 +48,7 @@ export function registerLintConfig(server: McpServer): void {
             content: [
               {
                 type: "text",
-                text: `Failed to read or parse config at ${configPath}: ${toMessage(err)}`,
+                text: `Failed to read or parse config at ${configPath}: ${(err as Error).message}`,
               },
             ],
           };
