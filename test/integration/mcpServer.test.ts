@@ -146,6 +146,27 @@ describe("resolve_config end-to-end", () => {
     expect(parsed.resolved).not.toHaveProperty("extends");
     expect(parsed.presetsResolved).toContain("default:automergeAll");
     expect(parsed.presetsUnresolved).toEqual([]);
+    // Every response must carry the preview-quality marker so callers don't
+    // treat `resolved` as bit-identical to Renovate's own output.
+    expect(parsed.mergeQuality).toBe("preview");
+    expect(parsed.disclaimer).toMatch(/dry_run/);
+    expect(parsed.warnings).toEqual([]);
+  });
+
+  it("surfaces a structured warning when a preset's {{argN}} is unfilled", async () => {
+    session = await startServer();
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+    }>("tools/call", {
+      name: "resolve_config",
+      arguments: {
+        configContent: { extends: ["default:followTag(lodash)"] },
+      },
+    });
+    const parsed = JSON.parse(res.result?.content[0]?.text ?? "{}");
+    expect(parsed.warnings).toHaveLength(1);
+    expect(parsed.warnings[0].preset).toBe("default:followTag(lodash)");
+    expect(parsed.warnings[0].message).toMatch(/\{\{arg1\}\}/);
   });
 
   it("flags external presets without failing the call", async () => {
