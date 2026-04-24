@@ -384,3 +384,110 @@ describe("resolveConfig with endpoint / platform", () => {
     expect(presetsUnresolved[0]?.reason).toMatch(/out of scope/i);
   });
 });
+
+describe("argument substitution warnings", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("emits no warnings when no templating is present", async () => {
+    const { warnings } = await resolveConfig({ extends: ["default:automergeAll"] });
+    expect(warnings).toEqual([]);
+  });
+
+  it("emits no warnings when all {{argN}} placeholders are filled", async () => {
+    const { warnings, resolved } = await resolveConfig({
+      extends: ["default:assignee(alice)"],
+    });
+    expect(warnings).toEqual([]);
+    expect(resolved).toMatchObject({ assignees: ["alice"] });
+  });
+
+  it("warns and substitutes empty string when {{argN}} is beyond args.length", async () => {
+    // `default:followTag` uses both {{arg0}} (package name) and {{arg1}} (tag).
+    // Supplying only one arg must surface a structured warning naming arg1.
+    const { resolved, warnings, presetsResolved } = await resolveConfig({
+      extends: ["default:followTag(lodash)"],
+    });
+    expect(presetsResolved).toContain("default:followTag(lodash)");
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.preset).toBe("default:followTag(lodash)");
+    expect(warnings[0]?.message).toMatch(/\{\{arg1\}\}/);
+    expect(warnings[0]?.message).toMatch(/only 1 argument/);
+    // The placeholder still gets substituted with empty string, matching prior behavior.
+    const rules = (resolved as { packageRules?: Array<Record<string, unknown>> }).packageRules;
+    expect(rules?.[0]?.followTag).toBe("");
+  });
+
+  it("deduplicates multiple references to the same missing {{argN}}", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          assignees: ["{{arg2}}", "{{arg2}}", "{{arg2}}"],
+        }),
+        { status: 200 },
+      ),
+    );
+    const { warnings } = await resolveConfig(
+      { extends: ["github>acme/cfg(alice)"] },
+      { fetchExternal: true },
+    );
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.message).toMatch(/\{\{arg2\}\}/);
+  });
+
+  it("warns about non-argN templating and leaves the token verbatim", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          description: "Grouped by {{groupName}}",
+          schedule: ["{{#if weekly}}before 6am{{/if}}"],
+        }),
+        { status: 200 },
+      ),
+    );
+    const { resolved, warnings } = await resolveConfig(
+      { extends: ["github>acme/cfg"] },
+      { fetchExternal: true },
+    );
+    // Unknown tokens must pass through untouched.
+    expect(resolved).toMatchObject({
+      description: "Grouped by {{groupName}}",
+      schedule: ["{{#if weekly}}before 6am{{/if}}"],
+    });
+    const tokens = warnings.map((w) => w.message);
+    expect(tokens.some((m) => m.includes("{{groupName}}"))).toBe(true);
+    expect(tokens.some((m) => m.includes("#if weekly"))).toBe(true);
+    expect(tokens.some((m) => m.includes("/if"))).toBe(true);
+    for (const w of warnings) {
+      expect(w.preset).toBe("github>acme/cfg");
+      expect(w.message).toMatch(/dry_run/i);
+    }
+  });
+
+  it("reports warnings from nested presets under the entry that declared them", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = typeof input === "string" ? input : (input as URL).toString();
+      if (url.includes("/acme/inner/")) {
+        return new Response(JSON.stringify({ assignees: ["{{arg3}}"] }), {
+          status: 200,
+        });
+      }
+      if (url.includes("/acme/outer/")) {
+        return new Response(
+          JSON.stringify({ extends: ["github>acme/inner"] }),
+          { status: 200 },
+        );
+      }
+      return new Response("", { status: 404, statusText: "Not Found" });
+    });
+    const { warnings } = await resolveConfig(
+      { extends: ["github>acme/outer"] },
+      { fetchExternal: true },
+    );
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.preset).toBe("github>acme/inner");
+    expect(warnings[0]?.message).toMatch(/\{\{arg3\}\}/);
+  });
+});
