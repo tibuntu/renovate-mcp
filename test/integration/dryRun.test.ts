@@ -6,8 +6,8 @@ import { startServer, type McpSession } from "../helpers/mcpSession.js";
 
 /**
  * dry_run shells out to `renovate`; CI does not install it. We point
- * RENOVATE_BIN at tiny fake binaries so the --config-file plumbing for the
- * per-invocation hostRules input is exercised end-to-end through the real
+ * RENOVATE_BIN at tiny fake binaries so the RENOVATE_CONFIG_FILE plumbing for
+ * the per-invocation hostRules input is exercised end-to-end through the real
  * stdio + MCP handshake.
  */
 
@@ -25,23 +25,23 @@ afterEach(async () => {
 
 async function makeFakeRenovate(dir: string, name = "fake-renovate.mjs"): Promise<string> {
   const file = path.join(dir, name);
-  // The fake dumps its argv and the contents of any --config-file it receives
-  // to FAKE_RENOVATE_ARGV_DUMP, then writes an empty report so the tool takes
-  // the "hasReport" code path (not the logTail fallback).
+  // The fake dumps its argv, the RENOVATE_CONFIG_FILE env value, and the
+  // contents of that file (if any) to FAKE_RENOVATE_ARGV_DUMP, then writes an
+  // empty report so the tool takes the "hasReport" code path (not the logTail
+  // fallback).
   await writeFile(
     file,
     `#!/usr/bin/env node
 import { writeFileSync, readFileSync, existsSync } from 'node:fs';
 const args = process.argv.slice(2);
 const dumpPath = process.env.FAKE_RENOVATE_ARGV_DUMP;
-const configFileArg = args.find(a => a.startsWith('--config-file='));
+const configFileEnv = process.env.RENOVATE_CONFIG_FILE;
 let configContent = null;
-if (configFileArg) {
-  const p = configFileArg.slice('--config-file='.length);
-  if (existsSync(p)) configContent = readFileSync(p, 'utf8');
+if (configFileEnv && existsSync(configFileEnv)) {
+  configContent = readFileSync(configFileEnv, 'utf8');
 }
 if (dumpPath) {
-  writeFileSync(dumpPath, JSON.stringify({ args, configContent }));
+  writeFileSync(dumpPath, JSON.stringify({ args, configFileEnv, configContent }));
 }
 const reportArg = args.find(a => a.startsWith('--report-path='));
 if (reportArg) {
@@ -55,7 +55,7 @@ process.exit(0);
 }
 
 describe("dry_run hostRules", () => {
-  it("writes hostRules to a temp --config-file and cleans it up", async () => {
+  it("writes hostRules to a temp config file, passes it via RENOVATE_CONFIG_FILE, and cleans it up", async () => {
     const argvDump = path.join(repo, "argv.json");
     const fakeBin = await makeFakeRenovate(repo);
     session = await startServer({
@@ -78,22 +78,23 @@ describe("dry_run hostRules", () => {
 
     const dumped = JSON.parse(await readFile(argvDump, "utf8")) as {
       args: string[];
+      configFileEnv: string | undefined;
       configContent: string | null;
     };
 
-    const configArg = dumped.args.find((a) => a.startsWith("--config-file="));
-    expect(configArg).toBeDefined();
+    // --config-file is NOT a real Renovate CLI flag; must go via env var.
+    expect(dumped.args.some((a) => a.startsWith("--config-file="))).toBe(false);
+    expect(dumped.configFileEnv).toBeDefined();
 
     expect(JSON.parse(dumped.configContent!)).toEqual({
       hostRules: [{ matchHost: "registry.acme.corp", token: "very-secret-123" }],
     });
 
     // The temp config file must be gone after the tool returned.
-    const tmpConfigPath = configArg!.slice("--config-file=".length);
-    await expect(access(tmpConfigPath)).rejects.toBeDefined();
+    await expect(access(dumped.configFileEnv!)).rejects.toBeDefined();
   });
 
-  it("omits --config-file when no hostRules are passed", async () => {
+  it("omits RENOVATE_CONFIG_FILE when no hostRules are passed", async () => {
     const argvDump = path.join(repo, "argv.json");
     const fakeBin = await makeFakeRenovate(repo);
     session = await startServer({
@@ -111,8 +112,12 @@ describe("dry_run hostRules", () => {
 
     expect(res.result?.isError).toBeFalsy();
 
-    const dumped = JSON.parse(await readFile(argvDump, "utf8")) as { args: string[] };
+    const dumped = JSON.parse(await readFile(argvDump, "utf8")) as {
+      args: string[];
+      configFileEnv: string | undefined;
+    };
     expect(dumped.args.some((a) => a.startsWith("--config-file="))).toBe(false);
+    expect(dumped.configFileEnv).toBeFalsy();
   });
 
   it("emits MCP progress notifications when the caller supplies a progressToken", async () => {
