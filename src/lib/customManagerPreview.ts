@@ -49,6 +49,7 @@ export interface PreviewOptions {
   maxFilesMatched?: number;
   maxHitsPerFile?: number;
   matchTimeoutMs?: number;
+  maxFileBytes?: number;
 }
 
 export interface PreviewResult {
@@ -63,6 +64,7 @@ const DEFAULT_MAX_FILES_WALKED = 2000;
 const DEFAULT_MAX_FILES_MATCHED = 500;
 const DEFAULT_MAX_HITS_PER_FILE = 100;
 const DEFAULT_MATCH_TIMEOUT_MS = 2000;
+const DEFAULT_MAX_FILE_BYTES = 5 * 1024 * 1024;
 const SKIP_DIRS = new Set([".git", "node_modules"]);
 
 const TEMPLATE_FIELD_MAP: Array<[keyof CustomManager, keyof ExtractedDep]> = [
@@ -88,6 +90,7 @@ export async function previewCustomManager(
   const maxFilesMatched = options.maxFilesMatched ?? DEFAULT_MAX_FILES_MATCHED;
   const maxHitsPerFile = options.maxHitsPerFile ?? DEFAULT_MAX_HITS_PER_FILE;
   const matchTimeoutMs = options.matchTimeoutMs ?? DEFAULT_MATCH_TIMEOUT_MS;
+  const maxFileBytes = options.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
 
   if (manager.matchStringsStrategy && manager.matchStringsStrategy !== "any") {
     warnings.push(
@@ -143,6 +146,19 @@ export async function previewCustomManager(
 
   for (const rel of filesMatched) {
     const abs = path.join(repoPath, rel);
+    let stat;
+    try {
+      stat = await fs.stat(abs);
+    } catch (err) {
+      warnings.push(`Could not stat ${rel}: ${(err as Error).message}`);
+      continue;
+    }
+    if (stat.size > maxFileBytes) {
+      warnings.push(
+        `${rel}: skipped, ${stat.size} bytes exceeds maxFileBytes=${maxFileBytes}. Tighten fileMatch to exclude it, or raise maxFileBytes.`,
+      );
+      continue;
+    }
     let content: string;
     try {
       content = await fs.readFile(abs, "utf8");

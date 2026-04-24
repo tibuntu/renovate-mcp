@@ -333,6 +333,35 @@ describe("previewCustomManager", () => {
     expect(hitFiles.size).toBe(5);
   });
 
+  it("skips files exceeding maxFileBytes without reading them", async () => {
+    // Acceptance from issue #62: a file that slipped past fileMatch (lockfile,
+    // generated artifact, SQL dump) must not OOM the server. We create a small
+    // file and an oversized file, set maxFileBytes just above the small one,
+    // and confirm only the small one is read.
+    await writeFile(path.join(repo, "small.txt"), "pkg=foo ver=1.0.0\n");
+    const big = "x".repeat(2048);
+    await writeFile(path.join(repo, "huge.txt"), big);
+    const result = await previewCustomManager(
+      repo,
+      {
+        customType: "regex",
+        fileMatch: ["\\.txt$"],
+        matchStrings: ["pkg=(?<depName>\\S+) ver=(?<currentValue>\\S+)"],
+      },
+      { maxFileBytes: 1024 },
+    );
+    expect([...result.filesMatched].sort()).toEqual(["huge.txt", "small.txt"]);
+    expect(result.hits.map((h) => h.file)).toEqual(["small.txt"]);
+    expect(
+      result.warnings.some(
+        (w) =>
+          /huge\.txt/.test(w) &&
+          /skipped/.test(w) &&
+          /maxFileBytes=1024/.test(w),
+      ),
+    ).toBe(true);
+  });
+
   it("honors maxHitsPerFile and records a warning", async () => {
     const lines = Array.from({ length: 20 }, (_, i) => `pkg=foo${i} ver=${i}`).join("\n");
     await writeFile(path.join(repo, "many.txt"), lines);
