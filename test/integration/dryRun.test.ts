@@ -115,6 +115,80 @@ describe("dry_run hostRules", () => {
     expect(dumped.args.some((a) => a.startsWith("--config-file="))).toBe(false);
   });
 
+  it("emits MCP progress notifications when the caller supplies a progressToken", async () => {
+    // Fake renovate that writes a Renovate-shaped JSON log line to stdout
+    // before exiting so we exercise the log-enrichment path too.
+    const fakeBin = path.join(repo, "progress-renovate.mjs");
+    await writeFile(
+      fakeBin,
+      `#!/usr/bin/env node
+import { writeFileSync } from 'node:fs';
+process.stdout.write(JSON.stringify({ level: 30, msg: 'Fetching manifests' }) + '\\n');
+const args = process.argv.slice(2);
+const reportArg = args.find(a => a.startsWith('--report-path='));
+if (reportArg) {
+  writeFileSync(reportArg.slice('--report-path='.length), JSON.stringify({ repositories: [] }));
+}
+process.exit(0);
+`,
+    );
+    await chmod(fakeBin, 0o755);
+
+    session = await startServer({ RENOVATE_BIN: fakeBin });
+
+    const progressToken = "prog-token-xyz";
+    // Bypass the helper so we can inject the MCP `_meta.progressToken` hook.
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: { repoPath: repo },
+      _meta: { progressToken },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+
+    const progress = session.notifications.filter(
+      (n) => n.method === "notifications/progress",
+    );
+    expect(progress.length).toBeGreaterThanOrEqual(2);
+
+    for (const n of progress) {
+      const params = n.params as { progressToken: string; progress: number; message?: string };
+      expect(params.progressToken).toBe(progressToken);
+      expect(typeof params.progress).toBe("number");
+    }
+    // progress must be strictly increasing
+    const values = progress.map((n) => (n.params as { progress: number }).progress);
+    for (let i = 1; i < values.length; i++) {
+      expect(values[i]).toBeGreaterThan(values[i - 1]!);
+    }
+
+    const messages = progress.map((n) => (n.params as { message?: string }).message ?? "");
+    expect(messages[0]).toMatch(/Starting Renovate dry-run/);
+    expect(messages[messages.length - 1]).toMatch(/Dry-run complete/);
+  });
+
+  it("sends no progress notifications when no progressToken is provided", async () => {
+    const fakeBin = await makeFakeRenovate(repo);
+    session = await startServer({ RENOVATE_BIN: fakeBin });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: { repoPath: repo },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    const progress = session.notifications.filter(
+      (n) => n.method === "notifications/progress",
+    );
+    expect(progress).toHaveLength(0);
+  });
+
   it("scrubs hostRules secrets from logTail when no report is produced", async () => {
     // Fake renovate that writes the token to stderr AND skips the report so
     // dry_run falls through to the logTail branch — this is the path where a
