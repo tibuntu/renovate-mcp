@@ -67,6 +67,8 @@ function dispatch(parsed: ParsedPreset, options: FetchOptions): Promise<FetchRes
   }
 }
 
+type Platform = "github" | "gitlab";
+
 async function fetchGitHub(
   parsed: ParsedPreset,
   timeoutMs: number,
@@ -88,7 +90,7 @@ async function fetchGitHub(
     "User-Agent": "renovate-mcp",
   };
   if (token) headers.Authorization = `Bearer ${token}`;
-  return fetchJson(url, headers, timeoutMs, parsed.original, fetchImpl);
+  return fetchJson(url, headers, timeoutMs, parsed.original, fetchImpl, "github");
 }
 
 async function fetchGitLab(
@@ -109,7 +111,7 @@ async function fetchGitLab(
   const token = process.env.GITLAB_TOKEN || process.env.RENOVATE_TOKEN;
   const headers: Record<string, string> = { "User-Agent": "renovate-mcp" };
   if (token) headers["PRIVATE-TOKEN"] = token;
-  return fetchJson(url, headers, timeoutMs, parsed.original, fetchImpl);
+  return fetchJson(url, headers, timeoutMs, parsed.original, fetchImpl, "gitlab");
 }
 
 function presetFileName(parsed: ParsedPreset): string {
@@ -126,18 +128,49 @@ function encodeFilePath(file: string): string {
   return file.split("/").map(encodeURIComponent).join("/");
 }
 
+function detectRateLimit(
+  res: Response,
+  platform: Platform,
+  presetName: string,
+): string | undefined {
+  if (platform === "github" && res.status === 403) {
+    if (res.headers.get("x-ratelimit-remaining") !== "0") return undefined;
+    const resetIso = parseEpochHeader(res.headers.get("x-ratelimit-reset"));
+    const resetClause = resetIso ? ` (resets at ${resetIso})` : "";
+    return `GitHub API rate limit exceeded${resetClause} when fetching ${presetName}. Set GITHUB_TOKEN for an authenticated limit, or wait for reset.`;
+  }
+  if (platform === "gitlab" && res.status === 429) {
+    const resetIso = parseEpochHeader(res.headers.get("ratelimit-reset"));
+    const resetClause = resetIso ? ` (resets at ${resetIso})` : "";
+    return `GitLab API rate limit exceeded${resetClause} when fetching ${presetName}. Set GITLAB_TOKEN for an authenticated limit, or wait for reset.`;
+  }
+  return undefined;
+}
+
+function parseEpochHeader(raw: string | null): string | undefined {
+  if (!raw) return undefined;
+  const seconds = Number.parseInt(raw, 10);
+  if (!Number.isFinite(seconds) || seconds <= 0) return undefined;
+  const date = new Date(seconds * 1000);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return date.toISOString();
+}
+
 async function fetchJson(
   url: string,
   headers: Record<string, string>,
   timeoutMs: number,
   presetName: string,
   fetchImpl: typeof fetch,
+  platform: Platform,
 ): Promise<FetchResult> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetchImpl(url, { headers, signal: controller.signal });
     if (!res.ok) {
+      const rateLimit = detectRateLimit(res, platform, presetName);
+      if (rateLimit) return { ok: false, reason: rateLimit };
       return {
         ok: false,
         reason: `HTTP ${res.status}${res.statusText ? ` ${res.statusText}` : ""} when fetching ${presetName}`,

@@ -2,11 +2,15 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { fetchExternalPreset, type FetchOptions } from "../../src/lib/externalPresetFetcher.js";
 import { parsePreset } from "../../src/lib/presetResolver.js";
 
-function makeResponse(body: unknown, init: { status?: number; statusText?: string } = {}): Response {
+function makeResponse(
+  body: unknown,
+  init: { status?: number; statusText?: string; headers?: Record<string, string> } = {},
+): Response {
   const text = typeof body === "string" ? body : JSON.stringify(body);
   return new Response(text, {
     status: init.status ?? 200,
     statusText: init.statusText ?? "OK",
+    headers: init.headers,
   });
 }
 
@@ -122,6 +126,97 @@ describe("fetchExternalPreset — github", () => {
     await fetchExternalPreset(p, { fetchImpl, cache });
     await fetchExternalPreset(p, { fetchImpl, cache });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("fetchExternalPreset — rate limits", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("surfaces a GitHub 403 with X-RateLimit-Remaining: 0 as a rate-limit reason", async () => {
+    const resetEpoch = Math.floor(Date.parse("2025-01-02T03:04:05Z") / 1000);
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      makeResponse(
+        { message: "API rate limit exceeded for 1.2.3.4" },
+        {
+          status: 403,
+          statusText: "Forbidden",
+          headers: {
+            "X-RateLimit-Remaining": "0",
+            "X-RateLimit-Reset": String(resetEpoch),
+          },
+        },
+      ),
+    );
+    const result = await fetchExternalPreset(parsePreset("github>acme/cfg"), { fetchImpl });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toMatch(/GitHub API rate limit exceeded/);
+      expect(result.reason).toMatch(/2025-01-02T03:04:05\.000Z/);
+      expect(result.reason).toMatch(/GITHUB_TOKEN/);
+      expect(result.reason).not.toMatch(/HTTP 403/);
+    }
+  });
+
+  it("keeps the generic HTTP message for a GitHub 403 without the rate-limit header", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      makeResponse("forbidden", { status: 403, statusText: "Forbidden" }),
+    );
+    const result = await fetchExternalPreset(parsePreset("github>acme/cfg"), { fetchImpl });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toMatch(/HTTP 403 Forbidden/);
+      expect(result.reason).not.toMatch(/rate limit/i);
+    }
+  });
+
+  it("falls back to a rate-limit message without reset time when X-RateLimit-Reset is malformed", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      makeResponse("forbidden", {
+        status: 403,
+        statusText: "Forbidden",
+        headers: {
+          "X-RateLimit-Remaining": "0",
+          "X-RateLimit-Reset": "not-a-number",
+        },
+      }),
+    );
+    const result = await fetchExternalPreset(parsePreset("github>acme/cfg"), { fetchImpl });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toMatch(/GitHub API rate limit exceeded/);
+      expect(result.reason).not.toMatch(/resets at/);
+    }
+  });
+
+  it("surfaces a GitLab 429 with RateLimit-Reset as a rate-limit reason", async () => {
+    const resetEpoch = Math.floor(Date.parse("2025-06-07T08:09:10Z") / 1000);
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      makeResponse("too many", {
+        status: 429,
+        statusText: "Too Many Requests",
+        headers: { "RateLimit-Reset": String(resetEpoch) },
+      }),
+    );
+    const result = await fetchExternalPreset(parsePreset("gitlab>acme/cfg"), { fetchImpl });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toMatch(/GitLab API rate limit exceeded/);
+      expect(result.reason).toMatch(/2025-06-07T08:09:10\.000Z/);
+      expect(result.reason).toMatch(/GITLAB_TOKEN/);
+      expect(result.reason).not.toMatch(/HTTP 429/);
+    }
+  });
+
+  it("falls back to a rate-limit message without reset time for a GitLab 429 missing RateLimit-Reset", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      makeResponse("too many", { status: 429, statusText: "Too Many Requests" }),
+    );
+    const result = await fetchExternalPreset(parsePreset("gitlab>acme/cfg"), { fetchImpl });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toMatch(/GitLab API rate limit exceeded/);
+      expect(result.reason).not.toMatch(/resets at/);
+    }
   });
 });
 
