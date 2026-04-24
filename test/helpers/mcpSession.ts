@@ -28,6 +28,7 @@ export interface McpSession {
   notify(method: string, params?: unknown): void;
   close(): Promise<void>;
   readonly child: ChildProcess;
+  readonly instructions: string;
 }
 
 /**
@@ -75,7 +76,7 @@ export async function startServer(env: NodeJS.ProcessEnv = {}): Promise<McpSessi
     child.stdin!.write(JSON.stringify({ jsonrpc: "2.0", method, params }) + "\n");
   }
 
-  await request("initialize", {
+  const init = await request<{ instructions?: string }>("initialize", {
     protocolVersion: "2025-06-18",
     capabilities: {},
     clientInfo: { name: "vitest", version: "0" },
@@ -86,6 +87,7 @@ export async function startServer(env: NodeJS.ProcessEnv = {}): Promise<McpSessi
     request,
     notify,
     child,
+    instructions: init.result?.instructions ?? "",
     async close() {
       child.stdin!.end();
       await new Promise<void>((resolve) => {

@@ -1,5 +1,11 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { checkSetup, describeSetup } from "../../src/lib/setupCheck.js";
+import {
+  checkSetup,
+  describeSetup,
+  startupBanner,
+  unavailableTools,
+  type SetupStatus,
+} from "../../src/lib/setupCheck.js";
 
 const originalEnv = { ...process.env };
 
@@ -65,7 +71,115 @@ describe("describeSetup", () => {
     expect(out).toContain("43.0.0");
   });
 
-  it("shows MISSING for not-found binaries and lists hints", () => {
+});
+
+function buildStatus(overrides: Partial<SetupStatus> = {}): SetupStatus {
+  const base: SetupStatus = {
+    node: "v20.0.0",
+    renovate: { tool: "renovate", command: "renovate", found: true, version: "43.0.0" },
+    renovateConfigValidator: {
+      tool: "renovate-config-validator",
+      command: "renovate-config-validator",
+      found: true,
+      version: "43.0.0",
+    },
+    envOverrides: {},
+    ok: true,
+    hints: [],
+  };
+  return { ...base, ...overrides };
+}
+
+describe("unavailableTools", () => {
+  it("returns [] when both binaries are found", () => {
+    expect(unavailableTools(buildStatus())).toEqual([]);
+  });
+
+  it("lists validate_config + write_config when only the validator is missing", () => {
+    const status = buildStatus({
+      renovateConfigValidator: {
+        tool: "renovate-config-validator",
+        command: "renovate-config-validator",
+        found: false,
+        error: "ENOENT",
+      },
+      ok: false,
+    });
+    expect(unavailableTools(status)).toEqual(["validate_config", "write_config"]);
+  });
+
+  it("lists dry_run when only renovate is missing", () => {
+    const status = buildStatus({
+      renovate: { tool: "renovate", command: "renovate", found: false, error: "ENOENT" },
+      ok: false,
+    });
+    expect(unavailableTools(status)).toEqual(["dry_run"]);
+  });
+
+  it("lists all three CLI-backed tools when both binaries are missing", () => {
+    const status = buildStatus({
+      renovate: { tool: "renovate", command: "renovate", found: false, error: "ENOENT" },
+      renovateConfigValidator: {
+        tool: "renovate-config-validator",
+        command: "renovate-config-validator",
+        found: false,
+        error: "ENOENT",
+      },
+      ok: false,
+    });
+    expect(unavailableTools(status)).toEqual(["validate_config", "dry_run", "write_config"]);
+  });
+});
+
+describe("startupBanner", () => {
+  it("returns null when the setup is fully ok", () => {
+    expect(startupBanner(buildStatus())).toBeNull();
+  });
+
+  it("mentions only the blocked tools and reassures that offline tools still work", () => {
+    const status = buildStatus({
+      renovate: { tool: "renovate", command: "renovate", found: false, error: "ENOENT" },
+      renovateConfigValidator: {
+        tool: "renovate-config-validator",
+        command: "renovate-config-validator",
+        found: false,
+        error: "ENOENT",
+      },
+      ok: false,
+    });
+    const out = startupBanner(status);
+    expect(out).not.toBeNull();
+    expect(out).toContain("Partial availability");
+    expect(out).toContain("`read_config`");
+    expect(out).toContain("`resolve_config`");
+    expect(out).toContain("`preview_custom_manager`");
+    expect(out).toContain("`dry_run`");
+    expect(out).toContain("`validate_config`");
+    expect(out).toContain("`write_config`");
+    // The LLM guidance line is the whole point of the rewording.
+    expect(out).toMatch(/do not flag this as a setup problem/i);
+    expect(out).toContain("RENOVATE_MCP_REQUIRE_CLI=false");
+  });
+
+  it("narrows the blocked list when only the validator is missing", () => {
+    const status = buildStatus({
+      renovateConfigValidator: {
+        tool: "renovate-config-validator",
+        command: "renovate-config-validator",
+        found: false,
+        error: "ENOENT",
+      },
+      ok: false,
+    });
+    const out = startupBanner(status)!;
+    expect(out).toContain("`validate_config`");
+    expect(out).toContain("`write_config`");
+    expect(out).not.toContain("`dry_run`");
+  });
+});
+
+describe("describeSetup (legacy verbose diagnostic)", () => {
+  it("still shows MISSING for not-found binaries and lists hints", () => {
     const out = describeSetup({
       node: "v20.0.0",
       renovate: {

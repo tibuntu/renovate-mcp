@@ -36,6 +36,30 @@ describe("MCP server stdio handshake", () => {
   });
 });
 
+describe("startup instructions banner", () => {
+  it("embeds the partial-availability notice when the Renovate CLI is missing", async () => {
+    session = await startServer({
+      RENOVATE_BIN: "/nonexistent/path/to/renovate",
+      RENOVATE_CONFIG_VALIDATOR_BIN: "/nonexistent/path/to/validator",
+      RENOVATE_MCP_REQUIRE_CLI: "",
+    });
+    expect(session.instructions).toContain("Partial availability");
+    expect(session.instructions).toContain("read_config");
+    expect(session.instructions).toMatch(/do not flag this as a setup problem/i);
+  });
+
+  it("suppresses the banner when RENOVATE_MCP_REQUIRE_CLI=false", async () => {
+    session = await startServer({
+      RENOVATE_BIN: "/nonexistent/path/to/renovate",
+      RENOVATE_CONFIG_VALIDATOR_BIN: "/nonexistent/path/to/validator",
+      RENOVATE_MCP_REQUIRE_CLI: "false",
+    });
+    expect(session.instructions).not.toContain("Partial availability");
+    // BASE_INSTRUCTIONS content should still be present
+    expect(session.instructions).toContain("Design and debug Renovate configurations");
+  });
+});
+
 describe("read_config end-to-end", () => {
   let repo: string;
   beforeEach(async () => {

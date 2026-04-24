@@ -9,7 +9,7 @@ import { registerPreviewCustomManager } from "./tools/previewCustomManager.js";
 import { registerDryRun } from "./tools/dryRun.js";
 import { registerWriteConfig } from "./tools/writeConfig.js";
 import { registerPresetResources } from "./resources/presets.js";
-import { checkSetup, describeSetup } from "./lib/setupCheck.js";
+import { checkSetup, startupBanner } from "./lib/setupCheck.js";
 
 const BASE_INSTRUCTIONS = [
   "Design and debug Renovate configurations interactively.",
@@ -28,9 +28,13 @@ const BASE_INSTRUCTIONS = [
 
 const setup = await checkSetup();
 
-const instructions = setup.ok
-  ? BASE_INSTRUCTIONS
-  : [BASE_INSTRUCTIONS, "", "Startup setup check:", describeSetup(setup)].join("\n");
+// `RENOVATE_MCP_REQUIRE_CLI=false` is the opt-out for users who have
+// consciously chosen the offline subset and don't want the startup notice.
+const requireCliRaw = process.env.RENOVATE_MCP_REQUIRE_CLI?.trim().toLowerCase();
+const suppressBanner = requireCliRaw === "false" || requireCliRaw === "0";
+
+const banner = suppressBanner ? null : startupBanner(setup);
+const instructions = banner ? [BASE_INSTRUCTIONS, "", banner].join("\n") : BASE_INSTRUCTIONS;
 
 const SERVER_VERSION = "0.3.0"; // x-release-please-version
 
