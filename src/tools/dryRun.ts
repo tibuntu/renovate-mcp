@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { run, resolveRenovateTool, formatMissingBinaryError } from "../lib/renovateCli.js";
+import { locateConfig } from "../lib/configLocations.js";
 import { detectLookupProblems } from "../lib/lookupProblems.js";
 import {
   collectSecrets,
@@ -22,6 +23,34 @@ const hostRuleSchema = z
   .describe(
     "A single Renovate hostRule (matchHost, hostType, username, password, token, …). Structure is not validated here — Renovate's own config loader checks it when the temp file is read.",
   );
+
+/**
+ * Scan the repo's Renovate config for `extends` entries of the form
+ * `local>owner/repo[:preset]` and return them along with the config-file path
+ * they were found in. Returns `null` if no config is found (Renovate will
+ * handle that case itself with its usual error). Silently returns `null` on
+ * parse errors too — we don't want preflight to be stricter than Renovate's
+ * own config loader; any real problems will surface when Renovate runs.
+ */
+async function detectUnresolvableLocalPresets(
+  repoPath: string,
+): Promise<{ relPath: string; presets: string[] } | null> {
+  let located;
+  try {
+    located = await locateConfig(repoPath);
+  } catch {
+    return null;
+  }
+  if (!located) return null;
+
+  const extendsRaw = (located.config as { extends?: unknown }).extends;
+  if (!Array.isArray(extendsRaw)) return null;
+
+  const presets = extendsRaw.filter(
+    (entry): entry is string => typeof entry === "string" && entry.startsWith("local>"),
+  );
+  return { relPath: located.relPath, presets };
+}
 
 export function registerDryRun(server: McpServer): void {
   server.registerTool(
@@ -105,6 +134,32 @@ export function registerDryRun(server: McpServer): void {
             },
           ],
         };
+      }
+
+      // Preflight: if the repo's config extends any `local>…` preset and we're
+      // about to run with `--platform=local`, Renovate will fail opaquely with
+      // a generic "config-validation" error, because `local>` has no platform
+      // context to resolve against in local mode. Detect this up front and
+      // return an actionable message instead of spawning Renovate.
+      if (!isRemotePlatform) {
+        const unresolvable = await detectUnresolvableLocalPresets(repoPath);
+        if (unresolvable && unresolvable.presets.length > 0) {
+          const sample = unresolvable.presets.slice(0, 3).join(", ");
+          const more = unresolvable.presets.length > 3
+            ? ` (+${unresolvable.presets.length - 3} more)`
+            : "";
+          return {
+            isError: true,
+            content: [
+              {
+                type: "text",
+                text:
+                  `\`${unresolvable.relPath}\` extends \`local>\` presets (${sample}${more}) that cannot be resolved under \`--platform=local\` — Renovate has no platform context to expand them against, so the run would fail with an opaque \`config-validation\` error.\n\n` +
+                  `To fix: pass \`platform\` (e.g. \`gitlab\` or \`github\`), \`endpoint\`, \`token\`, and \`repository\` so Renovate runs as a real platform client and can fetch the preset. Alternatively, rewrite the \`extends\` entries from \`local>…\` to \`gitlab>…\` / \`github>…\` in your config.`,
+              },
+            ],
+          };
+        }
       }
 
       // Hybrid progress reporter: a heartbeat tick every HEARTBEAT_MS keeps
