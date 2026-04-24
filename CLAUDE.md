@@ -10,7 +10,7 @@ Never add a `Co-Authored-By: Claude …` trailer (or any other Claude attributio
 
 MCP server that helps users design Renovate configurations interactively. TypeScript, Node ≥ 24 (aligns with Renovate's own engine requirement), built with `@modelcontextprotocol/sdk` 1.x, stdio transport.
 
-Surface is intentionally small: seven tools (`check_setup`, `read_config`, `resolve_config`, `preview_custom_manager`, `validate_config`, `dry_run`, `write_config`) plus one resource (`renovate://presets`). Don't grow this without a reason — the roadmap for expansion lives in the GitHub issues, not in ad-hoc additions.
+Surface is intentionally small: eight tools (`check_setup`, `read_config`, `resolve_config`, `preview_custom_manager`, `validate_config`, `lint_config`, `dry_run`, `write_config`) plus one resource (`renovate://presets`). Don't grow this without a reason — the roadmap for expansion lives in the GitHub issues, not in ad-hoc additions.
 
 ## Commands
 

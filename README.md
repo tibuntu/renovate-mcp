@@ -4,7 +4,7 @@ An MCP server for designing [Renovate](https://github.com/renovatebot/renovate) 
 
 ## What it does
 
-Seven tools plus a preset reference:
+Eight tools plus a preset reference:
 
 | Tool | What it does |
 | --- | --- |
@@ -13,6 +13,7 @@ Seven tools plus a preset reference:
 | `resolve_config` | Expand every `extends` preset against the committed catalogue and return the fully resolved config (offline; no `renovate` invocation). Flags unresolvable entries with a reason. Opt in to fetching `github>` / `gitlab>` presets over HTTPS with `externalPresets: true` (auth via `GITHUB_TOKEN` / `GITLAB_TOKEN` / `RENOVATE_TOKEN`). For GitHub Enterprise or self-hosted GitLab, pass `endpoint` (API base URL) — and `platform` in addition to route `local>` presets through the same host. `bitbucket>`, `gitea>`, and npm presets remain in `presetsUnresolved` regardless. |
 | `preview_custom_manager` | Preview a `customManagers` (regex) entry against a local repo — offline, no `renovate` invocation. Shows which files match `fileMatch`, which lines match each `matchStrings` regex with named capture groups, and what dep info the template fields produce. Intended for fast regex iteration; run `dry_run` afterwards for full-fidelity confirmation. |
 | `validate_config` | Run `renovate-config-validator` against a file or inline object. |
+| `lint_config` | Semantic lint pass for Renovate-specific footguns schema validation misses — primarily malformed `/…/` regex patterns in `matchPackageNames` / `matchDepNames` / `matchSourceUrls` / `matchCurrentVersion`. Offline; does not shell out. Returns findings with JSON path, offending value, and a stable `ruleId` (`dead-regex-missing-slash`, `unwrapped-regex`) for suppression. Complements `validate_config`. |
 | `dry_run` | Run Renovate with `--platform=local --dry-run`, return the structured JSON report (no PRs, no pushes). Scans Renovate's logs for registry-auth failures (401/403/unauthorized/etc.) and surfaces them under `problems` so an empty-updates result isn't mistaken for "no updates available" when credentials were actually missing. Accepts an optional `hostRules` input for per-invocation private-registry credentials so callers don't have to restart the MCP server with new env vars (written to a mode-0600 temp file, passed via `--config-file`, cleaned up after the run; token/password values are scrubbed from any log output). |
 | `write_config` | Validate, then write a config to disk (temp-file → validate → atomic rename). Refuses to save invalid configs unless `force: true`. |
 | `renovate://presets` (resource) | Thin markdown index of every namespace (with preset counts) covering all 1000+ built-in presets. Snapshot from the installed `renovate` devDep. |
@@ -29,7 +30,7 @@ Seven tools plus a preset reference:
 ## Requirements
 
 - Node.js ≥ 24 (aligns with Renovate's own engine requirement).
-- Renovate available on your `PATH` — either a global install (`npm i -g renovate`) or a project-local install that exposes `renovate` and `renovate-config-validator` via `npm exec`. Only needed for `validate_config`, `dry_run`, and `write_config`; the offline tools (`read_config`, `resolve_config`, `preview_custom_manager`) work without it.
+- Renovate available on your `PATH` — either a global install (`npm i -g renovate`) or a project-local install that exposes `renovate` and `renovate-config-validator` via `npm exec`. Only needed for `validate_config`, `dry_run`, and `write_config`; the offline tools (`read_config`, `resolve_config`, `preview_custom_manager`, `lint_config`) work without it.
 - Override binary locations with env vars if needed: `RENOVATE_BIN`, `RENOVATE_CONFIG_VALIDATOR_BIN`.
 - `RENOVATE_MCP_REQUIRE_CLI=false` suppresses the startup "partial availability" notice. Set this if you only intend to use the offline tools (`read_config`, `resolve_config`, `preview_custom_manager`) and don't want the missing-CLI notice in the server's MCP instructions.
 - Optional for `resolve_config` with `externalPresets: true`: `GITHUB_TOKEN` / `GITLAB_TOKEN` (or `RENOVATE_TOKEN` as a fallback) for fetching presets from private repos or to avoid rate limits. For GitHub Enterprise / self-hosted GitLab, pass the `endpoint` tool input (and `platform` if you also want `local>` presets routed there); `RENOVATE_ENDPOINT` is **not** read.
@@ -181,7 +182,8 @@ Secrets required on the repo: `RELEASE_PLEASE_TOKEN` (a PAT for release-please).
 Scope and non-goals are summarized in [What this is NOT](#what-this-is-not); this section covers implementation decisions behind the scope that *is* supported.
 
 - `validate_config`, `dry_run`, and `write_config` shell out to the Renovate CLI rather than importing Renovate as a library — this decouples our Node version from Renovate's (currently Node 24).
-- `resolve_config` and `preview_custom_manager` are fully in-process and never invoke the Renovate CLI, so they work without a Renovate install.
+- `resolve_config`, `preview_custom_manager`, and `lint_config` are fully in-process and never invoke the Renovate CLI, so they work without a Renovate install.
+- `lint_config` is a semantic lint pass that sits alongside `validate_config` rather than replacing it: schema validation catches structural bugs, the linter catches Renovate-specific footguns that schema validation declares valid — most commonly a pattern like `"matchPackageNames": ["/devops\\/pipelines\\/.+"]` where a trailing `/` is missing and Renovate silently degrades the value to an exact-string match that never hits. The ruleset is intentionally small (two rules: `dead-regex-missing-slash`, `unwrapped-regex`), scoped to the four regex-aware fields named in the proposal, and tuned to avoid false positives on benign exact strings containing a `.`. Rule IDs are stable so findings can be suppressed by callers.
 - `preview_custom_manager` honors `.gitignore` (including nested `.gitignore`s and `.git/info/exclude`) when walking the repo, so generated/vendored directories like `dist/`, `.next/`, `target/`, `__pycache__/` don't crowd out real hits against the `maxFilesScanned` cap. `node_modules/` and `.git/` are always skipped as a safety net even when no `.gitignore` is present.
 - `resolve_config` expands `extends` against a committed snapshot of Renovate's built-in presets (`src/data/presets.generated.ts`). External `github>` / `gitlab>` fetching is opt-in, uses each platform's contents API with a 10 s timeout, and caches results per call. The `endpoint` input swaps in a custom API base for GHE / self-hosted GitLab; `platform` additionally rewrites `local>` presets to be fetched against that endpoint.
 - `resolve_config` merges preset bodies with a close approximation of Renovate's own `mergeChildConfig` — arrays concat, objects recursively merge, scalars overwrite — not a bit-identical port. Rule-specific semantics for `hostRules`, `regexManagers` / `customManagers`, and certain boolean flags aren't modeled here. Every response carries `mergeQuality: "preview"` plus a human-readable `disclaimer` so callers can't miss the limitation; run `dry_run` for authoritative output.
