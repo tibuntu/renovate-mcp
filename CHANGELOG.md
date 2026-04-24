@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.0](https://github.com/tibuntu/renovate-mcp/compare/v0.3.0...v0.4.0) (2026-04-24)
+
+
+### Features
+
+* **dry_run:** accept per-invocation hostRules for private registry auth ([1a0dd48](https://github.com/tibuntu/renovate-mcp/commit/1a0dd484e8d63eda1469b2cab695446cc3d8d3a6)), closes [#42](https://github.com/tibuntu/renovate-mcp/issues/42)
+* **dry_run:** surface registry-auth failures via problems[] ([fa272f3](https://github.com/tibuntu/renovate-mcp/commit/fa272f3447a873a00f778b1d4f566f9a003115ca))
+* **lint_config:** add semantic lint tool for Renovate footguns ([68e2bf9](https://github.com/tibuntu/renovate-mcp/commit/68e2bf9c1b1d4bfa9440719629ddbb4dbdbd7c0b)), closes [#28](https://github.com/tibuntu/renovate-mcp/issues/28)
+* **resolve_config:** distinguish rate-limit from auth failures on preset fetches ([17325f8](https://github.com/tibuntu/renovate-mcp/commit/17325f83d91c6fba13f3d6d0498c664fe83ad036))
+* **resolve_config:** enrich 401/403 preset-fetch errors with credential source and URL ([b69b875](https://github.com/tibuntu/renovate-mcp/commit/b69b87563e3ad009177676789752841b15cdbc09))
+* **resolve_config:** flag responses as preview-quality ([e704e3b](https://github.com/tibuntu/renovate-mcp/commit/e704e3b9c49a1a06ab9e82336bb1ba25288577d5)), closes [#23](https://github.com/tibuntu/renovate-mcp/issues/23)
+* **resolve_config:** prefer RENOVATE_TOKEN over platform tokens for external preset fetches ([be60624](https://github.com/tibuntu/renovate-mcp/commit/be60624728e9f9fa1ee8cbc5a9977995b37d1c95)), closes [#22](https://github.com/tibuntu/renovate-mcp/issues/22)
+* **resolve_config:** surface preset template warnings ([5d19941](https://github.com/tibuntu/renovate-mcp/commit/5d19941a391ec9d655c8a2b5f3e24c7787af407f)), closes [#24](https://github.com/tibuntu/renovate-mcp/issues/24)
+* **setup:** reword startup banner for partial CLI availability ([1b1c9a3](https://github.com/tibuntu/renovate-mcp/commit/1b1c9a31f113af19a2a0e34c3a08ae823e4a3564)), closes [#25](https://github.com/tibuntu/renovate-mcp/issues/25)
+
 ## [0.3.0](https://github.com/tibuntu/renovate-mcp/compare/v0.2.0...v0.3.0) (2026-04-23)
 
 
