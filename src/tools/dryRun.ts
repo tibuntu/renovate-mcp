@@ -124,7 +124,7 @@ export function registerDryRun(server: McpServer): void {
             {
               type: "text",
               text: scrubSecrets(
-                formatMissingBinaryError("renovate", err as Error),
+                formatMissingBinaryError("renovate", err),
                 secrets,
               ),
             },
