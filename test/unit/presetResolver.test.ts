@@ -99,6 +99,16 @@ describe("resolveConfig", () => {
     expect(presetsUnresolved[0]?.reason).toMatch(/catalogue/i);
   });
 
+  it("flags an unknown source prefix with a dedicated reason", async () => {
+    const { presetsResolved, presetsUnresolved } = await resolveConfig({
+      extends: ["xyz>foo/bar"],
+    });
+    expect(presetsResolved).toEqual([]);
+    expect(presetsUnresolved).toHaveLength(1);
+    expect(presetsUnresolved[0]?.preset).toBe("xyz>foo/bar");
+    expect(presetsUnresolved[0]?.reason).toMatch(/unknown preset source: xyz/i);
+  });
+
   it("resolves siblings independently when one is unknown", async () => {
     const { resolved, presetsResolved, presetsUnresolved } = await resolveConfig({
       extends: ["default:automergeAll", "config:doesNotExist"],
@@ -175,6 +185,14 @@ describe("parsePreset", () => {
   it("treats bare names as npm presets", () => {
     const p = parsePreset("some-npm-preset");
     expect(p).toMatchObject({ source: "npm", repoPath: "some-npm-preset" });
+  });
+
+  it("flags an unknown source prefix as unresolvable without setting source", () => {
+    const p = parsePreset("xyz>foo/bar");
+    expect(p.source).toBeUndefined();
+    expect(p.repoPath).toBeUndefined();
+    expect(p.unresolvableReason).toMatch(/unknown preset source: xyz/i);
+    expect(p.original).toBe("xyz>foo/bar");
   });
 });
 

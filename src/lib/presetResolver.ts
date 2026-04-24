@@ -112,6 +112,12 @@ export interface ParsedPreset {
   subpath?: string;
   /** Optional `#ref` (branch/tag/commit) fragment. */
   ref?: string;
+  /**
+   * Set when parsing already determined the preset cannot be resolved — e.g.
+   * an unknown source prefix like `xyz>foo/bar`. `loadPresetBody` short-circuits
+   * to the unresolved list with this reason.
+   */
+  unresolvableReason?: string;
 }
 
 interface ExpandContext {
@@ -247,6 +253,11 @@ async function loadPresetBody(
   ctx: ExpandContext,
   unresolvedList: UnresolvedPreset[],
 ): Promise<Record<string, unknown> | null> {
+  if (parsed.unresolvableReason) {
+    unresolvedList.push({ preset: parsed.original, reason: parsed.unresolvableReason });
+    return null;
+  }
+
   if (!parsed.source) {
     const preset = PRESETS[parsed.key];
     if (!preset) {
@@ -348,9 +359,15 @@ function parseExternal(
   args: string[],
   sourceRaw: string,
 ): ParsedPreset {
-  const source = (KNOWN_SOURCES.has(sourceRaw as ExternalSource)
-    ? sourceRaw
-    : sourceRaw) as ExternalSource;
+  if (!KNOWN_SOURCES.has(sourceRaw as ExternalSource)) {
+    return {
+      key: original,
+      original,
+      args,
+      unresolvableReason: `Unknown preset source: ${sourceRaw}`,
+    };
+  }
+  const source = sourceRaw as ExternalSource;
 
   let spec = rest.slice(sourceRaw.length + 1);
 
