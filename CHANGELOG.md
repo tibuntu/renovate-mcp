@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.6.0](https://github.com/tibuntu/renovate-mcp/compare/v0.5.0...v0.6.0) (2026-04-24)
+
+
+### Features
+
+* **dry_run:** accept platform/endpoint/token/repository inputs ([c1a76c8](https://github.com/tibuntu/renovate-mcp/commit/c1a76c86519fcee6acd0a27adf7a14bb4b3a6c1d))
+* **dry_run:** preflight local&gt; presets under --platform=local ([b2ae7e4](https://github.com/tibuntu/renovate-mcp/commit/b2ae7e4b65d0ec17cc7126d974e07a54f8789c19))
+* **dry_run:** surface validation errors as tool errors ([7cbba12](https://github.com/tibuntu/renovate-mcp/commit/7cbba12972fc9c5b97c9b9a892b31b0ad2d0b9f8))
+
+
+### Bug Fixes
+
+* **dry_run:** pass hostRules via RENOVATE_CONFIG_FILE env, not --config-file ([efc0ab2](https://github.com/tibuntu/renovate-mcp/commit/efc0ab2c1ba9cbda782b581b384da1d8bb7f29f6))
+
 ## [0.5.0](https://github.com/tibuntu/renovate-mcp/compare/v0.4.0...v0.5.0) (2026-04-24)
 
 
