@@ -1,5 +1,4 @@
 import { classifyExternalSource, type ParsedPreset } from "./presetResolver.js";
-import { toMessage } from "./errors.js";
 
 export interface FetchOptions {
   timeoutMs?: number;
@@ -22,23 +21,6 @@ export type FetchResult =
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_GITHUB_API_BASE = "https://api.github.com";
 const DEFAULT_GITLAB_API_BASE = "https://gitlab.com/api/v4";
-
-let defaultFetchImpl: typeof fetch | undefined;
-
-/**
- * Test-only seam: override the default fetch implementation used when
- * `FetchOptions.fetchImpl` is not passed. Lets the integration suite drive
- * `resolve_config` end-to-end without a real HTTP server, since the tool
- * handler doesn't accept a `fetchImpl` argument. Pair with
- * `resetDefaultFetchImpl()` in afterEach so nothing leaks between tests.
- */
-export function setDefaultFetchImpl(impl: typeof fetch): void {
-  defaultFetchImpl = impl;
-}
-
-export function resetDefaultFetchImpl(): void {
-  defaultFetchImpl = undefined;
-}
 
 function trimTrailingSlash(url: string): string {
   return url.replace(/\/+$/, "");
@@ -69,7 +51,7 @@ function dispatch(parsed: ParsedPreset, options: FetchOptions): Promise<FetchRes
   }
 
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const fetchImpl = options.fetchImpl ?? defaultFetchImpl ?? globalThis.fetch;
+  const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   const endpoint = options.endpoint ? trimTrailingSlash(options.endpoint) : undefined;
 
   switch (parsed.source) {
@@ -229,11 +211,12 @@ async function fetchJson(
     } catch (e) {
       return {
         ok: false,
-        reason: `Preset body for ${presetName} is not valid JSON: ${toMessage(e)}`,
+        reason: `Preset body for ${presetName} is not valid JSON: ${(e as Error).message}`,
       };
     }
   } catch (e) {
-    if (e instanceof Error && e.name === "AbortError") {
+    const err = e as Error;
+    if (err.name === "AbortError") {
       return {
         ok: false,
         reason: `Timed out after ${timeoutMs}ms fetching ${presetName}`,
@@ -241,7 +224,7 @@ async function fetchJson(
     }
     return {
       ok: false,
-      reason: `Network error fetching ${presetName}: ${toMessage(e)}`,
+      reason: `Network error fetching ${presetName}: ${err.message}`,
     };
   } finally {
     clearTimeout(timer);

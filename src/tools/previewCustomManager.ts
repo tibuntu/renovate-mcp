@@ -4,7 +4,6 @@ import {
   previewCustomManager,
   type CustomManager,
 } from "../lib/customManagerPreview.js";
-import { toMessage } from "../lib/errors.js";
 
 const managerSchema = z
   .object({
@@ -129,7 +128,7 @@ export function registerPreviewCustomManager(server: McpServer): void {
         return {
           isError: true,
           content: [
-            { type: "text", text: toMessage(err) },
+            { type: "text", text: (err as Error).message },
           ],
         };
       }

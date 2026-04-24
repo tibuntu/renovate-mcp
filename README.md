@@ -1,5 +1,10 @@
 # renovate-mcp
 
+[![npm](https://img.shields.io/npm/v/renovate-mcp.svg)](https://www.npmjs.com/package/renovate-mcp)
+[![CI](https://github.com/tibuntu/renovate-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/tibuntu/renovate-mcp/actions/workflows/ci.yml)
+[![Node ≥ 24](https://img.shields.io/node/v/renovate-mcp.svg)](https://nodejs.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+
 An MCP server for designing [Renovate](https://github.com/renovatebot/renovate) configurations interactively. Point it at a local repo and let an LLM help you read, validate, preview, and save `renovate.json`.
 
 ## Contents
@@ -8,8 +13,6 @@ An MCP server for designing [Renovate](https://github.com/renovatebot/renovate) 
 - [What this is NOT](#what-this-is-not)
 - [Requirements](#requirements)
 - [Install](#install)
-- [Use with Claude Code](#use-with-claude-code)
-- [Use with Claude Desktop](#use-with-claude-desktop)
 - [Example prompts](#example-prompts)
 - [Example session](#example-session)
 - [Development](#development)
@@ -20,19 +23,21 @@ An MCP server for designing [Renovate](https://github.com/renovatebot/renovate) 
 
 Eight tools plus a preset reference:
 
-| Tool | What it does |
+| Tool | Purpose |
 | --- | --- |
-| `check_setup` | Report Renovate CLI + validator availability, versions, env overrides, and install hints. Also runs at server startup and embeds the result in the server's `instructions` when anything's missing. |
-| `read_config` | Locate and parse `renovate.json` / `renovate.json5` / `.renovaterc*` / `.github/renovate.json` / `.gitlab/renovate.json` / `package.json#renovate` in a repo — in Renovate's priority order. |
-| `resolve_config` | Expand every `extends` preset against the committed catalogue and return the fully resolved config (offline; no `renovate` invocation). Flags unresolvable entries with a reason. Opt in to fetching `github>` / `gitlab>` presets over HTTPS with `externalPresets: true` (auth via `RENOVATE_TOKEN`, or `GITHUB_TOKEN` / `GITLAB_TOKEN` as platform-specific fallbacks). For GitHub Enterprise or self-hosted GitLab, pass `endpoint` (API base URL) — and `platform` in addition to route `local>` presets through the same host. `bitbucket>`, `gitea>`, and npm presets remain in `presetsUnresolved` regardless. |
-| `preview_custom_manager` | Preview a `customManagers` (regex) entry against a local repo — offline, no `renovate` invocation. Shows which files match `fileMatch`, which lines match each `matchStrings` regex with named capture groups, and what dep info the template fields produce. User-supplied patterns run on a worker thread with a per-regex wall-clock budget (default 2000 ms, override via `matchTimeoutMs`) so a pathological pattern times out with a warning instead of pinning the server. Oversized matched files are skipped with a warning (default cap 5 MiB, override via `maxFileBytes`) so a stray lockfile or generated artifact caught by `fileMatch` can't OOM the server. Intended for fast regex iteration; run `dry_run` afterwards for full-fidelity confirmation. |
+| `check_setup` | Report Renovate CLI + validator availability, versions, and install hints. Also runs at startup. |
+| `read_config` | Locate and parse a repo's Renovate config (`renovate.json`, `renovate.json5`, `.renovaterc*`, `package.json#renovate`, …) in priority order. |
+| `resolve_config` | Expand every `extends` preset offline. Opt in to fetching `github>` / `gitlab>` presets over HTTPS with `externalPresets: true`. |
+| `preview_custom_manager` | Preview a `customManagers` (regex) entry against a local repo — shows file/line hits and extracted dep info. Offline. |
 | `validate_config` | Run `renovate-config-validator` against a file or inline object. |
-| `lint_config` | Semantic lint pass for Renovate-specific footguns schema validation misses — primarily malformed `/…/` regex patterns in `matchPackageNames` / `matchDepNames` / `matchSourceUrls` / `matchCurrentVersion`. Offline; does not shell out. Returns findings with JSON path, offending value, and a stable `ruleId` (`dead-regex-missing-slash`, `unwrapped-regex`) for suppression. Complements `validate_config`. |
-| `dry_run` | Run Renovate with `--platform=local --dry-run`, return the structured JSON report (no PRs, no pushes). Scans Renovate's logs for registry-auth failures (401/403/unauthorized/etc.) and surfaces them under `problems` so an empty-updates result isn't mistaken for "no updates available" when credentials were actually missing. Accepts an optional `hostRules` input for per-invocation private-registry credentials so callers don't have to restart the MCP server with new env vars (written to a mode-0600 temp file, passed via `--config-file`, cleaned up after the run; token/password values are scrubbed from any log output). |
-| `write_config` | Validate, then write a config to disk (temp-file → validate → atomic rename). Refuses to save invalid configs unless `force: true`. |
-| `renovate://presets` (resource) | Thin markdown index of every namespace (with preset counts) covering all 1000+ built-in presets. Snapshot from the installed `renovate` devDep. |
-| `renovate://presets/{namespace}` (resource template) | Markdown listing of every preset in a single namespace (e.g. `renovate://presets/config`). Fetch this instead of the full index when the LLM only cares about one namespace — cuts token cost by roughly 1/N where N is the number of namespaces. |
-| `renovate://preset/{name}` (resource template) | Expanded JSON body (description, extends, packageRules, …) for any single built-in preset. E.g. `renovate://preset/config:recommended`. |
+| `lint_config` | Semantic lint for Renovate-specific footguns schema validation misses (mostly malformed `/…/` regex patterns). Offline. |
+| `dry_run` | Run Renovate with `--platform=local --dry-run` and return the structured JSON report. No PRs, no pushes. |
+| `write_config` | Validate, then atomically write a config to disk. Refuses to save invalid configs unless `force: true`. |
+| `renovate://presets` (resource) | Markdown index of all 1000+ built-in presets grouped by namespace. |
+| `renovate://presets/{namespace}` (resource template) | Markdown listing for a single namespace (e.g. `renovate://presets/config`) — cheaper than the full index. |
+| `renovate://preset/{name}` (resource template) | Expanded JSON body for one preset (e.g. `renovate://preset/config:recommended`). |
+
+See [Design notes](#design-notes) for implementation details (timeouts, safety caps, auth scrubbing, merge semantics).
 
 ## What this is NOT
 
@@ -43,26 +48,30 @@ Eight tools plus a preset reference:
 
 ## Requirements
 
+**Required**
+
 - Node.js ≥ 24 (aligns with Renovate's own engine requirement).
-- Renovate available on your `PATH` — either a global install (`npm i -g renovate`) or a project-local install that exposes `renovate` and `renovate-config-validator` via `npm exec`. Only needed for `validate_config`, `dry_run`, and `write_config`; the offline tools (`read_config`, `resolve_config`, `preview_custom_manager`, `lint_config`) work without it.
-- Override binary locations with env vars if needed: `RENOVATE_BIN`, `RENOVATE_CONFIG_VALIDATOR_BIN`.
-- `RENOVATE_MCP_REQUIRE_CLI=false` suppresses the startup "partial availability" notice. Set this if you only intend to use the offline tools (`read_config`, `resolve_config`, `preview_custom_manager`) and don't want the missing-CLI notice in the server's MCP instructions.
-- Optional for `resolve_config` with `externalPresets: true`: `RENOVATE_TOKEN` (preferred — matches Renovate's own convention, where `RENOVATE_TOKEN` is the explicit Renovate-specific override), or `GITHUB_TOKEN` / `GITLAB_TOKEN` as platform-specific fallbacks, for fetching presets from private repos or to avoid rate limits. When both `RENOVATE_TOKEN` and a platform token are set, `RENOVATE_TOKEN` wins. For GitHub Enterprise / self-hosted GitLab, pass the `endpoint` tool input (and `platform` if you also want `local>` presets routed there); `RENOVATE_ENDPOINT` is **not** read.
-- Optional for `dry_run` against private package registries: whatever credentials Renovate itself would need at lookup time — e.g. `COMPOSER_AUTH` for private Packagist / Satis proxies, `NPM_TOKEN` or `.npmrc` for private npm, Docker registry credentials, or a `RENOVATE_HOST_RULES` JSON blob covering multiple hosts. Alternatively, encode these as `hostRules` directly in the Renovate config, or pass them per-call via the `hostRules` input on `dry_run` (no MCP server restart needed — useful while debugging an empty-updates result). Per-call `hostRules` are appended to any the repo's own config already declares. Values reach Renovate through the MCP tool-call transport as JSON, so the calling LLM sees them in its context; if that matters for a given token, use the env route instead. Without any of these Renovate's lookup step often returns 0 updates silently; `dry_run` will scan its logs for auth failures and surface them under `problems` in the output.
-- Any env vars the tools read (tokens, `COMPOSER_AUTH`, `RENOVATE_HOST_RULES`, binary overrides, …) must be set on the MCP server process itself — via the `env` key in `claude_desktop_config.json` / `.mcp.json`, not your shell, since the MCP server runs as a child of Claude and does not inherit shell env.
+- Renovate on your `PATH` — either a global install (`npm i -g renovate`) or a project-local install that exposes `renovate` + `renovate-config-validator` via `npm exec`. Only needed for `validate_config`, `dry_run`, and `write_config`; the offline tools (`read_config`, `resolve_config`, `preview_custom_manager`, `lint_config`) work without it.
+
+**Optional**
+
+- `RENOVATE_BIN` / `RENOVATE_CONFIG_VALIDATOR_BIN` — override binary locations.
+- `RENOVATE_MCP_REQUIRE_CLI=false` — suppress the startup "partial availability" notice when you only intend to use the offline tools.
+- `RENOVATE_TOKEN` (preferred) or `GITHUB_TOKEN` / `GITLAB_TOKEN` as platform-specific fallbacks — only needed by `resolve_config` with `externalPresets: true` for fetching presets from private repos or avoiding rate limits. `RENOVATE_TOKEN` wins when both are set. For GitHub Enterprise / self-hosted GitLab, pass the `endpoint` tool input (and `platform` to route `local>` presets through the same host); `RENOVATE_ENDPOINT` is **not** read.
+- Private-registry credentials for `dry_run` — whatever Renovate itself would need at lookup time (`COMPOSER_AUTH`, `NPM_TOKEN` / `.npmrc`, Docker registry creds, or a `RENOVATE_HOST_RULES` JSON blob). Alternatively encode these as `hostRules` in the Renovate config, or pass them per-call via the `hostRules` input on `dry_run` (no MCP restart needed). Per-call `hostRules` are appended to whatever the repo's own config declares. Values reach Renovate as JSON through the tool-call transport, so the calling LLM sees them in its context — prefer the env route if that matters. Without any of these, Renovate's lookup often returns 0 updates silently; `dry_run` scans its logs for auth failures and surfaces them under `problems`.
+
+> **Note:** all env vars (tokens, `COMPOSER_AUTH`, `RENOVATE_HOST_RULES`, binary overrides, …) must be set on the MCP server process itself — via the `env` key in `claude_desktop_config.json` / `.mcp.json`, not your shell — since the MCP server runs as a child of the client and does not inherit shell env.
 
 ## Install
 
-Once published to npm, no install is needed — `npx` will fetch it on demand. For local development, clone and build:
+`npx` fetches the [published package](https://www.npmjs.com/package/renovate-mcp) on demand — no manual install needed. For local development, clone and build first:
 
 ```bash
 npm install
 npm run build
 ```
 
-## Use with Claude Code
-
-Add to `.mcp.json` (project) or `~/.claude.json` (user):
+Add the following `mcpServers` entry to your client's config file:
 
 ```json
 {
@@ -75,33 +84,27 @@ Add to `.mcp.json` (project) or `~/.claude.json` (user):
 }
 ```
 
-For local development, swap to:
+For local development, swap to `"command": "node"` with `"args": ["/absolute/path/to/renovate-mcp/dist/index.js"]`.
 
-```json
-{
-  "mcpServers": {
-    "renovate": {
-      "command": "node",
-      "args": ["/absolute/path/to/renovate-mcp/dist/index.js"]
-    }
-  }
-}
-```
+### Claude Code
 
-## Use with Claude Desktop
+Config lives in `.mcp.json` (project-scoped) or `~/.claude.json` (user-scoped).
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+### Claude Desktop
 
-```json
-{
-  "mcpServers": {
-    "renovate": {
-      "command": "npx",
-      "args": ["-y", "renovate-mcp"]
-    }
-  }
-}
-```
+Config lives in `~/Library/Application Support/Claude/claude_desktop_config.json`.
+
+### Other MCP clients
+
+Any client that can launch a stdio MCP server works — point it at the same command shown above.
+
+### Verify the wiring
+
+Restart your client and prompt it:
+
+> List the namespaces available under `renovate://presets`.
+
+A response listing namespaces like `config`, `docker`, `npm`, `helpers`, … confirms the server is reachable and the resource is exposed. If the client reports the tool or resource as unavailable, re-check the config file path and command.
 
 ## Example prompts
 
