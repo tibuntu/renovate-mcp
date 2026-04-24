@@ -31,6 +31,11 @@ export interface StartServerOptions {
   serverEntry?: string;
 }
 
+export interface ServerNotification {
+  method: string;
+  params?: unknown;
+}
+
 export interface McpSession {
   request<T = unknown>(
     method: string,
@@ -42,6 +47,10 @@ export interface McpSession {
   readonly instructions: string;
   /** Current buffered stderr from the server (capped). */
   readonly stderr: string;
+  /** All notifications received from the server (in arrival order). */
+  readonly notifications: ServerNotification[];
+  /** Register a listener for notifications from the server. */
+  onNotification(listener: (n: ServerNotification) => void): () => void;
 }
 
 /**
@@ -118,17 +127,28 @@ export async function startServer(
     closed = true;
   });
 
+  const notifications: ServerNotification[] = [];
+  const notificationListeners = new Set<(n: ServerNotification) => void>();
+
   const rl = createInterface({ input: child.stdout! });
   rl.on("line", (line) => {
     if (!line.trim()) return;
     try {
-      const msg = JSON.parse(line) as JsonRpcResponse;
-      if (typeof msg.id !== "number") return;
-      const p = pending.get(msg.id);
-      if (!p) return;
-      clearTimeout(p.timer);
-      pending.delete(msg.id);
-      p.resolve(msg);
+      const msg = JSON.parse(line) as JsonRpcResponse & {
+        method?: string;
+        params?: unknown;
+      };
+      if (typeof msg.id === "number") {
+        const p = pending.get(msg.id);
+        if (!p) return;
+        clearTimeout(p.timer);
+        pending.delete(msg.id);
+        p.resolve(msg);
+      } else if (typeof msg.method === "string") {
+        const entry: ServerNotification = { method: msg.method, params: msg.params };
+        notifications.push(entry);
+        for (const l of notificationListeners) l(entry);
+      }
     } catch {
       // non-JSON stdout line — ignore
     }
@@ -188,6 +208,13 @@ export async function startServer(
     instructions: init.result?.instructions ?? "",
     get stderr() {
       return stderrBuffer;
+    },
+    get notifications() {
+      return notifications;
+    },
+    onNotification(listener) {
+      notificationListeners.add(listener);
+      return () => notificationListeners.delete(listener);
     },
     async close() {
       if (closed) return;

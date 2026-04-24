@@ -12,6 +12,10 @@ import {
   writeHostRulesConfig,
   type HostRule,
 } from "../lib/hostRulesConfig.js";
+import {
+  extractRenovateLogMsg,
+  buildDryRunHeartbeatMessage,
+} from "../lib/dryRunProgress.js";
 
 const hostRuleSchema = z
   .record(z.string(), z.unknown())
@@ -50,12 +54,39 @@ export function registerDryRun(server: McpServer): void {
           ),
       },
     },
-    async ({ repoPath, dryRunMode, logLevel, timeoutMs, hostRules }) => {
+    async ({ repoPath, dryRunMode, logLevel, timeoutMs, hostRules }, extra) => {
       const reportPath = path.join(tmpdir(), `renovate-mcp-report-${randomUUID()}.json`);
       const bin = resolveRenovateTool("renovate");
       const ruleList: HostRule[] = hostRules ?? [];
       const secrets = collectSecrets(ruleList);
       let hostRulesConfigPath: string | undefined;
+
+      // Hybrid progress reporter: a heartbeat tick every HEARTBEAT_MS keeps
+      // MCP clients informed during long runs, and each tick enriches its
+      // message with the latest Renovate JSON-log `msg` we saw (best-effort —
+      // we don't couple tightly to Renovate's log schema). Skips all work if
+      // the caller didn't supply a progressToken.
+      const progressToken = extra?._meta?.progressToken;
+      const sendNotification = extra?.sendNotification;
+      const progressEnabled = progressToken !== undefined && typeof sendNotification === "function";
+      const HEARTBEAT_MS = 5_000;
+      const startedAt = Date.now();
+      let progressCounter = 0;
+      let lastLogMsg: string | undefined;
+      let heartbeat: NodeJS.Timeout | undefined;
+
+      const emit = (message: string): void => {
+        if (!progressEnabled) return;
+        progressCounter += 1;
+        void sendNotification({
+          method: "notifications/progress",
+          params: {
+            progressToken,
+            progress: progressCounter,
+            message: scrubSecrets(message, secrets),
+          },
+        }).catch(() => undefined);
+      };
 
       try {
         const args = [
@@ -69,11 +100,30 @@ export function registerDryRun(server: McpServer): void {
           args.push(`--config-file=${hostRulesConfigPath}`);
         }
 
+        if (progressEnabled) {
+          emit(`Starting Renovate dry-run (${dryRunMode})`);
+          heartbeat = setInterval(
+            () => emit(buildDryRunHeartbeatMessage(Date.now() - startedAt, lastLogMsg)),
+            HEARTBEAT_MS,
+          );
+        }
+
         const result = await run(bin, args, {
           cwd: repoPath,
           env: { LOG_LEVEL: logLevel, LOG_FORMAT: "json" },
           timeoutMs,
+          onStdoutLine: progressEnabled
+            ? (line) => {
+                const msg = extractRenovateLogMsg(line);
+                if (msg) lastLogMsg = msg;
+              }
+            : undefined,
         });
+
+        if (heartbeat) {
+          clearInterval(heartbeat);
+          heartbeat = undefined;
+        }
 
         let report: unknown = null;
         try {
@@ -108,6 +158,14 @@ export function registerDryRun(server: McpServer): void {
           summary.logTail = tail;
         }
 
+        if (progressEnabled) {
+          emit(
+            report
+              ? `Dry-run complete (exit ${result.exitCode})`
+              : `Dry-run finished without a report (exit ${result.exitCode})`,
+          );
+        }
+
         return {
           content: [
             {
@@ -131,6 +189,7 @@ export function registerDryRun(server: McpServer): void {
           ],
         };
       } finally {
+        if (heartbeat) clearInterval(heartbeat);
         await fs.unlink(reportPath).catch(() => undefined);
         if (hostRulesConfigPath) {
           await fs.unlink(hostRulesConfigPath).catch(() => undefined);

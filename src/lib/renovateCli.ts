@@ -11,6 +11,14 @@ export interface RunOptions {
   env?: NodeJS.ProcessEnv;
   timeoutMs?: number;
   stdin?: string;
+  /**
+   * Optional line-oriented observers. Invoked once per complete line (newline
+   * stripped) as data arrives, and once more on process close for any trailing
+   * non-empty fragment. Exceptions thrown by the callbacks are swallowed so a
+   * buggy observer can't crash the child-process pipeline.
+   */
+  onStdoutLine?: (line: string) => void;
+  onStderrLine?: (line: string) => void;
 }
 
 /**
@@ -28,6 +36,8 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
 
     let stdout = "";
     let stderr = "";
+    let stdoutLineBuf = "";
+    let stderrLineBuf = "";
     let timer: NodeJS.Timeout | undefined;
     let killed = false;
 
@@ -38,11 +48,34 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
       }, opts.timeoutMs);
     }
 
+    const emitLines = (
+      chunk: string,
+      buf: string,
+      cb: ((line: string) => void) | undefined,
+    ): string => {
+      if (!cb) return "";
+      const combined = buf + chunk;
+      const parts = combined.split(/\r?\n/);
+      const trailing = parts.pop() ?? "";
+      for (const line of parts) {
+        try {
+          cb(line);
+        } catch {
+          // never let an observer crash the pipeline
+        }
+      }
+      return trailing;
+    };
+
     child.stdout.on("data", (d) => {
-      stdout += d.toString();
+      const chunk = d.toString();
+      stdout += chunk;
+      stdoutLineBuf = emitLines(chunk, stdoutLineBuf, opts.onStdoutLine);
     });
     child.stderr.on("data", (d) => {
-      stderr += d.toString();
+      const chunk = d.toString();
+      stderr += chunk;
+      stderrLineBuf = emitLines(chunk, stderrLineBuf, opts.onStderrLine);
     });
     child.on("error", (err) => {
       if (timer) clearTimeout(timer);
@@ -50,6 +83,21 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
     });
     child.on("close", (code) => {
       if (timer) clearTimeout(timer);
+      // Flush trailing partial lines (output that didn't end with a newline).
+      if (stdoutLineBuf && opts.onStdoutLine) {
+        try {
+          opts.onStdoutLine(stdoutLineBuf);
+        } catch {
+          // ignore
+        }
+      }
+      if (stderrLineBuf && opts.onStderrLine) {
+        try {
+          opts.onStderrLine(stderrLineBuf);
+        } catch {
+          // ignore
+        }
+      }
       if (killed) {
         reject(new Error(`Command timed out after ${opts.timeoutMs}ms: ${cmd} ${args.join(" ")}`));
         return;
