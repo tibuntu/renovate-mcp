@@ -1,0 +1,77 @@
+import { z } from "zod";
+import { promises as fs } from "node:fs";
+import path from "node:path";
+import JSON5 from "json5";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { lintConfig } from "../lib/configLinter.js";
+
+export function registerLintConfig(server: McpServer): void {
+  server.registerTool(
+    "lint_config",
+    {
+      title: "Lint Renovate config for semantic footguns",
+      description:
+        "Run a semantic lint pass over a Renovate config. Complements validate_config: schema validation catches structural bugs, this catches Renovate-specific footguns schema validation misses — primarily malformed '/…/' regex patterns in fields like matchPackageNames, matchDepNames, matchSourceUrls, matchCurrentVersion. Offline; does not shell out. Pass either configPath (file on disk, JSON or JSON5) or configContent (inline object).",
+      inputSchema: {
+        configPath: z
+          .string()
+          .optional()
+          .describe("Absolute path to a config file to lint (JSON or JSON5)"),
+        configContent: z
+          .record(z.string(), z.unknown())
+          .optional()
+          .describe("Inline config object to lint"),
+      },
+    },
+    async ({ configPath, configContent }) => {
+      if (!configPath && !configContent) {
+        return {
+          isError: true,
+          content: [
+            { type: "text", text: "Provide either configPath or configContent." },
+          ],
+        };
+      }
+
+      let config: unknown;
+      if (configContent) {
+        config = configContent;
+      } else {
+        try {
+          const raw = await fs.readFile(configPath!, "utf8");
+          config = path.extname(configPath!).toLowerCase() === ".json5"
+            ? JSON5.parse(raw)
+            : JSON.parse(raw);
+        } catch (err) {
+          return {
+            isError: true,
+            content: [
+              {
+                type: "text",
+                text: `Failed to read or parse config at ${configPath}: ${(err as Error).message}`,
+              },
+            ],
+          };
+        }
+      }
+
+      const findings = lintConfig(config);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                clean: findings.length === 0,
+                findings,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
+    },
+  );
+}

@@ -11,13 +11,14 @@ afterEach(async () => {
 });
 
 describe("MCP server stdio handshake", () => {
-  it("lists all seven tools with expected names", async () => {
+  it("lists all eight tools with expected names", async () => {
     session = await startServer();
     const res = await session.request<{ tools: Array<{ name: string }> }>("tools/list");
     const names = (res.result?.tools ?? []).map((t) => t.name).sort();
     expect(names).toEqual([
       "check_setup",
       "dry_run",
+      "lint_config",
       "preview_custom_manager",
       "read_config",
       "resolve_config",
@@ -127,6 +128,90 @@ describe("preview_custom_manager end-to-end", () => {
     });
     expect(res.result?.isError).toBe(true);
     expect(res.result?.content[0]?.text).toMatch(/customType="regex"/);
+  });
+});
+
+describe("lint_config end-to-end", () => {
+  let repo: string;
+  beforeEach(async () => {
+    repo = await mkdtemp(path.join(tmpdir(), "rmcp-lint-"));
+  });
+  afterEach(async () => {
+    await rm(repo, { recursive: true, force: true });
+  });
+
+  it("flags a malformed regex in matchPackageNames via configContent", async () => {
+    session = await startServer();
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+    }>("tools/call", {
+      name: "lint_config",
+      arguments: {
+        configContent: {
+          packageRules: [{ matchPackageNames: ["/devops\\/pipelines\\/.+"] }],
+        },
+      },
+    });
+    const parsed = JSON.parse(res.result?.content[0]?.text ?? "{}");
+    expect(parsed.clean).toBe(false);
+    expect(parsed.findings).toHaveLength(1);
+    expect(parsed.findings[0]).toMatchObject({
+      ruleId: "dead-regex-missing-slash",
+      path: "packageRules[0].matchPackageNames[0]",
+    });
+  });
+
+  it("returns clean:true for a schema-valid config with well-formed patterns", async () => {
+    session = await startServer();
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+    }>("tools/call", {
+      name: "lint_config",
+      arguments: {
+        configContent: {
+          extends: ["config:recommended"],
+          packageRules: [
+            { matchPackageNames: ["lodash", "/^@acme\\//"] },
+          ],
+        },
+      },
+    });
+    const parsed = JSON.parse(res.result?.content[0]?.text ?? "{}");
+    expect(parsed.clean).toBe(true);
+    expect(parsed.findings).toEqual([]);
+  });
+
+  it("lints a config from configPath on disk", async () => {
+    const configPath = path.join(repo, "renovate.json");
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        packageRules: [{ matchDepNames: ["foo.+"] }],
+      }),
+    );
+    session = await startServer();
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+    }>("tools/call", {
+      name: "lint_config",
+      arguments: { configPath },
+    });
+    const parsed = JSON.parse(res.result?.content[0]?.text ?? "{}");
+    expect(parsed.clean).toBe(false);
+    expect(parsed.findings[0]).toMatchObject({
+      ruleId: "unwrapped-regex",
+      path: "packageRules[0].matchDepNames[0]",
+    });
+  });
+
+  it("reports isError when neither input is supplied", async () => {
+    session = await startServer();
+    const res = await session.request<{
+      isError?: boolean;
+      content: Array<{ type: string; text: string }>;
+    }>("tools/call", { name: "lint_config", arguments: {} });
+    expect(res.result?.isError).toBe(true);
+    expect(res.result?.content[0]?.text).toContain("Provide either configPath");
   });
 });
 
