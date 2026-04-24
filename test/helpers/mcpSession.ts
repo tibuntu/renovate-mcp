@@ -5,7 +5,9 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_SERVER_ENTRY = path.resolve(__dirname, "../../dist/index.js");
-const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
+// V8 coverage instrumentation inflates child cold start; allow more headroom
+// when NODE_V8_COVERAGE is set (vitest sets it for --coverage runs).
+const DEFAULT_REQUEST_TIMEOUT_MS = process.env.NODE_V8_COVERAGE ? 30_000 : 10_000;
 const STDERR_CAP_BYTES = 64 * 1024;
 
 export interface JsonRpcRequest {

@@ -157,12 +157,13 @@ npm run build            # compile to dist/
 npm start                # run the built server over stdio
 npm test                 # vitest run (builds first)
 npm run test:watch       # vitest watch mode
+npm run test:coverage    # vitest run --coverage (writes coverage/ report)
 npm run generate:presets # regenerate src/data/presets.generated.ts from the renovate devDep
 ```
 
 The preset catalogue at `src/data/presets.generated.ts` is a committed snapshot of Renovate's built-in presets. Runtime code never imports the `renovate` package — only `scripts/generate-presets.mjs` does. Regenerate after bumping the `renovate` devDependency.
 
-CI runs `typecheck`, `build`, and `test` on Node 24 for every PR and push to `main` (see `.github/workflows/ci.yml`).
+CI runs `typecheck`, `build`, and `test:coverage` on Node 24 for every PR and push to `main` (see `.github/workflows/ci.yml`). Coverage is uploaded as a per-run artifact; no threshold is enforced yet.
 
 ## Release flow
 
