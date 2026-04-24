@@ -45,13 +45,24 @@ export function registerPreviewCustomManager(server: McpServer): void {
         manager: managerSchema.describe(
           "A single Renovate customManagers entry. NOTE: `fileMatch` is an array of REGEX strings matched against POSIX-style relative paths (not globs).",
         ),
-        maxFilesScanned: z
+        maxFilesWalked: z
           .number()
           .int()
           .positive()
           .max(100_000)
           .optional()
-          .describe("Safety cap on files walked (default 2000)"),
+          .describe(
+            "Safety cap on files visited during the directory walk before any fileMatch testing (default 2000). Raise this when the repo is large; prefer narrowing via `.gitignore` first.",
+          ),
+        maxFilesMatched: z
+          .number()
+          .int()
+          .positive()
+          .max(100_000)
+          .optional()
+          .describe(
+            "Safety cap on the number of files included in the result after fileMatch is applied (default 500). Raise this only if the fileMatch regex is intentionally broad.",
+          ),
         maxHitsPerFile: z
           .number()
           .int()
@@ -70,7 +81,14 @@ export function registerPreviewCustomManager(server: McpServer): void {
           ),
       },
     },
-    async ({ repoPath, manager, maxFilesScanned, maxHitsPerFile, matchTimeoutMs }) => {
+    async ({
+      repoPath,
+      manager,
+      maxFilesWalked,
+      maxFilesMatched,
+      maxHitsPerFile,
+      matchTimeoutMs,
+    }) => {
       if (manager.customType !== "regex") {
         return {
           isError: true,
@@ -85,7 +103,8 @@ export function registerPreviewCustomManager(server: McpServer): void {
 
       try {
         const result = await previewCustomManager(repoPath, manager as CustomManager, {
-          maxFilesScanned,
+          maxFilesWalked,
+          maxFilesMatched,
           maxHitsPerFile,
           matchTimeoutMs,
         });

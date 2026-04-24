@@ -145,7 +145,7 @@ describe("previewCustomManager", () => {
 
   it("honors a root .gitignore — generated dirs don't crowd out real hits", async () => {
     // Acceptance from issue #21: 3000 junk files in a gitignored dist/ must
-    // not burn the maxFilesScanned budget. We use a lower cap (500) to keep
+    // not burn the maxFilesWalked budget. We use a lower cap (500) to keep
     // the test fast while still proving the point.
     await writeFile(path.join(repo, ".gitignore"), "dist/\ncoverage/\n");
     await mkdir(path.join(repo, "dist"), { recursive: true });
@@ -161,12 +161,12 @@ describe("previewCustomManager", () => {
         fileMatch: ["(^|/)Dockerfile$"],
         matchStrings: ["FROM (?<depName>[^:\\s]+):(?<currentValue>\\S+)"],
       },
-      { maxFilesScanned: 500 },
+      { maxFilesWalked: 500 },
     );
     expect(result.filesMatched).toEqual(["Dockerfile"]);
-    expect(result.warnings.some((w) => /Stopped after scanning/.test(w))).toBe(false);
+    expect(result.warnings.some((w) => /Stopped walking/.test(w))).toBe(false);
     // We walked the real files, not the 3000 junk ones.
-    expect(result.filesScanned).toBeLessThan(10);
+    expect(result.filesWalked).toBeLessThan(10);
   });
 
   it("honors .git/info/exclude in addition to .gitignore", async () => {
@@ -268,6 +268,69 @@ describe("previewCustomManager", () => {
     expect(
       result.warnings.some((w) => /fileMatch\[0\].*exceeded 300ms/.test(w)),
     ).toBe(true);
+  });
+
+  it("names the walk limit (not the match limit) when stopping mid-walk, and may miss matches past the cap", async () => {
+    // Issue #58: previously the walk cap early-exit emitted a warning that
+    // talked about "scanning" without distinguishing walk-limit from
+    // match-limit. Verify: (a) the target file past the cap is silently
+    // dropped today (acceptable trade-off), and (b) the warning text names
+    // the walk cap specifically so the user knows which knob to turn.
+    for (let i = 0; i < 20; i++) {
+      await writeFile(path.join(repo, `noise-${i.toString().padStart(2, "0")}.txt`), "x");
+    }
+    // `z-target.txt` sorts last, so any reasonable walk order puts it after
+    // the noise files and past the cap.
+    await writeFile(path.join(repo, "z-target.txt"), "pkg=foo ver=1");
+
+    const result = await previewCustomManager(
+      repo,
+      {
+        customType: "regex",
+        fileMatch: ["z-target\\.txt$"],
+        matchStrings: ["pkg=(?<depName>\\S+) ver=(?<currentValue>\\S+)"],
+      },
+      { maxFilesWalked: 5 },
+    );
+
+    expect(result.filesWalked).toBe(5);
+    expect(result.filesMatched).toEqual([]);
+    expect(
+      result.warnings.some(
+        (w) => /Stopped walking/.test(w) && /maxFilesWalked/.test(w),
+      ),
+    ).toBe(true);
+    expect(result.warnings.some((w) => /maxFilesMatched/.test(w))).toBe(false);
+  });
+
+  it("caps filesMatched at maxFilesMatched and names that limit in the warning", async () => {
+    // Issue #58: a broad fileMatch can match thousands of files. The result
+    // set is capped independently of the walk cap, with a dedicated warning.
+    for (let i = 0; i < 30; i++) {
+      await writeFile(path.join(repo, `hit-${i.toString().padStart(2, "0")}.txt`), "v");
+    }
+
+    const result = await previewCustomManager(
+      repo,
+      {
+        customType: "regex",
+        fileMatch: ["hit-.*\\.txt$"],
+        matchStrings: ["(?<v>\\S+)"],
+      },
+      { maxFilesMatched: 5 },
+    );
+
+    expect(result.filesWalked).toBe(30);
+    expect(result.filesMatched).toHaveLength(5);
+    expect(
+      result.warnings.some(
+        (w) => /fileMatch matched 30 files/.test(w) && /maxFilesMatched=5/.test(w),
+      ),
+    ).toBe(true);
+    expect(result.warnings.some((w) => /Stopped walking/.test(w))).toBe(false);
+    // Hits only come from the capped subset — not from the full match set.
+    const hitFiles = new Set(result.hits.map((h) => h.file));
+    expect(hitFiles.size).toBe(5);
   });
 
   it("honors maxHitsPerFile and records a warning", async () => {
