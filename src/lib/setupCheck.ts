@@ -84,6 +84,38 @@ export async function checkSetup(): Promise<SetupStatus> {
   };
 }
 
+// Tools that do not depend on the Renovate CLI and are always callable.
+export const OFFLINE_TOOLS = ["read_config", "resolve_config", "preview_custom_manager"] as const;
+
+// Returns the tool names that cannot currently run because their backing
+// binary is missing. Order is workflow-ordered (validate → dry_run → write).
+export function unavailableTools(status: SetupStatus): string[] {
+  const names: string[] = [];
+  if (!status.renovateConfigValidator.found) names.push("validate_config");
+  if (!status.renovate.found) names.push("dry_run");
+  if (!status.renovateConfigValidator.found) names.push("write_config");
+  return names;
+}
+
+/**
+ * Concise startup banner appended to the server's MCP `instructions` so the
+ * LLM is primed to treat CLI-missing as a partial-availability signal rather
+ * than a setup error. Returns `null` when every tool is available.
+ */
+export function startupBanner(status: SetupStatus): string | null {
+  const unavailable = unavailableTools(status);
+  if (unavailable.length === 0) return null;
+  const unavailList = unavailable.map((n) => `\`${n}\``).join(", ");
+  const offlineList = OFFLINE_TOOLS.map((n) => `\`${n}\``).join(", ");
+  return [
+    "Partial availability:",
+    `  Renovate CLI not found — only blocks: ${unavailList}.`,
+    `  Offline tools (${offlineList}) still work; do not flag this as a setup problem when the task only needs those.`,
+    "  Install Renovate (`npm i -g renovate`) before calling the blocked tools, or call `check_setup` for a full diagnostic.",
+    "  Set `RENOVATE_MCP_REQUIRE_CLI=false` to suppress this notice if you have consciously chosen the offline subset.",
+  ].join("\n");
+}
+
 export function describeSetup(status: SetupStatus): string {
   const lines: string[] = [];
   lines.push(`Node: ${status.node}`);
