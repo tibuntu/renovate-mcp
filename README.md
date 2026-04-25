@@ -46,7 +46,7 @@ See [Design notes](#design-notes) for implementation details (timeouts, safety c
 
 - **Not a Renovate replacement.** This server doesn't open PRs, run scheduled updates, or execute in CI — it's a design-time companion for a local `renovate.json`. Use the real Renovate for the actual dependency-update pipeline.
 - **`resolve_config` is preview-quality.** Preset expansion runs against a committed snapshot, and template substitution implements only positional `{{argN}}` placeholders — non-positional tokens and Handlebars helpers are flagged in `warnings` and pass through verbatim. For authoritative output, run `dry_run`.
-- **`preview_custom_manager` is a subset of Renovate's regex manager.** It covers `customType: "regex"`, `matchStringsStrategy: "any"`, and `{{groupName}}` template substitution only — other custom types, other strategies, and full Handlebars (helpers, conditionals) are not implemented. Use it for fast regex iteration; confirm with `dry_run`.
+- **`preview_custom_manager` is a subset of Renovate's regex manager.** It covers `customType: "regex"`, `matchStringsStrategy` of `any` / `combination` / `recursive`, and `{{groupName}}` template substitution only — other custom types and full Handlebars (helpers, conditionals) are not implemented. Use it for fast regex iteration; confirm with `dry_run`.
 - **`validate_config` / `dry_run` aren't exercised in CI.** CI deliberately doesn't install Renovate, so tools that shell out to it are only covered by unit/integration tests that don't require the binary. Run them locally against the Renovate install you intend to deploy with.
 
 ## Requirements

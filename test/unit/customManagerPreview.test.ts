@@ -95,15 +95,119 @@ describe("previewCustomManager", () => {
     expect(result.hits.map((h) => h.groups.depName)).toEqual(["foo", "bar"]);
   });
 
-  it("warns when matchStringsStrategy is not 'any'", async () => {
+  it("warns when matchStringsStrategy is unrecognized and falls back to 'any'", async () => {
     await writeFile(path.join(repo, "x.txt"), "foo=1");
     const result = await previewCustomManager(repo, {
       customType: "regex",
       fileMatch: ["x\\.txt$"],
       matchStrings: ["foo=(?<v>\\d+)"],
+      matchStringsStrategy: "bogus",
+    });
+    expect(result.warnings.some((w) => /bogus/.test(w))).toBe(true);
+    // Fallback to 'any' still extracts the match.
+    expect(result.hits).toHaveLength(1);
+  });
+
+  it("combination strategy merges groups from every matchString into one dep", async () => {
+    // Two matchStrings, each contributing one piece of dep info. Renovate's
+    // combination strategy requires both to hit and produces a single merged dep.
+    await writeFile(
+      path.join(repo,  "Chart.yaml"),
+      "name: my-chart\nversion: 1.2.3\n",
+    );
+    const result = await previewCustomManager(repo, {
+      customType: "regex",
+      fileMatch: ["Chart\\.yaml$"],
+      matchStrings: [
+        "name:\\s+(?<depName>\\S+)",
+        "version:\\s+(?<currentValue>\\S+)",
+      ],
+      datasourceTemplate: "helm",
+      matchStringsStrategy: "combination",
+    });
+    expect(result.hits).toHaveLength(2);
+    expect(result.extractedDeps).toEqual([
+      expect.objectContaining({
+        file: "Chart.yaml",
+        depName: "my-chart",
+        currentValue: "1.2.3",
+        datasource: "helm",
+      }),
+    ]);
+    // Anchor at the first contributing match (line 1 — the `name:` line).
+    expect(result.extractedDeps[0]!.line).toBe(1);
+  });
+
+  it("combination strategy yields no dep if any matchString has zero matches", async () => {
+    await writeFile(
+      path.join(repo, "Chart.yaml"),
+      "name: my-chart\n",
+    );
+    const result = await previewCustomManager(repo, {
+      customType: "regex",
+      fileMatch: ["Chart\\.yaml$"],
+      matchStrings: [
+        "name:\\s+(?<depName>\\S+)",
+        "version:\\s+(?<currentValue>\\S+)",
+      ],
+      matchStringsStrategy: "combination",
+    });
+    expect(result.extractedDeps).toEqual([]);
+    expect(result.hits).toEqual([]);
+  });
+
+  it("recursive strategy descends through matchStrings and produces one dep per leaf", async () => {
+    // Outer block captures the `dependencies:` section; inner regex enumerates
+    // each entry. Each leaf inherits `depType` from the outer match.
+    await writeFile(
+      path.join(repo, "manifest.txt"),
+      [
+        "dependencies:",
+        "  foo@1.0.0",
+        "  bar@2.0.0",
+        "devDependencies:",
+        "  baz@3.0.0",
+        "",
+      ].join("\n"),
+    );
+    const result = await previewCustomManager(repo, {
+      customType: "regex",
+      fileMatch: ["manifest\\.txt$"],
+      matchStrings: [
+        "(?<depType>dependencies|devDependencies):\\n(?:  \\S+\\n)+",
+        "  (?<depName>[^@\\s]+)@(?<currentValue>\\S+)",
+      ],
+      datasourceTemplate: "npm",
       matchStringsStrategy: "recursive",
     });
-    expect(result.warnings.some((w) => /recursive/.test(w))).toBe(true);
+    expect(result.extractedDeps).toEqual([
+      expect.objectContaining({ depName: "foo", currentValue: "1.0.0", depType: "dependencies" }),
+      expect.objectContaining({ depName: "bar", currentValue: "2.0.0", depType: "dependencies" }),
+      expect.objectContaining({ depName: "baz", currentValue: "3.0.0", depType: "devDependencies" }),
+    ]);
+    // Leaf line numbers refer to absolute lines in the original file.
+    expect(result.extractedDeps.map((d) => d.line)).toEqual([2, 3, 5]);
+  });
+
+  it("recursive strategy: inner groups override outer groups on key conflicts", async () => {
+    // Outer group sets `currentValue=outer`; inner group sets `currentValue=inner`.
+    // Per Renovate's mergeGroups (later wins), the inner value should win.
+    await writeFile(
+      path.join(repo, "x.txt"),
+      "block(?<currentValue>outer):\nentry foo=inner\n",
+    );
+    const result = await previewCustomManager(repo, {
+      customType: "regex",
+      fileMatch: ["x\\.txt$"],
+      matchStrings: [
+        "block\\(\\?<currentValue>(?<currentValue>\\w+)\\):.*\\n.*",
+        "entry (?<depName>\\w+)=(?<currentValue>\\w+)",
+      ],
+      matchStringsStrategy: "recursive",
+    });
+    expect(result.extractedDeps).toEqual([
+      expect.objectContaining({ depName: "foo", currentValue: "inner" }),
+    ]);
   });
 
   it("skips node_modules and .git", async () => {
