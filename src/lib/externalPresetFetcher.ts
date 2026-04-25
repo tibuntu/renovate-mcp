@@ -1,3 +1,4 @@
+import { resolveCredential, type Credential } from "./credentialResolver.js";
 import { classifyExternalSource, type ParsedPreset } from "./presetResolver.js";
 
 export interface FetchOptions {
@@ -112,20 +113,6 @@ async function fetchGitLab(
   const headers: Record<string, string> = { "User-Agent": "renovate-mcp" };
   if (credential.token) headers["PRIVATE-TOKEN"] = credential.token;
   return fetchJson(url, headers, timeoutMs, parsed.original, fetchImpl, "gitlab", credential);
-}
-
-interface Credential {
-  envVar: string | null;
-  token: string | undefined;
-  triedVars: string[];
-}
-
-function resolveCredential(vars: string[]): Credential {
-  for (const envVar of vars) {
-    const value = process.env[envVar];
-    if (value) return { envVar, token: value, triedVars: vars };
-  }
-  return { envVar: null, token: undefined, triedVars: vars };
 }
 
 function presetFileName(parsed: ParsedPreset): string {
