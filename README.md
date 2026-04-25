@@ -242,7 +242,7 @@ Releases are automated via [release-please](https://github.com/googleapis/releas
 1. Merge Conventional Commits to `main` (`feat:`, `fix:`, etc.)
 2. release-please opens or updates a release PR that bumps the version and updates `CHANGELOG.md`
 3. Merging the release PR creates a GitHub release and tag
-4. The `publish` workflow (`.github/workflows/publish.yml`) fires on the release event, runs the test suite, and runs `npm publish` with provenance
+4. The `publish` workflow (`.github/workflows/publish.yml`) fires on the release event, runs the test suite, smoke-tests the packed tarball end-to-end (install globally, then run an MCP `initialize` handshake against the resulting `renovate-mcp` binary), and only then runs `npm publish` with provenance
 
 Publishing uses [npm Trusted Publishers](https://docs.npmjs.com/trusted-publishers) — no npm token is stored in the repo. Instead the workflow authenticates to npm via OIDC using the `id-token: write` permission. Trusted Publishers must be configured on the npm package settings page before OIDC publishes will succeed; this requires the package to already exist, so the **first release must be published manually once** (`npm login && npm publish` from a clean build), after which Trusted Publishers can be wired up and all subsequent releases go through this workflow.
 
