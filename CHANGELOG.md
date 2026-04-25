@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.8.0](https://github.com/tibuntu/renovate-mcp/compare/v0.7.0...v0.8.0) (2026-04-25)
+
+
+### Features
+
+* **explain_config:** trace which preset set each field ([4f35031](https://github.com/tibuntu/renovate-mcp/commit/4f35031fe6a7cbeebae06a872819dd16fefc09a7)), closes [#78](https://github.com/tibuntu/renovate-mcp/issues/78)
+* **preview_custom_manager:** support recursive and combination strategies ([972a7e9](https://github.com/tibuntu/renovate-mcp/commit/972a7e998b91ce1f1dfbcb4965dd09a1acad3050))
+
+
+### Bug Fixes
+
+* **prepack:** guard against missing shebang before chmod ([dac8dcf](https://github.com/tibuntu/renovate-mcp/commit/dac8dcffc4416bf6cf8cfed943ce79c6806c5555)), closes [#76](https://github.com/tibuntu/renovate-mcp/issues/76)
+
 ## [0.7.0](https://github.com/tibuntu/renovate-mcp/compare/v0.6.0...v0.7.0) (2026-04-25)
 
 
