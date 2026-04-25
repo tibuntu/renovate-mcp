@@ -57,9 +57,18 @@ function escapeRegex(s: string): string {
 export function scrubSecrets(text: string, secrets: string[]): string {
   // Sort by length descending so that when one secret is a substring of
   // another, the longer one wins the greedy regex alternation instead of
-  // being partially chewed up by the shorter one.
-  const alternatives = secrets
-    .filter((s) => s.length > 0)
+  // being partially chewed up by the shorter one. Each secret is also matched
+  // in its `encodeURIComponent` form so a token that ends up embedded in a URL
+  // (e.g. as a query parameter in a redirect Renovate logs) still gets
+  // redacted; when a secret has no encodable characters, the two forms
+  // collapse and the dedup below drops the duplicate.
+  const alternatives = [
+    ...new Set(
+      secrets
+        .filter((s) => s.length > 0)
+        .flatMap((s) => [s, encodeURIComponent(s)]),
+    ),
+  ]
     .sort((a, b) => b.length - a.length)
     .map(escapeRegex);
   if (!alternatives.length) return text;
