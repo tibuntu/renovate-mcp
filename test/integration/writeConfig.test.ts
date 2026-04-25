@@ -98,6 +98,86 @@ describe("write_config", () => {
     expect(files.some((f) => f.endsWith(".renovate-mcp-tmp"))).toBe(false);
   });
 
+  it("does not follow a pre-existing symlink at the legacy temp path (issue #129)", async () => {
+    // Threat model: an attacker plants a symlink at the deterministic legacy
+    // temp path pointing at a sentinel outside the repo. Two combined defenses
+    // make this safe: (1) the temp suffix is randomized so the attacker can't
+    // predict the actual write target, (2) the writeFile uses `flag: "wx"` so
+    // even if they could, O_EXCL refuses to follow a pre-existing entry.
+    const validator = await makeFakeValidator(repo, "fake-pass.mjs", 0);
+    session = await startServer({ RENOVATE_CONFIG_VALIDATOR_BIN: validator });
+
+    const outside = await mkdtemp(
+      path.join(
+        tmpdir(),
+        `rmcp-${path.basename(import.meta.url, ".ts")}-${process.pid}-sentinel-`,
+      ),
+    );
+    try {
+      const sentinel = path.join(outside, "sentinel.txt");
+      const sentinelContent = "do-not-overwrite";
+      await writeFile(sentinel, sentinelContent);
+      const legacyTmp = path.join(repo, "renovate.json.renovate-mcp-tmp");
+      await symlink(sentinel, legacyTmp);
+
+      const res = await session.request<{
+        content: Array<{ type: string; text: string }>;
+        isError?: boolean;
+      }>("tools/call", {
+        name: "write_config",
+        arguments: {
+          repoPath: repo,
+          config: { extends: ["config:recommended"] },
+        },
+      });
+
+      expect(res.result?.isError).toBeFalsy();
+
+      // The sentinel must be untouched — the LLM-shaped payload must never
+      // have been written through the symlink.
+      expect(await readFile(sentinel, "utf8")).toBe(sentinelContent);
+
+      // The planted symlink itself is unrelated to the actual (randomized)
+      // temp path, so it stays in place.
+      const files = await readdir(repo);
+      expect(files).toContain("renovate.json.renovate-mcp-tmp");
+      expect(files).toContain("renovate.json");
+      // No tmp file leaks under the random suffix either.
+      expect(
+        files.filter((f) => f.startsWith("renovate.json.renovate-mcp-tmp-")),
+      ).toHaveLength(0);
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("does not collide on the temp suffix when called concurrently (issue #129)", async () => {
+    const validator = await makeFakeValidator(repo, "fake-pass.mjs", 0);
+    session = await startServer({ RENOVATE_CONFIG_VALIDATOR_BIN: validator });
+
+    const calls = Array.from({ length: 5 }, (_, i) =>
+      session.request<{
+        content: Array<{ type: string; text: string }>;
+        isError?: boolean;
+      }>("tools/call", {
+        name: "write_config",
+        arguments: {
+          repoPath: repo,
+          config: { extends: ["config:recommended"], _i: i },
+        },
+      }),
+    );
+    const results = await Promise.all(calls);
+    for (const res of results) {
+      expect(res.result?.isError).toBeFalsy();
+    }
+
+    const files = await readdir(repo);
+    expect(
+      files.filter((f) => f.startsWith("renovate.json.renovate-mcp-tmp")),
+    ).toHaveLength(0);
+  });
+
   it("rejects a filename whose resolved parent escapes repoPath via a symlink", async () => {
     session = await startServer();
 
