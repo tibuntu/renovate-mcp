@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.9.0](https://github.com/tibuntu/renovate-mcp/compare/v0.8.0...v0.9.0) (2026-04-25)
+
+
+### Features
+
+* declare Windows unsupported via package.json os field ([56b4f7e](https://github.com/tibuntu/renovate-mcp/commit/56b4f7e3a7b7a3509820381a3d62042f39683a99)), closes [#121](https://github.com/tibuntu/renovate-mcp/issues/121)
+* register stderr-only handlers for unhandled rejections and exceptions ([3a9ebd6](https://github.com/tibuntu/renovate-mcp/commit/3a9ebd6932540b51693b397b4d6aaf7749b6ccd8)), closes [#126](https://github.com/tibuntu/renovate-mcp/issues/126)
+
+
+### Bug Fixes
+
+* **security:** bundle low-severity findings from 2026-04-25 audit ([#136](https://github.com/tibuntu/renovate-mcp/issues/136)) ([2a3eb2f](https://github.com/tibuntu/renovate-mcp/commit/2a3eb2fc67014d5e5c3822526774ebcd35844ff3))
+* **security:** cap external preset response body at 1 MB ([b94708c](https://github.com/tibuntu/renovate-mcp/commit/b94708cb5ab7be268a38a4d517a33ba054322d65)), closes [#132](https://github.com/tibuntu/renovate-mcp/issues/132)
+* **security:** cap tool input sizes to prevent DoS via oversized inputs ([df7d777](https://github.com/tibuntu/renovate-mcp/commit/df7d7777a10ef34412a550b49e77b6057fbc608c)), closes [#133](https://github.com/tibuntu/renovate-mcp/issues/133)
+* **security:** pre-create dry_run report file with mode 0600 ([ca97fda](https://github.com/tibuntu/renovate-mcp/commit/ca97fda5b9c076adccbee2f5348ac216752eacc0))
+* **security:** refuse redirects and suppress auth on non-https preset fetches ([e85c177](https://github.com/tibuntu/renovate-mcp/commit/e85c17737f1a8c59ee6b5141975908353c7a38c7))
+* **security:** refuse to follow pre-existing symlinks in write_config temp path ([245a0cc](https://github.com/tibuntu/renovate-mcp/commit/245a0ccd5d9886d55cbfb138d664d21985a5995f)), closes [#129](https://github.com/tibuntu/renovate-mcp/issues/129)
+* **security:** require confirmForce literal alongside force=true in write_config ([2f33d23](https://github.com/tibuntu/renovate-mcp/commit/2f33d2305f624e5456cade0e4204e92c35099532)), closes [#135](https://github.com/tibuntu/renovate-mcp/issues/135)
+* **security:** validate endpoint input to refuse non-https and private-host targets ([95baf88](https://github.com/tibuntu/renovate-mcp/commit/95baf8840ec5fd161c0a5cefdf080640e9f81bd1))
+
 ## [0.8.0](https://github.com/tibuntu/renovate-mcp/compare/v0.7.0...v0.8.0) (2026-04-25)
 
 
