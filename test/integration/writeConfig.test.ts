@@ -250,6 +250,7 @@ describe("write_config", () => {
         repoPath: repo,
         config: { extends: ["config:recommended"] },
         force: true,
+        confirmForce: "YES_OVERRIDE_VALIDATION",
       },
     });
 
@@ -260,5 +261,31 @@ describe("write_config", () => {
 
     const written = JSON.parse(await readFile(path.join(repo, "renovate.json"), "utf8"));
     expect(written).toMatchObject({ extends: ["config:recommended"] });
+  });
+
+  it("rejects force=true without confirmForce", async () => {
+    const validator = await makeFakeValidator(repo, "fake-fail.mjs", 1);
+    session = await startServer({ RENOVATE_CONFIG_VALIDATOR_BIN: validator });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "write_config",
+      arguments: {
+        repoPath: repo,
+        config: { extends: ["config:recommended"] },
+        force: true,
+      },
+    });
+
+    expect(res.result?.isError).toBe(true);
+    const payload = JSON.parse(res.result!.content[0]!.text);
+    expect(payload.wrote).toBe(false);
+    expect(payload.reason).toBe("force-confirmation-missing");
+
+    const files = await readdir(repo).catch(() => [] as string[]);
+    expect(files).not.toContain("renovate.json");
+    expect(files.some((f) => f.endsWith(".renovate-mcp-tmp"))).toBe(false);
   });
 });

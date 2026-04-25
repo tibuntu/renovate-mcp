@@ -26,13 +26,15 @@ async function resolveWithExistingAncestor(p: string): Promise<string> {
   }
 }
 
+const FORCE_CONFIRMATION_TOKEN = "YES_OVERRIDE_VALIDATION";
+
 export function registerWriteConfig(server: McpServer): void {
   server.registerTool(
     "write_config",
     {
       title: "Write Renovate config",
       description:
-        "Write a Renovate config to disk. Runs renovate-config-validator first — refuses to write if validation fails unless force=true.",
+        "Write a Renovate config to disk. Runs renovate-config-validator first — refuses to write if validation fails unless force=true (which additionally requires confirmForce).",
       inputSchema: {
         repoPath: z.string().describe("Absolute path to the repository root"),
         config: z.record(z.string(), z.unknown()).describe("The Renovate config object"),
@@ -43,10 +45,36 @@ export function registerWriteConfig(server: McpServer): void {
         force: z
           .boolean()
           .default(false)
-          .describe("Write even if validation fails"),
+          .describe("Write even if validation fails. Requires confirmForce."),
+        confirmForce: z
+          .literal(FORCE_CONFIRMATION_TOKEN)
+          .optional()
+          .describe(
+            `Must be set to the literal '${FORCE_CONFIRMATION_TOKEN}' when force is true. The unusual literal exists to make accidental overrides harder under prompt-injected tool calls.`,
+          ),
       },
     },
-    async ({ repoPath, config, filename, force }) => {
+    async ({ repoPath, config, filename, force, confirmForce }) => {
+      if (force && confirmForce !== FORCE_CONFIRMATION_TOKEN) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  wrote: false,
+                  reason: "force-confirmation-missing",
+                  hint: `force=true requires confirmForce='${FORCE_CONFIRMATION_TOKEN}'. This guard exists to make accidental overrides harder under prompt-injected tool calls.`,
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      }
+
       const repoAbs = path.resolve(repoPath);
       const target = path.resolve(repoAbs, filename);
       const rel = path.relative(repoAbs, target);
