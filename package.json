@@ -51,6 +51,10 @@
   "engines": {
     "node": ">=24"
   },
+  "os": [
+    "darwin",
+    "linux"
+  ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "ignore": "^7.0.5",

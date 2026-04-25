@@ -54,6 +54,7 @@ See [Design notes](#design-notes) for implementation details (timeouts, safety c
 
 **Required**
 
+- Linux or macOS. Windows is not supported — `package.json` declares `"os": ["darwin", "linux"]`, so `npm i` surfaces an `EBADPLATFORM` warning on Windows, and the server exits with a clear stderr message at startup. Run on WSL2 or a Linux/macOS host instead.
 - Node.js ≥ 24 (aligns with Renovate's own engine requirement).
 - Renovate on your `PATH` — either a global install (`npm i -g renovate`) or a project-local install that exposes `renovate` + `renovate-config-validator` via `npm exec`. Only needed for `validate_config`, `dry_run`, and `write_config`; the offline tools (`read_config`, `resolve_config`, `preview_custom_manager`, `lint_config`) work without it.
 

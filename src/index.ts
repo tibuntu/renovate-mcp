@@ -34,6 +34,13 @@ const BASE_INSTRUCTIONS = [
   "Built-in preset reference: renovate://presets (namespace index), renovate://presets/{namespace} (one namespace), renovate://preset/{name} (one preset's expanded JSON).",
 ].join("\n");
 
+if (process.platform === "win32") {
+  process.stderr.write(
+    "renovate-mcp does not support Windows. Supported platforms are Linux and macOS — see the `os` field in package.json. Run on WSL2 or a Linux/macOS host instead.\n",
+  );
+  process.exit(1);
+}
+
 const setup = await checkSetup();
 
 // `RENOVATE_MCP_REQUIRE_CLI=false` is the opt-out for users who have
