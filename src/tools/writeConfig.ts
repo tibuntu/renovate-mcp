@@ -1,6 +1,7 @@
 import { z } from "zod";
 import path from "node:path";
 import { promises as fs } from "node:fs";
+import { randomUUID } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { run, resolveRenovateTool, formatMissingBinaryError } from "../lib/renovateCli.js";
 
@@ -61,9 +62,12 @@ export function registerWriteConfig(server: McpServer): void {
       }
 
       const payload = JSON.stringify(config, null, 2) + "\n";
-      const tmp = `${target}.renovate-mcp-tmp`;
+      // Randomize the suffix so two concurrent writes don't collide, and use
+      // `flag: "wx"` (O_CREAT|O_EXCL) so a pre-existing symlink at the temp
+      // path is refused with EEXIST instead of silently followed (issue #129).
+      const tmp = `${target}.renovate-mcp-tmp-${randomUUID()}`;
       await fs.mkdir(path.dirname(target), { recursive: true });
-      await fs.writeFile(tmp, payload);
+      await fs.writeFile(tmp, payload, { flag: "wx", mode: 0o600 });
 
       try {
         let valid = false;
