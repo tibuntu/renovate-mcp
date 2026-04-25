@@ -65,8 +65,9 @@ Use the `registerTool(name, config, handler)` and `registerResource(name, uriOrT
 - **Adding or changing env vars** (auth tokens, binary overrides, etc.) → update the "Requirements" section.
 - **Changing what the user needs installed** (Node version, Renovate CLI requirement for a specific tool) → update "Requirements".
 - **Changing the release/publish flow or CI setup** → update "Release flow" / "Development".
+- **Touching anything that the "Example prompts" or "Example session" demonstrate** → re-read both sections and update them. The example session is a transcript that walks through `preview_custom_manager` → `validate_config` → `dry_run` → `write_config`; if you change inputs, outputs, defaults, error shapes, or the recommended workflow ordering for any tool the transcript uses, the transcript must be updated to match. Pay special attention to: tool names (a rename breaks every line that calls them), result shapes the example narrates ("4 files, 4 line hits", "2 updates", "valid", "written atomically"), and the prose around what each step achieves. A stale example is worse than none — it teaches users a workflow that no longer works.
 
-If a change doesn't touch any of those, `README.md` probably doesn't need edits. When in doubt, re-read the README and diff it against the change mentally before assuming it's fine.
+If a change doesn't touch any of those, `README.md` probably doesn't need edits. When in doubt, re-read the README — including both example sections — and diff it against the change mentally before assuming it's fine.
 
 ## Roadmap
 
