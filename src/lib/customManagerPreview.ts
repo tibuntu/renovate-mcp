@@ -92,11 +92,7 @@ export async function previewCustomManager(
   const matchTimeoutMs = options.matchTimeoutMs ?? DEFAULT_MATCH_TIMEOUT_MS;
   const maxFileBytes = options.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
 
-  if (manager.matchStringsStrategy && manager.matchStringsStrategy !== "any") {
-    warnings.push(
-      `matchStringsStrategy='${manager.matchStringsStrategy}' is not yet supported by this preview tool; treating as 'any'. Run dry_run for full-fidelity behavior.`,
-    );
-  }
+  const strategy = resolveStrategy(manager.matchStringsStrategy, warnings);
 
   // Surface malformed user regexes eagerly, before we do any filesystem work.
   // The Worker path otherwise reports these as generic worker errors.
@@ -167,39 +163,243 @@ export async function previewCustomManager(
       continue;
     }
 
-    let perFileHits = 0;
-    for (let i = 0; i < manager.matchStrings.length; i++) {
-      const source = manager.matchStrings[i]!;
-      const res = await runMatchAllInWorker(source, "gm", content, matchTimeoutMs);
-      if (res.timedOut) {
-        warnings.push(
-          `${rel}: matchStrings[${i}] /${source}/ exceeded ${matchTimeoutMs}ms and was aborted; any matches in this file for this pattern were skipped. Simplify the regex (e.g. avoid nested quantifiers like (.*)*) or raise matchTimeoutMs.`,
-        );
-        continue;
-      }
-      for (const m of res.matches) {
-        if (perFileHits >= maxHitsPerFile) {
-          warnings.push(
-            `${rel}: capped at ${maxHitsPerFile} hits. Increase maxHitsPerFile to see more.`,
-          );
-          break;
-        }
-        const line = lineNumberAt(content, m.index);
-        hits.push({
-          file: rel,
-          matchStringIndex: i,
-          line,
-          match: m.match,
-          groups: m.groups,
-        });
-        extractedDeps.push(buildExtractedDep(rel, line, m.groups, manager));
-        perFileHits++;
-      }
-      if (perFileHits >= maxHitsPerFile) break;
-    }
+    const fileResult = await applyMatchStrings(
+      rel,
+      content,
+      manager,
+      strategy,
+      matchTimeoutMs,
+      maxHitsPerFile,
+    );
+    hits.push(...fileResult.hits);
+    extractedDeps.push(...fileResult.deps);
+    warnings.push(...fileResult.warnings);
   }
 
   return { filesWalked, filesMatched, hits, extractedDeps, warnings };
+}
+
+type Strategy = "any" | "combination" | "recursive";
+
+function resolveStrategy(
+  raw: string | undefined,
+  warnings: string[],
+): Strategy {
+  if (raw === undefined || raw === "any") return "any";
+  if (raw === "combination" || raw === "recursive") return raw;
+  warnings.push(
+    `matchStringsStrategy='${raw}' is not supported by this preview tool; treating as 'any'. Run dry_run for full-fidelity behavior.`,
+  );
+  return "any";
+}
+
+interface FileMatchResult {
+  hits: PreviewHit[];
+  deps: ExtractedDep[];
+  warnings: string[];
+}
+
+async function applyMatchStrings(
+  rel: string,
+  content: string,
+  manager: CustomManager,
+  strategy: Strategy,
+  matchTimeoutMs: number,
+  maxHitsPerFile: number,
+): Promise<FileMatchResult> {
+  if (strategy === "combination") {
+    return applyCombination(rel, content, manager, matchTimeoutMs);
+  }
+  if (strategy === "recursive") {
+    return applyRecursive(rel, content, manager, matchTimeoutMs, maxHitsPerFile);
+  }
+  return applyAny(rel, content, manager, matchTimeoutMs, maxHitsPerFile);
+}
+
+async function applyAny(
+  rel: string,
+  content: string,
+  manager: CustomManager,
+  matchTimeoutMs: number,
+  maxHitsPerFile: number,
+): Promise<FileMatchResult> {
+  const hits: PreviewHit[] = [];
+  const deps: ExtractedDep[] = [];
+  const warnings: string[] = [];
+  let perFileHits = 0;
+  for (let i = 0; i < manager.matchStrings.length; i++) {
+    const source = manager.matchStrings[i]!;
+    const res = await runMatchAllInWorker(source, "gm", content, matchTimeoutMs);
+    if (res.timedOut) {
+      warnings.push(
+        `${rel}: matchStrings[${i}] /${source}/ exceeded ${matchTimeoutMs}ms and was aborted; any matches in this file for this pattern were skipped. Simplify the regex (e.g. avoid nested quantifiers like (.*)*) or raise matchTimeoutMs.`,
+      );
+      continue;
+    }
+    for (const m of res.matches) {
+      if (perFileHits >= maxHitsPerFile) {
+        warnings.push(
+          `${rel}: capped at ${maxHitsPerFile} hits. Increase maxHitsPerFile to see more.`,
+        );
+        break;
+      }
+      const line = lineNumberAt(content, m.index);
+      hits.push({
+        file: rel,
+        matchStringIndex: i,
+        line,
+        match: m.match,
+        groups: m.groups,
+      });
+      deps.push(buildExtractedDep(rel, line, m.groups, manager));
+      perFileHits++;
+    }
+    if (perFileHits >= maxHitsPerFile) break;
+  }
+  return { hits, deps, warnings };
+}
+
+/**
+ * Mirrors Renovate's `handleCombination`: every matchString must hit at least
+ * once for the file to produce a dep; all matches' named groups are merged
+ * (later matches override earlier on key conflicts) into a single dep. We still
+ * surface every match as a `hit` so the user can see which lines contributed,
+ * but `extractedDeps` collapses to one entry per file.
+ */
+async function applyCombination(
+  rel: string,
+  content: string,
+  manager: CustomManager,
+  matchTimeoutMs: number,
+): Promise<FileMatchResult> {
+  const hits: PreviewHit[] = [];
+  const warnings: string[] = [];
+  const perStringMatches: MatchResult[][] = [];
+
+  for (let i = 0; i < manager.matchStrings.length; i++) {
+    const source = manager.matchStrings[i]!;
+    const res = await runMatchAllInWorker(source, "gm", content, matchTimeoutMs);
+    if (res.timedOut) {
+      warnings.push(
+        `${rel}: matchStrings[${i}] /${source}/ exceeded ${matchTimeoutMs}ms and was aborted; combination strategy could not produce a dep for this file. Simplify the regex or raise matchTimeoutMs.`,
+      );
+      return { hits: [], deps: [], warnings };
+    }
+    if (res.matches.length === 0) {
+      // Combination requires every matchString to hit at least once.
+      return { hits: [], deps: [], warnings };
+    }
+    perStringMatches.push(res.matches);
+    for (const m of res.matches) {
+      hits.push({
+        file: rel,
+        matchStringIndex: i,
+        line: lineNumberAt(content, m.index),
+        match: m.match,
+        groups: m.groups,
+      });
+    }
+  }
+
+  // Merge groups in match order across all matchStrings (later overrides earlier).
+  const mergedGroups: Record<string, string> = {};
+  for (const matches of perStringMatches) {
+    for (const m of matches) Object.assign(mergedGroups, m.groups);
+  }
+  // Anchor the dep at the first match's line so the user can navigate to the file.
+  const firstHit = hits[0]!;
+  const deps = [buildExtractedDep(rel, firstHit.line, mergedGroups, manager)];
+  return { hits, deps, warnings };
+}
+
+/**
+ * Mirrors Renovate's `handleRecursive`: matchStrings[0] runs against the file,
+ * each match's text becomes the input for matchStrings[1], and so on. At the
+ * leaf level (after the last matchString), the merged groups from every level
+ * become a dep. Outer-level matches contribute groups but are not themselves
+ * deps; only the leaves are. `hits` reports the leaf-level matches with the
+ * merged groups, which matches the `any` strategy's "one hit per dep" shape.
+ */
+async function applyRecursive(
+  rel: string,
+  content: string,
+  manager: CustomManager,
+  matchTimeoutMs: number,
+  maxHitsPerFile: number,
+): Promise<FileMatchResult> {
+  const state: RecursiveState = {
+    rel,
+    manager,
+    originalContent: content,
+    matchTimeoutMs,
+    maxHitsPerFile,
+    hits: [],
+    deps: [],
+    warnings: [],
+    capped: false,
+  };
+  await recurse(state, content, 0, 0, {});
+  return { hits: state.hits, deps: state.deps, warnings: state.warnings };
+}
+
+interface RecursiveState {
+  rel: string;
+  manager: CustomManager;
+  originalContent: string;
+  matchTimeoutMs: number;
+  maxHitsPerFile: number;
+  hits: PreviewHit[];
+  deps: ExtractedDep[];
+  warnings: string[];
+  capped: boolean;
+}
+
+async function recurse(
+  state: RecursiveState,
+  content: string,
+  baseOffset: number,
+  index: number,
+  combinedGroups: Record<string, string>,
+): Promise<void> {
+  if (state.capped) return;
+  const { manager, rel } = state;
+  if (index === manager.matchStrings.length) {
+    if (state.deps.length >= state.maxHitsPerFile) {
+      state.warnings.push(
+        `${rel}: capped at ${state.maxHitsPerFile} hits. Increase maxHitsPerFile to see more.`,
+      );
+      state.capped = true;
+      return;
+    }
+    const line = lineNumberAt(state.originalContent, baseOffset);
+    state.hits.push({
+      file: rel,
+      matchStringIndex: manager.matchStrings.length - 1,
+      line,
+      match: content,
+      groups: combinedGroups,
+    });
+    state.deps.push(buildExtractedDep(rel, line, combinedGroups, manager));
+    return;
+  }
+  const source = manager.matchStrings[index]!;
+  const res = await runMatchAllInWorker(source, "gm", content, state.matchTimeoutMs);
+  if (res.timedOut) {
+    state.warnings.push(
+      `${rel}: matchStrings[${index}] /${source}/ exceeded ${state.matchTimeoutMs}ms and was aborted; any matches in this file for this pattern were skipped. Simplify the regex or raise matchTimeoutMs.`,
+    );
+    return;
+  }
+  for (const m of res.matches) {
+    if (state.capped) return;
+    await recurse(
+      state,
+      m.match,
+      baseOffset + m.index,
+      index + 1,
+      { ...combinedGroups, ...m.groups },
+    );
+  }
 }
 
 function buildExtractedDep(
