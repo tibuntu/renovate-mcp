@@ -11,10 +11,34 @@
  * same namespace → filename mapping here because Renovate doesn't export
  * `groups` publicly.
  */
-import { writeFile } from "node:fs/promises";
+import { writeFile, lstat } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { createRequire } from "node:module";
+
+// Refuse to overwrite a symlink at the destination. A working tree where the
+// generated file has been swapped for a symlink (deliberate or not) would
+// otherwise let the write follow the link to an arbitrary location.
+async function refuseIfSymlink(target) {
+  try {
+    const stat = await lstat(target);
+    if (stat.isSymbolicLink()) {
+      console.error(
+        `refusing to write to ${path.relative(process.cwd(), target)}: destination is a symlink`,
+      );
+      process.exit(1);
+    }
+  } catch (err) {
+    if (err && err.code !== "ENOENT") throw err;
+  }
+}
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const OUT_PATH = path.resolve(__dirname, "../src/data/presets.generated.ts");
+
+// Check before doing the heavy renovate import so the failure is fast and
+// independent of Renovate being installable.
+await refuseIfSymlink(OUT_PATH);
 
 const require = createRequire(import.meta.url);
 const renovatePkg = require("renovate/package.json");
@@ -37,9 +61,6 @@ const NAMESPACES = {
   security: "security.preset.js",
   workarounds: "workarounds.preset.js",
 };
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const OUT_PATH = path.resolve(__dirname, "../src/data/presets.generated.ts");
 
 const entries = {};
 for (const [namespace, filename] of Object.entries(NAMESPACES)) {

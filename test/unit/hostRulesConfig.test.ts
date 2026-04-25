@@ -118,4 +118,27 @@ describe("scrubSecrets", () => {
     const out = scrubSecrets(`before ${secret} after`, [secret]);
     expect(out).toBe("before [REDACTED] after");
   });
+
+  it("redacts the URL-encoded form of a secret", () => {
+    // Tokens that contain reserved characters (`/`, `+`, `=`, etc.) get
+    // percent-encoded when embedded in a URL. Renovate normally puts tokens
+    // in headers, but a redirect URL it follows could end up logged with the
+    // token as a query parameter — scrubbing must still catch it.
+    const secret = "abc/def+ghi=";
+    const encoded = encodeURIComponent(secret);
+    expect(encoded).not.toBe(secret); // sanity: the form actually differs
+    const out = scrubSecrets(
+      `raw=${secret} encoded=${encoded}`,
+      [secret],
+    );
+    expect(out).toBe("raw=[REDACTED] encoded=[REDACTED]");
+  });
+
+  it("does not double-list secrets whose encoded form equals the raw form", () => {
+    // When a secret has no encodable characters (e.g. plain alphanumerics),
+    // encodeURIComponent returns it unchanged. The dedup wrapper must drop
+    // the duplicate so the regex alternation stays well-formed.
+    const out = scrubSecrets("plain=abc123 again=abc123", ["abc123"]);
+    expect(out).toBe("plain=[REDACTED] again=[REDACTED]");
+  });
 });
