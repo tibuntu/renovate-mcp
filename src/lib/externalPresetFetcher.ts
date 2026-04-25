@@ -22,6 +22,8 @@ export type FetchResult =
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_GITHUB_API_BASE = "https://api.github.com";
 const DEFAULT_GITLAB_API_BASE = "https://gitlab.com/api/v4";
+const MAX_PRESET_BYTES = 1_000_000;
+const MAX_AUTH_BODY_BYTES = 8_192;
 
 function trimTrailingSlash(url: string): string {
   return url.replace(/\/+$/, "");
@@ -207,7 +209,7 @@ async function fetchJson(
       const rateLimit = detectRateLimit(res, platform, presetName);
       if (rateLimit) return { ok: false, reason: rateLimit };
       if (res.status === 401 || res.status === 403) {
-        const body = await safeReadText(res);
+        const body = await safeReadText(res, MAX_AUTH_BODY_BYTES);
         return {
           ok: false,
           reason: formatAuthFailure(res.status, presetName, url, credential, body),
@@ -218,7 +220,16 @@ async function fetchJson(
         reason: `HTTP ${res.status}${res.statusText ? ` ${res.statusText}` : ""} when fetching ${presetName}`,
       };
     }
-    const text = await res.text();
+    const oversize = checkDeclaredLength(res, presetName);
+    if (oversize) return oversize;
+    const bounded = await readBoundedText(res, MAX_PRESET_BYTES);
+    if (!bounded.ok) {
+      return {
+        ok: false,
+        reason: `Preset body for ${presetName} exceeds ${MAX_PRESET_BYTES} bytes.`,
+      };
+    }
+    const text = bounded.text;
     try {
       const body = JSON.parse(text);
       if (!body || typeof body !== "object" || Array.isArray(body)) {
@@ -253,12 +264,90 @@ async function fetchJson(
 
 const AUTH_BODY_MAX = 500;
 
-async function safeReadText(res: Response): Promise<string> {
+async function safeReadText(res: Response, maxBytes: number): Promise<string> {
   try {
-    return await res.text();
+    return await readCappedText(res, maxBytes);
   } catch {
     return "";
   }
+}
+
+function checkDeclaredLength(res: Response, presetName: string): FetchResult | undefined {
+  const declared = Number.parseInt(res.headers.get("content-length") ?? "", 10);
+  if (Number.isFinite(declared) && declared > MAX_PRESET_BYTES) {
+    return {
+      ok: false,
+      reason: `Preset body for ${presetName} exceeds ${MAX_PRESET_BYTES} bytes (declared ${declared}).`,
+    };
+  }
+  return undefined;
+}
+
+type BoundedRead = { ok: true; text: string } | { ok: false };
+
+async function readBoundedText(res: Response, maxBytes: number): Promise<BoundedRead> {
+  const collected = await collectBytes(res, maxBytes, "reject");
+  if (collected.overflow) return { ok: false };
+  return { ok: true, text: new TextDecoder("utf-8").decode(collected.bytes) };
+}
+
+async function readCappedText(res: Response, maxBytes: number): Promise<string> {
+  const collected = await collectBytes(res, maxBytes, "truncate");
+  return new TextDecoder("utf-8").decode(collected.bytes);
+}
+
+async function collectBytes(
+  res: Response,
+  maxBytes: number,
+  onOverflow: "reject" | "truncate",
+): Promise<{ bytes: Uint8Array; overflow: boolean }> {
+  if (!res.body) {
+    const text = await res.text();
+    const encoded = new TextEncoder().encode(text);
+    if (encoded.byteLength > maxBytes) {
+      return onOverflow === "reject"
+        ? { bytes: new Uint8Array(0), overflow: true }
+        : { bytes: encoded.slice(0, maxBytes), overflow: true };
+    }
+    return { bytes: encoded, overflow: false };
+  }
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      const remaining = maxBytes - total;
+      if (value.byteLength > remaining) {
+        await reader.cancel().catch(() => undefined);
+        if (onOverflow === "reject") {
+          return { bytes: new Uint8Array(0), overflow: true };
+        }
+        if (remaining > 0) {
+          chunks.push(value.slice(0, remaining));
+          total += remaining;
+        }
+        return { bytes: concat(chunks, total), overflow: true };
+      }
+      chunks.push(value);
+      total += value.byteLength;
+    }
+  } finally {
+    reader.releaseLock?.();
+  }
+  return { bytes: concat(chunks, total), overflow: false };
+}
+
+function concat(chunks: Uint8Array[], total: number): Uint8Array {
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out;
 }
 
 function formatAuthFailure(

@@ -560,6 +560,82 @@ describe("fetchExternalPreset — non-https endpoints", () => {
   });
 });
 
+describe("fetchExternalPreset — response size cap", () => {
+  beforeEach(() => vi.unstubAllEnvs());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it("rejects without reading the body when Content-Length exceeds the cap", async () => {
+    const textSpy = vi.fn();
+    const fakeBody = {
+      getReader: vi.fn(),
+    } as unknown as ReadableStream<Uint8Array>;
+    const res = new Response("ignored", { status: 200, headers: { "Content-Length": "100000000" } });
+    Object.defineProperty(res, "text", { value: textSpy });
+    Object.defineProperty(res, "body", { value: fakeBody });
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(res);
+    const result = await fetchExternalPreset(parsePreset("github>acme/cfg"), { fetchImpl });
+    expect(textSpy).not.toHaveBeenCalled();
+    expect(fakeBody.getReader).not.toHaveBeenCalled();
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toMatch(/exceeds 1000000 bytes/);
+      expect(result.reason).toMatch(/declared 100000000/);
+    }
+  });
+
+  it("aborts a chunked response once the running total passes the cap", async () => {
+    const cancel = vi.fn().mockResolvedValue(undefined);
+    const oneMiB = new Uint8Array(1_048_576);
+    const reads = [
+      { done: false, value: oneMiB },
+      { done: false, value: oneMiB },
+      { done: false, value: oneMiB },
+    ];
+    let i = 0;
+    const reader = {
+      read: vi.fn().mockImplementation(async () => reads[i++] ?? { done: true, value: undefined }),
+      cancel,
+      releaseLock: vi.fn(),
+    };
+    const stream = { getReader: () => reader } as unknown as ReadableStream<Uint8Array>;
+    const res = new Response(null, { status: 200 });
+    Object.defineProperty(res, "body", { value: stream });
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(res);
+    const result = await fetchExternalPreset(parsePreset("github>acme/cfg"), { fetchImpl });
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(reader.read.mock.calls.length).toBeLessThanOrEqual(2);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toMatch(/exceeds 1000000 bytes/);
+  });
+
+  it("truncates an oversized auth body instead of buffering it whole", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "ghp_secret");
+    const cancel = vi.fn().mockResolvedValue(undefined);
+    const big = new TextEncoder().encode("X".repeat(50_000));
+    const reads = [{ done: false, value: big }];
+    let i = 0;
+    const reader = {
+      read: vi.fn().mockImplementation(async () => reads[i++] ?? { done: true, value: undefined }),
+      cancel,
+      releaseLock: vi.fn(),
+    };
+    const stream = { getReader: () => reader } as unknown as ReadableStream<Uint8Array>;
+    const res = new Response(null, { status: 401, statusText: "Unauthorized" });
+    Object.defineProperty(res, "body", { value: stream });
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(res);
+    const result = await fetchExternalPreset(parsePreset("github>acme/cfg"), { fetchImpl });
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toMatch(/HTTP 401 when fetching github>acme\/cfg/);
+      expect(result.reason).toMatch(/Response:\s+X+/);
+    }
+  });
+});
+
 describe("fetchExternalPreset — unsupported sources", () => {
   it("returns a clear error for bitbucket", async () => {
     const result = await fetchExternalPreset(parsePreset("bitbucket>acme/cfg"));
