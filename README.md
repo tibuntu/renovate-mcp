@@ -13,6 +13,7 @@ An MCP server for designing [Renovate](https://github.com/renovatebot/renovate) 
 - [What this is NOT](#what-this-is-not)
 - [Requirements](#requirements)
 - [Install](#install)
+- [Platform setup](#platform-setup)
 - [Example prompts](#example-prompts)
 - [Example session](#example-session)
 - [Development](#development)
@@ -32,7 +33,7 @@ Ten tools plus a preset reference:
 | `preview_custom_manager` | Preview a `customManagers` (regex) entry against a local repo — shows file/line hits and extracted dep info. Offline. |
 | `validate_config` | Run `renovate-config-validator` against a file or inline object. |
 | `lint_config` | Semantic lint for Renovate-specific footguns schema validation misses — malformed `/…/` regex patterns plus unknown manager names in `matchManagers` / `excludeManagers`. Offline. |
-| `dry_run` | Run Renovate with `--dry-run` and return the structured JSON report. Defaults to `--platform=local` against `repoPath`; pass `platform` + `endpoint` + `token` + `repository` to run as a real GitHub/GitLab client (needed when the config extends `local>` presets on a private host). When `platform` is not passed, the tool reads `RENOVATE_PLATFORM` from the MCP server's env before defaulting to `local`. `endpoint`/`token` also flow through in local mode so `gitlab>…` / `github>…` preset shortcuts can be redirected at a self-hosted host without setting up a full remote run. No PRs, no pushes. Emits MCP progress notifications during the run when the caller supplies a `progressToken`. |
+| `dry_run` | Run Renovate with `--dry-run` and return the structured JSON report. Defaults to `--platform=local` against `repoPath`; pass `platform` + `endpoint` + `token` + `repository` to run as a real GitHub/GitLab client (needed when the config extends `local>` presets on a private host). When `platform` is not passed, the tool reads `RENOVATE_PLATFORM` from the MCP server's env before defaulting to `local`. When `token` is not passed, falls back to `RENOVATE_TOKEN` from MCP env, then to `GITLAB_TOKEN` (when `platform=gitlab`) or `GITHUB_TOKEN` (when `platform=github`) — auto-translated to `RENOVATE_TOKEN` for the spawned Renovate CLI, since Renovate itself only reads that one var. `repository` accepts GitHub-style `owner/repo` and GitLab nested-group paths like `group/subgroup/project`. `endpoint`/`token` also flow through in local mode so `gitlab>…` / `github>…` preset shortcuts can be redirected at a self-hosted host without setting up a full remote run. No PRs, no pushes. Emits MCP progress notifications during the run when the caller supplies a `progressToken`. |
 | `dry_run_diff` | Semantic diff between two `dry_run` reports — `added` / `removed` / `changed` proposed updates plus a compact text rendering. Stateless; takes both reports as inputs. Useful when iterating on a config to see exactly what each tweak did. |
 | `write_config` | Validate, then atomically write a config to disk. Refuses to save invalid configs unless `force: true`. |
 | `renovate://presets` (resource) | Markdown index of all 1000+ built-in presets grouped by namespace. |
@@ -59,7 +60,7 @@ See [Design notes](#design-notes) for implementation details (timeouts, safety c
 
 - `RENOVATE_BIN` / `RENOVATE_CONFIG_VALIDATOR_BIN` — override binary locations.
 - `RENOVATE_MCP_REQUIRE_CLI=false` — suppress the startup "partial availability" notice when you only intend to use the offline tools.
-- `RENOVATE_TOKEN` (preferred) or `GITHUB_TOKEN` / `GITLAB_TOKEN` as platform-specific fallbacks — only needed by `resolve_config` with `externalPresets: true` for fetching presets from private repos or avoiding rate limits. `RENOVATE_TOKEN` wins when both are set. For GitHub Enterprise / self-hosted GitLab, pass the `endpoint` tool input (and `platform` to route `local>` presets through the same host); `RENOVATE_ENDPOINT` is **not** read.
+- Platform env vars — `RENOVATE_PLATFORM`, `RENOVATE_ENDPOINT`, and a token (`RENOVATE_TOKEN` / `GITHUB_TOKEN` / `GITLAB_TOKEN`). Needed for `dry_run` against a remote platform and for `resolve_config` with `externalPresets: true`. See [Platform setup](#platform-setup) for the matrix and a worked example.
 - Private-registry credentials for `dry_run` — whatever Renovate itself would need at lookup time (`COMPOSER_AUTH`, `NPM_TOKEN` / `.npmrc`, Docker registry creds, or a `RENOVATE_HOST_RULES` JSON blob). Alternatively encode these as `hostRules` in the Renovate config, or pass them per-call via the `hostRules` input on `dry_run` (no MCP restart needed). Per-call `hostRules` are appended to whatever the repo's own config declares. Values reach Renovate as JSON through the tool-call transport, so the calling LLM sees them in its context — prefer the env route if that matters. Without any of these, Renovate's lookup often returns 0 updates silently; `dry_run` scans its logs for auth failures and surfaces them under `problems`.
 
 > **Note:** all env vars (tokens, `COMPOSER_AUTH`, `RENOVATE_HOST_RULES`, binary overrides, …) must be set on the MCP server process itself — via the `env` key in `claude_desktop_config.json` / `.mcp.json`, not your shell — since the MCP server runs as a child of the client and does not inherit shell env.
@@ -108,6 +109,51 @@ Restart your client and prompt it:
 
 A response listing namespaces like `config`, `docker`, `npm`, `helpers`, … confirms the server is reachable and the resource is exposed. If the client reports the tool or resource as unavailable, re-check the config file path and command.
 
+## Platform setup
+
+The four common configurations differ in three settings: `RENOVATE_PLATFORM`, `RENOVATE_ENDPOINT`, and which token env var you set. Pick the row that matches your environment and put the values in your client's `mcpServers.renovate.env` block.
+
+| Setup | `RENOVATE_PLATFORM` | `RENOVATE_ENDPOINT` | Token env var |
+| --- | --- | --- | --- |
+| github.com | `github` | (omit — defaults to `https://api.github.com`) | `RENOVATE_TOKEN` *or* `GITHUB_TOKEN` |
+| GitHub Enterprise | `github` | `https://github.example.com/api/v3/` | `RENOVATE_TOKEN` *or* `GITHUB_TOKEN` |
+| gitlab.com | `gitlab` | (omit — defaults to `https://gitlab.com/api/v4`) | `RENOVATE_TOKEN` *or* `GITLAB_TOKEN` |
+| Self-hosted GitLab | `gitlab` | `https://gitlab.example.com/api/v4/` | `RENOVATE_TOKEN` *or* `GITLAB_TOKEN` |
+
+Notes that apply to every row:
+
+- All env vars must be on the MCP server process — set them via the `env` key in `.mcp.json` / `claude_desktop_config.json`, not your shell, since the MCP server runs as a child of the client and does not inherit shell env.
+- `RENOVATE_TOKEN` wins when both it and the platform-specific var are set. `dry_run` and `resolve_config` honour the same precedence; for `dry_run` the platform-specific var is auto-translated to `RENOVATE_TOKEN` for the spawned Renovate CLI (Renovate itself only reads that one var).
+- For repository identifiers, GitLab accepts nested-group paths like `group/subgroup/project`, not just `group/project`.
+- If you only intend to use the offline tools (`read_config`, `resolve_config` without `externalPresets`, `preview_custom_manager`, `lint_config`), you can skip all of the above.
+
+### Worked example — self-hosted GitLab
+
+```jsonc
+{
+  "mcpServers": {
+    "renovate": {
+      "command": "npx",
+      "args": ["-y", "renovate-mcp"],
+      "env": {
+        "RENOVATE_PLATFORM": "gitlab",
+        "RENOVATE_ENDPOINT": "https://gitlab.example.com/api/v4/",
+        "GITLAB_TOKEN": "<your token>"
+      }
+    }
+  }
+}
+```
+
+This is enough for both `dry_run` (remote-platform runs) and `resolve_config` (private preset fetches). With this set, `dry_run` against `group/subgroup/project` works without passing `platform` / `endpoint` / `token` per call: `RENOVATE_PLATFORM` and the auto-translated `GITLAB_TOKEN` cover the platform side, and `RENOVATE_ENDPOINT` is inherited naturally by the spawned Renovate CLI. For `resolve_config`, `platform` and `endpoint` are tool *inputs* (not env vars) — pass them when you need `local>` presets routed through your host, since `resolve_config` is in-process and doesn't read `RENOVATE_*` env vars itself.
+
+### `local>` presets
+
+A config that extends `local>owner/repo:preset` only resolves when there's a platform context to expand it against:
+
+- **For `dry_run`** — pass `platform` + `endpoint` + `repository` (token falls back to env). Use `dryRunMode=extract` if you only need manifest extraction; the preset preflight is skipped in that mode.
+- **For `resolve_config`** — pass `platform` + `endpoint` as inputs and the tool rewrites `local>` into `<platform>>` and fetches over HTTPS. Without these inputs, `local>` stays in `presetsUnresolved` with a pointer to the workaround. Run `dry_run` afterwards for full-fidelity merging.
+
 ## Example prompts
 
 Once the server is wired up, try prompts like these. They're written for Claude but work with any MCP-capable client.
@@ -123,13 +169,11 @@ Once the server is wired up, try prompts like these. They're written for Claude 
 - "What does `config:recommended` actually enable? Show me its expanded JSON."
 - "Find a built-in preset that pins GitHub Actions digests."
 
-**Self-hosted GitLab / GitHub Enterprise**
+**Self-hosted GitLab / GitHub Enterprise** (env set per [Platform setup](#platform-setup))
 
 - "Resolve my config with external presets enabled, fetching `gitlab>platform/renovate-presets` from our self-hosted GitLab at `https://gitlab.example.com/api/v4`. Route `local>` presets through the same host."
 - "Expand `github>acme/renovate-config//base` from our GitHub Enterprise at `https://github.acme.corp/api/v3`."
-- "Dry-run `devops/gitops` against our self-hosted GitLab at `https://gitlab.example.com/api/v4` — use `platform=gitlab` with my token so Renovate can fetch the `local>` presets the config extends."
-
-(Reminder: auth tokens must be set on the MCP server process — via the `env` key in `.mcp.json` / `claude_desktop_config.json`, not your shell.)
+- "Dry-run `infrastructure/kubernetes/our-platform` (a nested-group GitLab project) so Renovate can fetch the `local>` presets the config extends."
 
 **Authoring a custom manager (regex)**
 
