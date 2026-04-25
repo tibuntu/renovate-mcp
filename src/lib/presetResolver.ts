@@ -120,7 +120,7 @@ export interface ParsedPreset {
   unresolvableReason?: string;
 }
 
-interface ExpandContext {
+export interface ExpandContext {
   fetchExternal: boolean;
   timeoutMs: number | undefined;
   endpoint: string | undefined;
@@ -221,7 +221,7 @@ async function expand(
   return mergeConfig(accumulated, ownKeys);
 }
 
-function recordTemplateWarnings(
+export function recordTemplateWarnings(
   entry: string,
   suppliedArgs: number,
   missingArgs: Set<number>,
@@ -248,7 +248,7 @@ function recordTemplateWarnings(
   }
 }
 
-async function loadPresetBody(
+export async function loadPresetBody(
   parsed: ParsedPreset,
   ctx: ExpandContext,
   unresolvedList: UnresolvedPreset[],
@@ -401,7 +401,7 @@ function parseExternal(
   return { key, original, args, source, repoPath, presetName, subpath, ref };
 }
 
-interface ApplyArgsResult {
+export interface ApplyArgsResult {
   value: unknown;
   /** Indices referenced by `{{argN}}` where N ≥ args.length. */
   missingArgs: Set<number>;
@@ -409,7 +409,7 @@ interface ApplyArgsResult {
   unknownTemplates: Set<string>;
 }
 
-function applyArgs(value: unknown, args: string[]): ApplyArgsResult {
+export function applyArgs(value: unknown, args: string[]): ApplyArgsResult {
   const missingArgs = new Set<number>();
   const unknownTemplates = new Set<string>();
   const out = applyArgsInner(value, args, missingArgs, unknownTemplates);

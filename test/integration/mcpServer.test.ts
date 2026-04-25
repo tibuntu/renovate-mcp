@@ -11,7 +11,7 @@ afterEach(async () => {
 });
 
 describe("MCP server stdio handshake", () => {
-  it("lists all ten tools with expected names", async () => {
+  it("lists all eleven tools with expected names", async () => {
     session = await startServer();
     const res = await session.request<{ tools: Array<{ name: string }> }>("tools/list");
     const names = (res.result?.tools ?? []).map((t) => t.name).sort();
@@ -19,6 +19,7 @@ describe("MCP server stdio handshake", () => {
       "check_setup",
       "dry_run",
       "dry_run_diff",
+      "explain_config",
       "get_version",
       "lint_config",
       "preview_custom_manager",
@@ -344,6 +345,43 @@ describe("resolve_config end-to-end", () => {
     expect(parsed.presetsUnresolved).toHaveLength(1);
     expect(parsed.presetsUnresolved[0].preset).toBe("github>some/repo");
     expect(res.result).not.toHaveProperty("isError", true);
+  });
+});
+
+describe("explain_config end-to-end", () => {
+  it("annotates each leaf with a setBy chain identifying the preset that set it", async () => {
+    session = await startServer();
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+    }>("tools/call", {
+      name: "explain_config",
+      arguments: {
+        configContent: { extends: ["default:automergeAll"], automerge: false },
+      },
+    });
+    const parsed = JSON.parse(res.result?.content[0]?.text ?? "{}");
+    expect(parsed.explanation.automerge).toEqual({
+      value: false,
+      setBy: [
+        { source: "default:automergeAll", via: [], value: true },
+        { source: "<own>", via: [], value: false },
+      ],
+    });
+    expect(parsed.presetsResolved).toContain("default:automergeAll");
+    expect(parsed.mergeQuality).toBe("preview");
+  });
+
+  it("rejects calls that pass neither repoPath nor configContent", async () => {
+    session = await startServer();
+    const res = await session.request<{
+      isError?: boolean;
+      content: Array<{ type: string; text: string }>;
+    }>("tools/call", {
+      name: "explain_config",
+      arguments: {},
+    });
+    expect(res.result?.isError).toBe(true);
+    expect(res.result?.content[0]?.text).toMatch(/repoPath or configContent/);
   });
 });
 

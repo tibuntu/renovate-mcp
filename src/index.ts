@@ -6,6 +6,7 @@ import { registerReadConfig } from "./tools/readConfig.js";
 import { registerValidateConfig } from "./tools/validateConfig.js";
 import { registerLintConfig } from "./tools/lintConfig.js";
 import { registerResolveConfig } from "./tools/resolveConfig.js";
+import { registerExplainConfig } from "./tools/explainConfig.js";
 import { registerPreviewCustomManager } from "./tools/previewCustomManager.js";
 import { registerDryRun } from "./tools/dryRun.js";
 import { registerDryRunDiff } from "./tools/dryRunDiff.js";
@@ -21,12 +22,13 @@ const BASE_INSTRUCTIONS = [
   "Workflow:",
   "  1. read_config            — inspect the current config in a repo",
   "  2. resolve_config         — expand built-in presets to see what a config actually becomes (offline)",
-  "  3. preview_custom_manager — iterate on a regex-based customManagers entry; shows file/line hits and extracted deps",
-  "  4. validate_config        — check a proposed config against Renovate's schema",
-  "  5. lint_config            — semantic lint pass: catches Renovate-specific footguns schema validation misses (e.g. malformed /…/ regex patterns)",
-  "  6. dry_run                — preview what Renovate would actually do (no PRs)",
-  "  7. dry_run_diff           — semantic diff between two dry_run reports (added/removed/changed updates)",
-  "  8. write_config           — save the agreed-upon config (validates first)",
+  "  3. explain_config         — inverse of resolve_config: trace which preset set each field (offline)",
+  "  4. preview_custom_manager — iterate on a regex-based customManagers entry; shows file/line hits and extracted deps",
+  "  5. validate_config        — check a proposed config against Renovate's schema",
+  "  6. lint_config            — semantic lint pass: catches Renovate-specific footguns schema validation misses (e.g. malformed /…/ regex patterns)",
+  "  7. dry_run                — preview what Renovate would actually do (no PRs)",
+  "  8. dry_run_diff           — semantic diff between two dry_run reports (added/removed/changed updates)",
+  "  9. write_config           — save the agreed-upon config (validates first)",
   "",
   "If any tool fails unexpectedly, call check_setup to diagnose CLI availability.",
   "Built-in preset reference: renovate://presets (namespace index), renovate://presets/{namespace} (one namespace), renovate://preset/{name} (one preset's expanded JSON).",
@@ -47,6 +49,7 @@ const server = new McpServer({ name: "renovate-mcp", version: SERVER_VERSION }, 
 registerCheckSetup(server);
 registerReadConfig(server);
 registerResolveConfig(server);
+registerExplainConfig(server);
 registerPreviewCustomManager(server);
 registerValidateConfig(server);
 registerLintConfig(server);
