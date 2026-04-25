@@ -444,6 +444,122 @@ describe("fetchExternalPreset — auth failures (401/403)", () => {
   });
 });
 
+describe("fetchExternalPreset — redirects", () => {
+  beforeEach(() => vi.unstubAllEnvs());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it("requests redirect: 'manual' so undici never auto-follows", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
+    await fetchExternalPreset(parsePreset("github>acme/cfg"), { fetchImpl });
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect((init as RequestInit).redirect).toBe("manual");
+  });
+
+  it("rejects a 302 from a github fetch and never re-issues the request", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "ghp_secret");
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      makeResponse("", {
+        status: 302,
+        statusText: "Found",
+        headers: { Location: "https://attacker.example/leak" },
+      }),
+    );
+    const result = await fetchExternalPreset(parsePreset("github>acme/cfg"), { fetchImpl });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toMatch(/Redirect refused while fetching github>acme\/cfg/);
+      expect(result.reason).toMatch(/Status:\s+302/);
+      expect(result.reason).toMatch(/disabled to prevent leaking auth tokens/);
+      expect(result.reason).not.toMatch(/ghp_secret/);
+      expect(result.reason).not.toMatch(/attacker\.example/);
+    }
+  });
+
+  it("rejects a 302 from a gitlab fetch and never re-issues the request", async () => {
+    vi.stubEnv("GITLAB_TOKEN", "glpat_secret");
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      makeResponse("", {
+        status: 302,
+        statusText: "Found",
+        headers: { Location: "https://attacker.example/leak" },
+      }),
+    );
+    const result = await fetchExternalPreset(parsePreset("gitlab>acme/cfg"), { fetchImpl });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toMatch(/Redirect refused while fetching gitlab>acme\/cfg/);
+      expect(result.reason).toMatch(/Status:\s+302/);
+      expect(result.reason).not.toMatch(/glpat_secret/);
+    }
+  });
+
+  it("rejects each redirect status (301/303/307/308) the same way", async () => {
+    for (const status of [301, 303, 307, 308] as const) {
+      const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+        makeResponse("", { status, statusText: "Redirect" }),
+      );
+      const result = await fetchExternalPreset(parsePreset("github>acme/cfg"), { fetchImpl });
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.reason).toMatch(/Redirect refused/);
+        expect(result.reason).toMatch(new RegExp(`Status:\\s+${status}`));
+      }
+    }
+  });
+});
+
+describe("fetchExternalPreset — non-https endpoints", () => {
+  beforeEach(() => vi.unstubAllEnvs());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it("does not send Authorization for an http:// github endpoint, even when GITHUB_TOKEN is set", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "ghp_secret");
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
+    await fetchExternalPreset(parsePreset("github>acme/cfg"), {
+      fetchImpl,
+      endpoint: "http://ghe.example.com/api/v3",
+    });
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect((init?.headers as Record<string, string>).Authorization).toBeUndefined();
+  });
+
+  it("does not send PRIVATE-TOKEN for an http:// gitlab endpoint, even when GITLAB_TOKEN is set", async () => {
+    vi.stubEnv("GITLAB_TOKEN", "glpat_secret");
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
+    await fetchExternalPreset(parsePreset("gitlab>acme/cfg"), {
+      fetchImpl,
+      endpoint: "http://gitlab.example.com/api/v4",
+    });
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect((init?.headers as Record<string, string>)["PRIVATE-TOKEN"]).toBeUndefined();
+  });
+
+  it("reports the suppressed credential as 'none (tried …)' on a subsequent 401 from an http endpoint", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "ghp_secret");
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(makeResponse("Bad credentials", { status: 401, statusText: "Unauthorized" }));
+    const result = await fetchExternalPreset(parsePreset("github>acme/cfg"), {
+      fetchImpl,
+      endpoint: "http://ghe.example.com/api/v3",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toMatch(/Credential:\s+none \(tried RENOVATE_TOKEN, GITHUB_TOKEN\)/);
+      expect(result.reason).not.toMatch(/ghp_secret/);
+    }
+  });
+});
+
 describe("fetchExternalPreset — unsupported sources", () => {
   it("returns a clear error for bitbucket", async () => {
     const result = await fetchExternalPreset(parsePreset("bitbucket>acme/cfg"));

@@ -90,8 +90,17 @@ async function fetchGitHub(
     Accept: "application/vnd.github.raw",
     "User-Agent": "renovate-mcp",
   };
-  if (credential.token) headers.Authorization = `Bearer ${credential.token}`;
-  return fetchJson(url, headers, timeoutMs, parsed.original, fetchImpl, "github", credential);
+  const sendAuth = Boolean(credential.token) && isHttpsUrl(url);
+  if (sendAuth) headers.Authorization = `Bearer ${credential.token}`;
+  return fetchJson(
+    url,
+    headers,
+    timeoutMs,
+    parsed.original,
+    fetchImpl,
+    "github",
+    sendAuth ? credential : suppressCredential(credential),
+  );
 }
 
 async function fetchGitLab(
@@ -111,8 +120,25 @@ async function fetchGitLab(
   )}/repository/files/${encodeURIComponent(file)}/raw?ref=${encodeURIComponent(ref)}`;
   const credential = resolveCredential(["RENOVATE_TOKEN", "GITLAB_TOKEN"]);
   const headers: Record<string, string> = { "User-Agent": "renovate-mcp" };
-  if (credential.token) headers["PRIVATE-TOKEN"] = credential.token;
-  return fetchJson(url, headers, timeoutMs, parsed.original, fetchImpl, "gitlab", credential);
+  const sendAuth = Boolean(credential.token) && isHttpsUrl(url);
+  if (sendAuth) headers["PRIVATE-TOKEN"] = credential.token!;
+  return fetchJson(
+    url,
+    headers,
+    timeoutMs,
+    parsed.original,
+    fetchImpl,
+    "gitlab",
+    sendAuth ? credential : suppressCredential(credential),
+  );
+}
+
+function isHttpsUrl(url: string): boolean {
+  return /^https:\/\//i.test(url);
+}
+
+function suppressCredential(credential: Credential): Credential {
+  return { envVar: null, token: undefined, triedVars: credential.triedVars };
 }
 
 function presetFileName(parsed: ParsedPreset): string {
@@ -169,7 +195,14 @@ async function fetchJson(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetchImpl(url, { headers, signal: controller.signal });
+    const res = await fetchImpl(url, {
+      headers,
+      signal: controller.signal,
+      redirect: "manual",
+    });
+    if (isRedirectResponse(res)) {
+      return { ok: false, reason: formatRedirectRefusal(presetName, url, res) };
+    }
     if (!res.ok) {
       const rateLimit = detectRateLimit(res, platform, presetName);
       if (rateLimit) return { ok: false, reason: rateLimit };
@@ -252,4 +285,21 @@ function formatAuthFailure(
 function formatCredential(credential: Credential): string {
   if (credential.envVar) return `${credential.envVar} (present)`;
   return `none (tried ${credential.triedVars.join(", ")})`;
+}
+
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+
+function isRedirectResponse(res: Response): boolean {
+  return res.type === "opaqueredirect" || REDIRECT_STATUSES.has(res.status);
+}
+
+function formatRedirectRefusal(presetName: string, url: string, res: Response): string {
+  const status = res.status > 0 ? String(res.status) : "redirect";
+  const lines = [
+    `Redirect refused while fetching ${presetName}`,
+    `  URL:      ${url}`,
+    `  Status:   ${status}`,
+    `  Reason:   Following redirects is disabled to prevent leaking auth tokens to a different host. If your endpoint legitimately redirects, fetch the final URL directly.`,
+  ];
+  return lines.join("\n");
 }
