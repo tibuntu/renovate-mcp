@@ -10,8 +10,10 @@ import { registerPreviewCustomManager } from "./tools/previewCustomManager.js";
 import { registerDryRun } from "./tools/dryRun.js";
 import { registerDryRunDiff } from "./tools/dryRunDiff.js";
 import { registerWriteConfig } from "./tools/writeConfig.js";
+import { registerGetVersion } from "./tools/getVersion.js";
 import { registerPresetResources } from "./resources/presets.js";
 import { checkSetup, startupBanner } from "./lib/setupCheck.js";
+import { SERVER_VERSION } from "./lib/version.js";
 
 const BASE_INSTRUCTIONS = [
   "Design and debug Renovate configurations interactively.",
@@ -40,8 +42,6 @@ const suppressBanner = requireCliRaw === "false" || requireCliRaw === "0";
 const banner = suppressBanner ? null : startupBanner(setup);
 const instructions = banner ? [BASE_INSTRUCTIONS, "", banner].join("\n") : BASE_INSTRUCTIONS;
 
-const SERVER_VERSION = "0.6.0"; // x-release-please-version
-
 const server = new McpServer({ name: "renovate-mcp", version: SERVER_VERSION }, { instructions });
 
 registerCheckSetup(server);
@@ -53,6 +53,7 @@ registerLintConfig(server);
 registerDryRun(server);
 registerDryRunDiff(server);
 registerWriteConfig(server);
+registerGetVersion(server);
 registerPresetResources(server);
 
 const transport = new StdioServerTransport();
