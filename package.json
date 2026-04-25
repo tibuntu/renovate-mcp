@@ -23,6 +23,7 @@
     "pretest:coverage": "npm run build",
     "test:coverage": "vitest run --coverage",
     "generate:presets": "node scripts/generate-presets.mjs",
+    "generate:managers": "node scripts/generate-managers.mjs",
     "prepack": "npm run build && chmod +x dist/index.js"
   },
   "keywords": [
