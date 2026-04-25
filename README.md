@@ -231,7 +231,7 @@ npm run generate:managers # regenerate src/data/managers.generated.ts from the r
 
 The preset catalogue at `src/data/presets.generated.ts` and the manager-name list at `src/data/managers.generated.ts` are committed snapshots of Renovate's built-in presets and manager registry. Runtime code never imports the `renovate` package — only the `scripts/generate-*.mjs` scripts do. Regenerate both after bumping the `renovate` devDependency.
 
-CI runs `typecheck`, `build`, and `test:coverage` on Node 24 for every PR and push to `main` (see `.github/workflows/ci.yml`). Coverage is uploaded as a per-run artifact; no threshold is enforced yet.
+CI runs `typecheck`, `build`, and `test:coverage` on Node 24 for every PR and push to `main` (see `.github/workflows/ci.yml`), across an OS matrix of `ubuntu-latest` and `macos-latest` with `fail-fast: false` so a platform-specific regression on either side surfaces. Coverage is uploaded as a per-run artifact from the Ubuntu job only (to avoid name collisions); no threshold is enforced yet.
 
 `.github/workflows/claude.yml` is maintainer tooling: it lets the repo owner trigger [`anthropics/claude-code-action`](https://github.com/anthropics/claude-code-action) by mentioning `@claude` in an issue, issue comment, PR review, or PR review comment. It's gated on `sender.login == repository_owner`, so mentions from anyone else are ignored. The workflow needs the `CLAUDE_CODE_OAUTH_TOKEN` secret on the repo; outside contributors and forks do not need any Anthropic credentials to work on this project.
 
