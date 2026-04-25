@@ -1,0 +1,54 @@
+name: Feature / enhancement
+description: Propose new behavior or an enhancement to an existing tool
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The repo's tool surface is intentionally small. Before filing, please skim `README.md` and `CLAUDE.md` to confirm this isn't already in scope or deliberately out of scope.
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Suggested priority
+      description: Best guess — the maintainer will re-triage.
+      options:
+        - "priority:low (nice to have)"
+        - "priority:medium (clear user value)"
+        - "priority:high (blocks a real workflow)"
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One or two sentences on what you want to add or change.
+    validations:
+      required: true
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: What problem does this solve? What workflow does it unblock?
+    validations:
+      required: true
+  - type: textarea
+    id: sketch
+    attributes:
+      label: Sketch
+      description: Rough proposal — input shape, output shape, where it would live in the codebase. Code snippets welcome.
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds you tried, or other designs you weighed and rejected.
+    validations:
+      required: false
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How will we know this is done? Bullet list preferred.
+    validations:
+      required: false

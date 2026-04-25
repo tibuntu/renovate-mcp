@@ -1,0 +1,80 @@
+name: Bug
+description: Something isn't working
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing! Please fill in as much as you can — reproduction steps and version info are the most important.
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Suggested priority
+      description: Best guess — the maintainer will re-triage. Picking helps frame the bug, not lock it.
+      options:
+        - "priority:low (polish/nit)"
+        - "priority:medium (narrow blast radius)"
+        - "priority:high (correctness/security/hang)"
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One or two sentences on what's wrong.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: Minimal steps, config, or input that triggers the bug. Include the tool call(s) if relevant.
+      placeholder: |
+        1. Configure renovate-mcp with ...
+        2. Call tool `preview_custom_manager` with ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include error output / stack traces verbatim if any.
+    validations:
+      required: true
+  - type: input
+    id: node-version
+    attributes:
+      label: Node version
+      description: Output of `node --version` (must be ≥ 24).
+      placeholder: v24.0.0
+    validations:
+      required: true
+  - type: input
+    id: renovate-version
+    attributes:
+      label: Renovate CLI version
+      description: Output of `renovate --version`, or "not installed" if the bug doesn't involve the CLI.
+      placeholder: "41.0.0"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: macOS 15.0 / Ubuntu 24.04 / ...
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Logs, screenshots, related issues, hypotheses.
+    validations:
+      required: false
