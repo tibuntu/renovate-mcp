@@ -306,6 +306,15 @@ export function registerDryRun(server: McpServer): void {
       };
 
       try {
+        // Pre-create the report file with mode 0600 so the on-disk JSON is
+        // not world-readable while Renovate is running. Renovate's report
+        // writer calls fs.writeFile with O_WRONLY|O_CREAT|O_TRUNC, which
+        // preserves the existing file's mode — so the 0600 we set here
+        // sticks across Renovate's overwrite. The `wx` flag fails fast if
+        // the path already exists (e.g. UUID collision), which is the safer
+        // default than silently inheriting whatever mode it had.
+        await fs.writeFile(reportPath, "", { flag: "wx", mode: 0o600 });
+
         const args = [
           `--platform=${effectivePlatform}`,
           `--dry-run=${dryRunMode}`,

@@ -196,6 +196,66 @@ process.exit(0);
     expect(progress).toHaveLength(0);
   });
 
+  it.skipIf(process.platform === "win32")(
+    "pre-creates the report file with mode 0600 so it isn't world-readable while Renovate runs",
+    async () => {
+      // Fake renovate that stats the pre-created report file *before*
+      // writing to it and dumps the observed mode. The whole point of
+      // option A from issue #134 is that the file already exists with
+      // mode 0o600 by the time Renovate touches it; this captures
+      // exactly that observation.
+      const modeDump = path.join(repo, "report-mode.json");
+      const fakeBin = path.join(repo, "report-mode-renovate.mjs");
+      await writeFile(
+        fakeBin,
+        `#!/usr/bin/env node
+import { writeFileSync, statSync } from 'node:fs';
+const args = process.argv.slice(2);
+const reportArg = args.find(a => a.startsWith('--report-path='));
+const reportPath = reportArg ? reportArg.slice('--report-path='.length) : null;
+const dumpPath = process.env.FAKE_RENOVATE_REPORT_MODE_DUMP;
+if (reportPath && dumpPath) {
+  const st = statSync(reportPath);
+  writeFileSync(dumpPath, JSON.stringify({ mode: st.mode & 0o777, size: st.size }));
+}
+if (reportPath) {
+  // Overwrite in place — fs.writeFile uses O_WRONLY|O_CREAT|O_TRUNC,
+  // which preserves the existing mode bits.
+  writeFileSync(reportPath, JSON.stringify({ repositories: [] }));
+}
+process.exit(0);
+`,
+      );
+      await chmod(fakeBin, 0o755);
+
+      session = await startServer({
+        RENOVATE_BIN: fakeBin,
+        FAKE_RENOVATE_REPORT_MODE_DUMP: modeDump,
+      });
+
+      const res = await session.request<{
+        content: Array<{ type: string; text: string }>;
+        isError?: boolean;
+      }>("tools/call", {
+        name: "dry_run",
+        arguments: { repoPath: repo },
+      });
+
+      expect(res.result?.isError).toBeFalsy();
+
+      const observed = JSON.parse(await readFile(modeDump, "utf8")) as {
+        mode: number;
+        size: number;
+      };
+      // Group + world bits must be clear — file is owner-only.
+      expect(observed.mode & 0o077).toBe(0);
+      expect(observed.mode & 0o777).toBe(0o600);
+      // Sanity-check that the file was empty when Renovate observed it,
+      // matching the pre-create-then-overwrite contract.
+      expect(observed.size).toBe(0);
+    },
+  );
+
   it("scrubs hostRules secrets from logTail when no report is produced", async () => {
     // Fake renovate that writes the token to stderr AND skips the report so
     // dry_run falls through to the logTail branch — this is the path where a
