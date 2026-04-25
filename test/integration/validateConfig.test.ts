@@ -15,7 +15,9 @@ let repo: string;
 let session: McpSession;
 
 beforeEach(async () => {
-  repo = await mkdtemp(path.join(tmpdir(), "rmcp-validate-"));
+  repo = await mkdtemp(
+    path.join(tmpdir(), `rmcp-${path.basename(import.meta.url, ".ts")}-${process.pid}-`),
+  );
 });
 
 afterEach(async () => {

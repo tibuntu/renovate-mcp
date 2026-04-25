@@ -44,7 +44,9 @@ describe("run() streaming observers", () => {
   let dir: string;
 
   beforeEach(async () => {
-    dir = await mkdtemp(path.join(tmpdir(), "rmcp-run-"));
+    dir = await mkdtemp(
+      path.join(tmpdir(), `rmcp-${path.basename(import.meta.url, ".ts")}-${process.pid}-`),
+    );
   });
 
   afterEach(async () => {

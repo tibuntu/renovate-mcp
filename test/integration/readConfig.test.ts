@@ -27,7 +27,9 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  repo = await mkdtemp(path.join(tmpdir(), "rmcp-read-"));
+  repo = await mkdtemp(
+    path.join(tmpdir(), `rmcp-${path.basename(import.meta.url, ".ts")}-${process.pid}-`),
+  );
 });
 
 afterEach(async () => {

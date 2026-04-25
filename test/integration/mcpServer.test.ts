@@ -67,7 +67,12 @@ describe("startup instructions banner", () => {
 describe("read_config end-to-end", () => {
   let repo: string;
   beforeEach(async () => {
-    repo = await mkdtemp(path.join(tmpdir(), "rmcp-e2e-"));
+    repo = await mkdtemp(
+      path.join(
+        tmpdir(),
+        `rmcp-${path.basename(import.meta.url, ".ts")}-${process.pid}-e2e-`,
+      ),
+    );
   });
   afterEach(async () => {
     await rm(repo, { recursive: true, force: true });
@@ -104,7 +109,12 @@ describe("read_config end-to-end", () => {
 describe("preview_custom_manager end-to-end", () => {
   let repo: string;
   beforeEach(async () => {
-    repo = await mkdtemp(path.join(tmpdir(), "rmcp-pcm-"));
+    repo = await mkdtemp(
+      path.join(
+        tmpdir(),
+        `rmcp-${path.basename(import.meta.url, ".ts")}-${process.pid}-pcm-`,
+      ),
+    );
   });
   afterEach(async () => {
     await rm(repo, { recursive: true, force: true });
@@ -161,7 +171,12 @@ describe("preview_custom_manager end-to-end", () => {
 describe("lint_config end-to-end", () => {
   let repo: string;
   beforeEach(async () => {
-    repo = await mkdtemp(path.join(tmpdir(), "rmcp-lint-"));
+    repo = await mkdtemp(
+      path.join(
+        tmpdir(),
+        `rmcp-${path.basename(import.meta.url, ".ts")}-${process.pid}-lint-`,
+      ),
+    );
   });
   afterEach(async () => {
     await rm(repo, { recursive: true, force: true });

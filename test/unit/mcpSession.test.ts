@@ -24,7 +24,9 @@ afterEach(async () => {
 });
 
 async function writeFakeServer(body: string): Promise<string> {
-  workDir = await mkdtemp(path.join(tmpdir(), "rmcp-fakesrv-"));
+  workDir = await mkdtemp(
+    path.join(tmpdir(), `rmcp-${path.basename(import.meta.url, ".ts")}-${process.pid}-`),
+  );
   const file = path.join(workDir, "server.mjs");
   await writeFile(file, `#!/usr/bin/env node\n${body}\n`);
   await chmod(file, 0o755);
