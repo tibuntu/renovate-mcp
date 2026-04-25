@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { locateConfig } from "../lib/configLocations.js";
 import { explainConfig } from "../lib/configExplainer.js";
+import { configRecord, endpointString, pathString } from "../lib/inputLimits.js";
 
 const MERGE_QUALITY = "preview" as const;
 const MERGE_DISCLAIMER =
@@ -15,28 +16,21 @@ export function registerExplainConfig(server: McpServer): void {
       description:
         "Inverse of resolve_config: walk the same preset tree, but annotate every leaf field with the chain of presets that touched it. Each leaf in `explanation` carries `{ value, setBy }` where `setBy` lists every contribution in merge order — last entry wins for scalars; for arrays each entry adds its own slice. The `<own>` source means the value came from the user's input config (siblings of `extends`); other sources are preset references as written in `extends`. Use this to trace surprises like \"why is `prCreation` set to 'not-pending'?\". Pure analysis: same offline-by-default behaviour as resolve_config, plus the same `externalPresets` / `endpoint` / `platform` opt-ins. Pass `repoPath` (reads the repo's config) or `configContent` (an inline config). For full-fidelity output, run dry_run instead.",
       inputSchema: {
-        repoPath: z
-          .string()
-          .optional()
-          .describe(
-            "Absolute path to the repository root. The tool will locate the repo's renovate config automatically.",
-          ),
-        configContent: z
-          .record(z.string(), z.unknown())
-          .optional()
-          .describe("Inline config object to explain — use instead of repoPath."),
+        repoPath: pathString(
+          "Absolute path to the repository root. The tool will locate the repo's renovate config automatically.",
+        ).optional(),
+        configContent: configRecord(
+          "Inline config object to explain — use instead of repoPath.",
+        ).optional(),
         externalPresets: z
           .boolean()
           .optional()
           .describe(
             "When true, fetch external presets (github>, gitlab>) over HTTPS — same credentials and behaviour as resolve_config. Default false.",
           ),
-        endpoint: z
-          .string()
-          .optional()
-          .describe(
-            "API base URL for github>/gitlab> fetches. Use for GitHub Enterprise or self-hosted GitLab — same semantics as resolve_config.",
-          ),
+        endpoint: endpointString(
+          "API base URL for github>/gitlab> fetches. Use for GitHub Enterprise or self-hosted GitLab — same semantics as resolve_config.",
+        ).optional(),
         platform: z
           .enum(["github", "gitlab"])
           .optional()

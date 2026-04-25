@@ -1,12 +1,10 @@
-import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { diffDryRunReports } from "../lib/dryRunDiff.js";
+import { reportRecord } from "../lib/inputLimits.js";
 
-const reportShape = z
-  .record(z.string(), z.unknown())
-  .describe(
-    "A Renovate dry-run report. Pass either the raw report (an object with a `repositories` key) or the full `dry_run` tool summary (an object with a `report` key); the tool unwraps `report` automatically.",
-  );
+const reportShape = reportRecord(
+  "A Renovate dry-run report. Pass either the raw report (an object with a `repositories` key) or the full `dry_run` tool summary (an object with a `report` key); the tool unwraps `report` automatically.",
+);
 
 export function registerDryRunDiff(server: McpServer): void {
   server.registerTool(

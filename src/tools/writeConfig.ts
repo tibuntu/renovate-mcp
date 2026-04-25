@@ -4,6 +4,7 @@ import { promises as fs } from "node:fs";
 import { randomUUID } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { run, resolveRenovateTool, formatMissingBinaryError } from "../lib/renovateCli.js";
+import { configRecord, filenameString, pathString } from "../lib/inputLimits.js";
 
 // Resolve symlinks in `p`, walking up to the nearest existing ancestor when
 // tail components don't exist yet (e.g. a new subdir we're about to mkdir).
@@ -34,12 +35,11 @@ export function registerWriteConfig(server: McpServer): void {
       description:
         "Write a Renovate config to disk. Runs renovate-config-validator first — refuses to write if validation fails unless force=true.",
       inputSchema: {
-        repoPath: z.string().describe("Absolute path to the repository root"),
-        config: z.record(z.string(), z.unknown()).describe("The Renovate config object"),
-        filename: z
-          .string()
-          .default("renovate.json")
-          .describe("Target filename relative to repoPath (default renovate.json)"),
+        repoPath: pathString("Absolute path to the repository root"),
+        config: configRecord("The Renovate config object"),
+        filename: filenameString(
+          "Target filename relative to repoPath (default renovate.json)",
+        ).default("renovate.json"),
         force: z
           .boolean()
           .default(false)
