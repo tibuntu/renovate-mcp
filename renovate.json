@@ -2,7 +2,8 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "description": "Real Renovate config for renovate-mcp, also kept as a showcase. Edit with this repo's preview_custom_manager (iterate on regex managers) and lint_config (catch Renovate-specific footguns), then dry_run before committing.",
   "extends": [
-    "config:recommended"
+    "config:recommended",
+    "helpers:pinGitHubActionDigests"
   ],
   "customManagers": [
     {
