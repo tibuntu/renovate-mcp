@@ -283,7 +283,7 @@ process.exit(0);
     expect(dumped.renovateToken).toBeNull();
   });
 
-  it("passes --platform, --endpoint, --repository and RENOVATE_TOKEN through when platform is gitlab", async () => {
+  it("passes --platform, --endpoint, RENOVATE_TOKEN, and the repo as a positional arg when platform is gitlab", async () => {
     const argvDump = path.join(repo, "argv.json");
     const fakeBin = await makeArgvEnvDump(repo);
     session = await startServer({
@@ -312,8 +312,113 @@ process.exit(0);
     };
     expect(dumped.args).toContain("--platform=gitlab");
     expect(dumped.args).toContain("--endpoint=https://gitlab.example.com/api/v4/");
-    expect(dumped.args).toContain("--repository=devops/gitops");
+    // Renovate has no `--repository` flag — the repo is a positional arg.
+    expect(dumped.args.some((a) => a.startsWith("--repository="))).toBe(false);
+    expect(dumped.args).toContain("devops/gitops");
     expect(dumped.renovateToken).toBe("glpat-very-secret-xyz");
+  });
+
+  it("falls back to RENOVATE_PLATFORM from server env when the caller doesn't pass platform", async () => {
+    const argvDump = path.join(repo, "argv.json");
+    const fakeBin = await makeArgvEnvDump(repo);
+    session = await startServer({
+      RENOVATE_BIN: fakeBin,
+      RENOVATE_PLATFORM: "gitlab",
+      FAKE_RENOVATE_ARGV_DUMP: argvDump,
+    });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: {
+        repoPath: repo,
+        // No `platform` arg — should pick up "gitlab" from the server env.
+        repository: "devops/gitops",
+      },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    const dumped = JSON.parse(await readFile(argvDump, "utf8")) as { args: string[] };
+    expect(dumped.args).toContain("--platform=gitlab");
+    expect(dumped.args).toContain("devops/gitops");
+  });
+
+  it("ignores unsupported RENOVATE_PLATFORM values from env (falls back to local)", async () => {
+    const argvDump = path.join(repo, "argv.json");
+    const fakeBin = await makeArgvEnvDump(repo);
+    session = await startServer({
+      RENOVATE_BIN: fakeBin,
+      RENOVATE_PLATFORM: "bitbucket",
+      FAKE_RENOVATE_ARGV_DUMP: argvDump,
+    });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: { repoPath: repo },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    const dumped = JSON.parse(await readFile(argvDump, "utf8")) as { args: string[] };
+    expect(dumped.args).toContain("--platform=local");
+  });
+
+  it("explicit platform input wins over RENOVATE_PLATFORM in env", async () => {
+    const argvDump = path.join(repo, "argv.json");
+    const fakeBin = await makeArgvEnvDump(repo);
+    session = await startServer({
+      RENOVATE_BIN: fakeBin,
+      RENOVATE_PLATFORM: "gitlab",
+      FAKE_RENOVATE_ARGV_DUMP: argvDump,
+    });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: { repoPath: repo, platform: "local" },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    const dumped = JSON.parse(await readFile(argvDump, "utf8")) as { args: string[] };
+    expect(dumped.args).toContain("--platform=local");
+  });
+
+  it("forwards --endpoint and RENOVATE_TOKEN even when platform is local (for gitlab>/github> preset resolution)", async () => {
+    const argvDump = path.join(repo, "argv.json");
+    const fakeBin = await makeArgvEnvDump(repo);
+    session = await startServer({
+      RENOVATE_BIN: fakeBin,
+      FAKE_RENOVATE_ARGV_DUMP: argvDump,
+    });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: {
+        repoPath: repo,
+        endpoint: "https://gitlab.example.com/api/v4/",
+        token: "glpat-secret",
+      },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    const dumped = JSON.parse(await readFile(argvDump, "utf8")) as {
+      args: string[];
+      renovateToken: string | null;
+    };
+    expect(dumped.args).toContain("--platform=local");
+    expect(dumped.args).toContain("--endpoint=https://gitlab.example.com/api/v4/");
+    expect(dumped.renovateToken).toBe("glpat-secret");
+    // No repository should be passed in local mode even if other inputs are present.
+    expect(dumped.args.some((a) => /^[^-]/.test(a) && a.includes("/"))).toBe(false);
   });
 
   it("errors when platform is gitlab but repository is missing", async () => {
@@ -362,6 +467,33 @@ process.exit(0);
     expect(text).toMatch(/local>/);
     expect(text).toMatch(/platform.*gitlab.*github|gitlab.*github/i);
     expect(text).toMatch(/devops\/bots\/renovate/);
+  });
+
+  it("preflight: does NOT error for dryRunMode=extract even when config extends local> under platform=local", async () => {
+    // Manifest-only extraction is the user's escape hatch — let it through
+    // and let Renovate produce its own error if it can't resolve the preset.
+    await writeFile(
+      path.join(repo, "renovate.json"),
+      JSON.stringify({ extends: ["local>devops/bots/renovate:renovate.brainbits.json#main"] }),
+    );
+    const argvDump = path.join(repo, "argv.json");
+    const fakeBin = await makeArgvEnvDump(repo);
+    session = await startServer({
+      RENOVATE_BIN: fakeBin,
+      FAKE_RENOVATE_ARGV_DUMP: argvDump,
+    });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: { repoPath: repo, dryRunMode: "extract" },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    const dumped = JSON.parse(await readFile(argvDump, "utf8")) as { args: string[] };
+    expect(dumped.args).toContain("--dry-run=extract");
   });
 
   it("preflight: does NOT error when platform is non-local even if config extends local>", async () => {
