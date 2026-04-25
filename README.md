@@ -233,6 +233,8 @@ The preset catalogue at `src/data/presets.generated.ts` and the manager-name lis
 
 CI runs `typecheck`, `build`, and `test:coverage` on Node 24 for every PR and push to `main` (see `.github/workflows/ci.yml`), across an OS matrix of `ubuntu-latest` and `macos-latest` with `fail-fast: false` so a platform-specific regression on either side surfaces. Coverage is uploaded as a per-run artifact from the Ubuntu job only (to avoid name collisions); no threshold is enforced yet.
 
+`.github/workflows/dependency-review.yml` runs [`actions/dependency-review-action`](https://github.com/actions/dependency-review-action) on every PR and fails the check when a newly introduced dependency carries a CVE of `high` severity or above. Findings also render inline in the PR's "Files changed" / Conversation tabs.
+
 `.github/workflows/claude.yml` is maintainer tooling: it lets the repo owner trigger [`anthropics/claude-code-action`](https://github.com/anthropics/claude-code-action) by mentioning `@claude` in an issue, issue comment, PR review, or PR review comment. It's gated on `sender.login == repository_owner`, so mentions from anyone else are ignored. The workflow needs the `CLAUDE_CODE_OAUTH_TOKEN` secret on the repo; outside contributors and forks do not need any Anthropic credentials to work on this project.
 
 ## Release flow
