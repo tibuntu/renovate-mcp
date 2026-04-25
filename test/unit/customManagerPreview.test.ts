@@ -78,6 +78,47 @@ describe("previewCustomManager", () => {
     ]);
   });
 
+  it("applies every template field to the extracted dep", async () => {
+    // Issue #67: depName/currentValue/datasource templates are exercised
+    // above. This locks in the remaining seven so a refactor of
+    // buildExtractedDep / TEMPLATE_FIELD_MAP can't silently drop any of them.
+    await writeFile(
+      path.join(repo, "all.txt"),
+      "pkg=foo ver=1.2.3 dig=sha256:abc\n",
+    );
+    const result = await previewCustomManager(repo, {
+      customType: "regex",
+      fileMatch: ["all\\.txt$"],
+      matchStrings: [
+        "pkg=(?<pkg>\\S+) ver=(?<ver>\\S+) dig=(?<dig>\\S+)",
+      ],
+      depNameTemplate: "{{pkg}}",
+      packageNameTemplate: "scope/{{pkg}}",
+      currentValueTemplate: "{{ver}}",
+      currentDigestTemplate: "{{dig}}",
+      datasourceTemplate: "npm",
+      versioningTemplate: "semver",
+      registryUrlTemplate: "https://registry.example.com/{{pkg}}",
+      depTypeTemplate: "dependencies",
+      extractVersionTemplate: "^v?(?<version>.*)$",
+      autoReplaceStringTemplate: "pkg={{pkg}} ver={{ver}}",
+    });
+    expect(result.extractedDeps).toEqual([
+      expect.objectContaining({
+        depName: "foo",
+        packageName: "scope/foo",
+        currentValue: "1.2.3",
+        currentDigest: "sha256:abc",
+        datasource: "npm",
+        versioning: "semver",
+        registryUrl: "https://registry.example.com/foo",
+        depType: "dependencies",
+        extractVersion: "^v?(?<version>.*)$",
+        autoReplaceString: "pkg=foo ver=1.2.3",
+      }),
+    ]);
+  });
+
   it("runs multiple matchStrings regexes independently", async () => {
     await writeFile(
       path.join(repo, "mixed.txt"),
