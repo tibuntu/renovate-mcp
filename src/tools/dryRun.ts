@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { run, resolveRenovateTool, formatMissingBinaryError } from "../lib/renovateCli.js";
 import { resolveCredential } from "../lib/credentialResolver.js";
+import { EndpointValidationError, validateEndpoint } from "../lib/endpointValidator.js";
 import { locateConfig } from "../lib/configLocations.js";
 import { detectLookupProblems } from "../lib/lookupProblems.js";
 import {
@@ -162,6 +163,20 @@ export function registerDryRun(server: McpServer): void {
       { repoPath, dryRunMode, logLevel, timeoutMs, platform, endpoint, token, repository, hostRules },
       extra,
     ) => {
+      if (endpoint !== undefined) {
+        try {
+          validateEndpoint(endpoint);
+        } catch (err) {
+          if (err instanceof EndpointValidationError) {
+            return {
+              isError: true,
+              content: [{ type: "text", text: err.message }],
+            };
+          }
+          throw err;
+        }
+      }
+
       const reportPath = path.join(tmpdir(), `renovate-mcp-report-${randomUUID()}.json`);
       const bin = resolveRenovateTool("renovate");
       const ruleList: HostRule[] = hostRules ?? [];

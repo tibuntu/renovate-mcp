@@ -453,6 +453,68 @@ process.exit(0);
     expect(res.result!.content[0]!.text).toMatch(/`repository` is required/);
   });
 
+  it.each([
+    {
+      label: "rejects an http:// endpoint without spawning Renovate",
+      endpoint: "http://gitlab.example.com/api/v4",
+      match: /protocol must be https:/,
+    },
+    {
+      label: "rejects a cloud-metadata IP endpoint without spawning Renovate",
+      endpoint: "http://169.254.169.254/latest/meta-data/iam/security-credentials/",
+      match: /protocol must be https:/,
+    },
+    {
+      label: "rejects an https loopback endpoint without spawning Renovate",
+      endpoint: "https://localhost:8080/api/v4",
+      match: /private, loopback, or link-local/,
+    },
+    {
+      label: "rejects an RFC1918 endpoint without spawning Renovate",
+      endpoint: "https://10.0.0.5/api/v4",
+      match: /private, loopback, or link-local/,
+    },
+  ])("$label", async ({ endpoint, match }) => {
+    const argvDump = path.join(repo, "argv.json");
+    const fakeBin = await makeArgvEnvDump(repo);
+    session = await startServer({
+      RENOVATE_BIN: fakeBin,
+      FAKE_RENOVATE_ARGV_DUMP: argvDump,
+    });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: {
+        repoPath: repo,
+        endpoint,
+        token: "glpat-must-not-leak",
+      },
+    });
+
+    expect(res.result?.isError).toBe(true);
+    expect(res.result!.content[0]!.text).toMatch(match);
+    expect(res.result!.content[0]!.text).not.toMatch(/glpat-must-not-leak/);
+    // Validation must reject before the dry-run spawn. The startup
+    // checkSetup() probe overwrites argv.json with `--version` on its own, so
+    // we don't assert non-existence — instead, confirm the dump doesn't
+    // record a dry-run invocation (which would carry `--dry-run=` and the
+    // `--endpoint=` we passed).
+    let dumped: { args: string[]; renovateToken: string | null } | undefined;
+    try {
+      dumped = JSON.parse(await readFile(argvDump, "utf8"));
+    } catch {
+      // No dump file at all — also fine.
+    }
+    if (dumped) {
+      expect(dumped.args.some((a) => a.startsWith("--dry-run="))).toBe(false);
+      expect(dumped.args.some((a) => a.startsWith("--endpoint="))).toBe(false);
+      expect(dumped.renovateToken).toBeNull();
+    }
+  });
+
   it("preflight: errors before spawning when config extends local> presets under platform=local", async () => {
     await writeFile(
       path.join(repo, "renovate.json"),

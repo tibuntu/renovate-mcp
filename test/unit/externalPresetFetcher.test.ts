@@ -514,49 +514,73 @@ describe("fetchExternalPreset — redirects", () => {
   });
 });
 
-describe("fetchExternalPreset — non-https endpoints", () => {
+describe("fetchExternalPreset — endpoint validation", () => {
   beforeEach(() => vi.unstubAllEnvs());
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
   });
 
-  it("does not send Authorization for an http:// github endpoint, even when GITHUB_TOKEN is set", async () => {
+  it("refuses an http:// github endpoint without making any fetch", async () => {
     vi.stubEnv("GITHUB_TOKEN", "ghp_secret");
-    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
-    await fetchExternalPreset(parsePreset("github>acme/cfg"), {
-      fetchImpl,
-      endpoint: "http://ghe.example.com/api/v3",
-    });
-    const [, init] = fetchImpl.mock.calls[0]!;
-    expect((init?.headers as Record<string, string>).Authorization).toBeUndefined();
-  });
-
-  it("does not send PRIVATE-TOKEN for an http:// gitlab endpoint, even when GITLAB_TOKEN is set", async () => {
-    vi.stubEnv("GITLAB_TOKEN", "glpat_secret");
-    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
-    await fetchExternalPreset(parsePreset("gitlab>acme/cfg"), {
-      fetchImpl,
-      endpoint: "http://gitlab.example.com/api/v4",
-    });
-    const [, init] = fetchImpl.mock.calls[0]!;
-    expect((init?.headers as Record<string, string>)["PRIVATE-TOKEN"]).toBeUndefined();
-  });
-
-  it("reports the suppressed credential as 'none (tried …)' on a subsequent 401 from an http endpoint", async () => {
-    vi.stubEnv("GITHUB_TOKEN", "ghp_secret");
-    const fetchImpl = vi
-      .fn<typeof fetch>()
-      .mockResolvedValue(makeResponse("Bad credentials", { status: 401, statusText: "Unauthorized" }));
+    const fetchImpl = vi.fn<typeof fetch>();
     const result = await fetchExternalPreset(parsePreset("github>acme/cfg"), {
       fetchImpl,
       endpoint: "http://ghe.example.com/api/v3",
     });
+    expect(fetchImpl).not.toHaveBeenCalled();
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.reason).toMatch(/Credential:\s+none \(tried RENOVATE_TOKEN, GITHUB_TOKEN\)/);
+      expect(result.reason).toMatch(/protocol must be https:/);
       expect(result.reason).not.toMatch(/ghp_secret/);
     }
+  });
+
+  it("refuses an http:// gitlab endpoint without making any fetch", async () => {
+    vi.stubEnv("GITLAB_TOKEN", "glpat_secret");
+    const fetchImpl = vi.fn<typeof fetch>();
+    const result = await fetchExternalPreset(parsePreset("gitlab>acme/cfg"), {
+      fetchImpl,
+      endpoint: "http://gitlab.example.com/api/v4",
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toMatch(/protocol must be https:/);
+  });
+
+  it("refuses a cloud-metadata IP endpoint without making any fetch", async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    const result = await fetchExternalPreset(parsePreset("github>acme/cfg"), {
+      fetchImpl,
+      endpoint: "http://169.254.169.254/latest/meta-data/iam/security-credentials/",
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toMatch(/protocol must be https:/);
+  });
+
+  it("refuses an https loopback endpoint without making any fetch", async () => {
+    vi.stubEnv("GITLAB_TOKEN", "glpat_secret");
+    const fetchImpl = vi.fn<typeof fetch>();
+    const result = await fetchExternalPreset(parsePreset("gitlab>acme/cfg"), {
+      fetchImpl,
+      endpoint: "https://localhost:8080/api/v4",
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(result.ok).toBe(false);
+    if (!result.ok)
+      expect(result.reason).toMatch(/private, loopback, or link-local/);
+  });
+
+  it("refuses userinfo-bearing endpoints", async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    const result = await fetchExternalPreset(parsePreset("gitlab>acme/cfg"), {
+      fetchImpl,
+      endpoint: "https://attacker:secret@gitlab.example.com/api/v4",
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toMatch(/userinfo .* not allowed/);
   });
 });
 
