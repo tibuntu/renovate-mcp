@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { run, resolveRenovateTool, formatMissingBinaryError } from "../lib/renovateCli.js";
+import { configRecord, pathString } from "../lib/inputLimits.js";
 
 export function registerValidateConfig(server: McpServer): void {
   server.registerTool(
@@ -14,14 +15,10 @@ export function registerValidateConfig(server: McpServer): void {
       description:
         "Validate a Renovate configuration against the official schema using renovate-config-validator. Pass either configPath (file on disk) or configContent (inline JSON object). Returns validation output and a boolean `valid`.",
       inputSchema: {
-        configPath: z
-          .string()
-          .optional()
-          .describe("Absolute path to a config file to validate"),
-        configContent: z
-          .record(z.string(), z.unknown())
-          .optional()
-          .describe("Inline config object to validate (written to a temp file)"),
+        configPath: pathString("Absolute path to a config file to validate").optional(),
+        configContent: configRecord(
+          "Inline config object to validate (written to a temp file)",
+        ).optional(),
         strict: z
           .boolean()
           .optional()

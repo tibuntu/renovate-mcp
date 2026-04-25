@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { locateConfig } from "../lib/configLocations.js";
 import { resolveConfig } from "../lib/presetResolver.js";
+import { configRecord, endpointString, pathString } from "../lib/inputLimits.js";
 
 const MERGE_QUALITY = "preview" as const;
 const MERGE_DISCLAIMER =
@@ -15,28 +16,21 @@ export function registerResolveConfig(server: McpServer): void {
       description:
         "Expand every preset referenced by `extends` and return the fully resolved config. Built-in presets resolve offline against the committed catalogue. Pass `externalPresets: true` to fetch `github>` and `gitlab>` presets over HTTPS (with optional `RENOVATE_TOKEN` — or `GITHUB_TOKEN` / `GITLAB_TOKEN` as platform-specific fallbacks — for private repos). For GitHub Enterprise or self-hosted GitLab, pass `endpoint` (API base URL, e.g. `https://ghe.example.com/api/v3` or `https://gitlab.example.com/api/v4`); pass `platform` in addition to route `local>` presets through the same endpoint. `bitbucket>`, `gitea>`, and npm presets are structurally unsupported and remain in `presetsUnresolved` regardless. Endpoint and platform are **tool inputs only** — env vars like `RENOVATE_ENDPOINT` are not read, since the MCP server runs under Claude rather than in your shell. Pass either `repoPath` (reads the repo's config) or `configContent` (an inline config object). The response includes `mergeQuality: \"preview\"` plus a `disclaimer` and a `warnings` array — preset merging here is a close approximation of Renovate's rules rather than bit-identical, and Handlebars expressions other than `{{argN}}` are left verbatim; run `dry_run` for authoritative output.",
       inputSchema: {
-        repoPath: z
-          .string()
-          .optional()
-          .describe(
-            "Absolute path to the repository root. The tool will locate the repo's renovate config automatically.",
-          ),
-        configContent: z
-          .record(z.string(), z.unknown())
-          .optional()
-          .describe("Inline config object to resolve — use instead of repoPath."),
+        repoPath: pathString(
+          "Absolute path to the repository root. The tool will locate the repo's renovate config automatically.",
+        ).optional(),
+        configContent: configRecord(
+          "Inline config object to resolve — use instead of repoPath.",
+        ).optional(),
         externalPresets: z
           .boolean()
           .optional()
           .describe(
             "When true, fetch external presets (github>, gitlab>) over HTTPS. Credentials come from RENOVATE_TOKEN (preferred, matches Renovate's own convention) or GITHUB_TOKEN / GITLAB_TOKEN as platform-specific fallbacks, set on the MCP server process — via the `env` key in claude_desktop_config.json / .mcp.json, not your shell, since the MCP server runs as a child of Claude and does not inherit shell env. Default false.",
           ),
-        endpoint: z
-          .string()
-          .optional()
-          .describe(
-            "API base URL for github>/gitlab> fetches. Use for GitHub Enterprise (e.g. https://ghe.example.com/api/v3) or self-hosted GitLab (e.g. https://gitlab.example.com/api/v4). Defaults to https://api.github.com and https://gitlab.com/api/v4.",
-          ),
+        endpoint: endpointString(
+          "API base URL for github>/gitlab> fetches. Use for GitHub Enterprise (e.g. https://ghe.example.com/api/v3) or self-hosted GitLab (e.g. https://gitlab.example.com/api/v4). Defaults to https://api.github.com and https://gitlab.com/api/v4.",
+        ).optional(),
         platform: z
           .enum(["github", "gitlab"])
           .optional()

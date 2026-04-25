@@ -4,6 +4,7 @@ import {
   previewCustomManager,
   type CustomManager,
 } from "../lib/customManagerPreview.js";
+import { pathString } from "../lib/inputLimits.js";
 
 const managerSchema = z
   .object({
@@ -41,7 +42,7 @@ export function registerPreviewCustomManager(server: McpServer): void {
         "Run the `dry_run` tool afterwards for full-fidelity confirmation.",
       ].join("\n"),
       inputSchema: {
-        repoPath: z.string().describe("Absolute path to the repository root"),
+        repoPath: pathString("Absolute path to the repository root"),
         manager: managerSchema.describe(
           "A single Renovate customManagers entry. NOTE: `fileMatch` is an array of REGEX strings matched against POSIX-style relative paths (not globs).",
         ),

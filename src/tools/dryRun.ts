@@ -19,12 +19,18 @@ import {
   extractRenovateLogMsg,
   buildDryRunHeartbeatMessage,
 } from "../lib/dryRunProgress.js";
+import {
+  HOST_RULES_MAX_ITEMS,
+  endpointString,
+  hostRuleRecord,
+  pathString,
+  repositoryString,
+  tokenString,
+} from "../lib/inputLimits.js";
 
-const hostRuleSchema = z
-  .record(z.string(), z.unknown())
-  .describe(
-    "A single Renovate hostRule (matchHost, hostType, username, password, token, …). Structure is not validated here — Renovate's own config loader checks it when the temp file is read.",
-  );
+const hostRuleSchema = hostRuleRecord(
+  "A single Renovate hostRule (matchHost, hostType, username, password, token, …). Structure is not validated here — Renovate's own config loader checks it when the temp file is read.",
+);
 
 /**
  * Walk Renovate's JSON report looking for `problems` arrays and collect the
@@ -108,11 +114,9 @@ export function registerDryRun(server: McpServer): void {
       description:
         "Run Renovate in dry-run mode to preview what it would do — no PRs opened, no git pushes. Returns a structured JSON report plus a top-level `ok` boolean (false when the CLI failed OR the report records a validation/error-level problem, even if the exit code was 0).\n\nDefault mode runs `--platform=local` against the filesystem at `repoPath`. If your config extends `local>…` presets, pass `platform` (`github` or `gitlab`), `endpoint` (API base URL), `token`, and `repository` to run as a real platform client that can actually fetch those presets — Renovate still runs with `--dry-run`, so no PRs are opened. If you only need `gitlab>…` / `github>…` presets resolved against a self-hosted host (not a full remote run), pass just `endpoint` (and `token` if needed) while leaving `platform` unset — both flow through to Renovate in local mode too, which is enough to redirect those preset shortcuts away from the public defaults. The tool preflight-checks for `local>` presets under `--platform=local` (in `lookup` and `full` modes) and fails fast with remediation guidance rather than spawning a Renovate run that would fail opaquely with `config-validation`. The preflight is skipped for `dryRunMode=extract` so manifest-only extraction can be attempted regardless.\n\nWhen the `token` input is omitted, the tool falls back to `RENOVATE_TOKEN` from the MCP server's env, then to `GITLAB_TOKEN` (when `platform=gitlab`) or `GITHUB_TOKEN` (when `platform=github`) — whichever is auto-translated to `RENOVATE_TOKEN` for the spawned Renovate CLI. This matches the precedence `resolve_config` already uses, so a single `GITLAB_TOKEN` in `.mcp.json` works for both tools. For a remote-platform run, an actionable preflight error is returned before spawning Renovate when no token can be resolved at all.\n\nCredentials for private registries (e.g. `COMPOSER_AUTH` for Packagist/Satis proxies, `NPM_TOKEN` / `.npmrc` for npm, Docker registry creds, `RENOVATE_HOST_RULES` for anything else) must be set on the MCP server process itself — via the `env` key in `claude_desktop_config.json` / `.mcp.json`, not your shell, since the MCP server runs as a child of Claude and does not inherit shell env. Alternatively, encode credentials as `hostRules` in the Renovate config, or pass them per-call via the `hostRules` input on this tool (written to a mode-0600 temp file that is cleaned up after the run; token/password values — including the platform `token` input — are scrubbed from `logTail` and `problems`). Per-call `hostRules` are appended to any the repo's own config already declares. If a lookup can't auth to a registry, Renovate often reports 0 updates without a loud error; when that happens this tool surfaces detected auth failures under `problems` in the output so callers can distinguish a genuine \"no updates\" from a silent registry-auth failure.",
       inputSchema: {
-        repoPath: z
-          .string()
-          .describe(
-            "Absolute path to the repository root. Required for the default `platform=local` mode. When `platform` is overridden (e.g. `gitlab` / `github`), Renovate runs against the remote `repository` instead — `repoPath` is still used as the child's working directory but its manifest files are ignored.",
-          ),
+        repoPath: pathString(
+          "Absolute path to the repository root. Required for the default `platform=local` mode. When `platform` is overridden (e.g. `gitlab` / `github`), Renovate runs against the remote `repository` instead — `repoPath` is still used as the child's working directory but its manifest files are ignored.",
+        ),
         dryRunMode: z
           .enum(["extract", "lookup", "full"])
           .default("full")
@@ -133,26 +137,18 @@ export function registerDryRun(server: McpServer): void {
           .describe(
             "Renovate platform to run as. When unset, falls back to `RENOVATE_PLATFORM` from the MCP server's env (if it's one of `local`/`github`/`gitlab`), then to `local`. Default `local` runs against the filesystem at `repoPath`. Set `github` or `gitlab` (with `endpoint` + `token` + `repository`) to run a full remote dry-run — this is what you need when your config extends `local>` presets that live on a private GitHub Enterprise / self-hosted GitLab. Still no PRs opened because `--dry-run` is always set.",
           ),
-        endpoint: z
-          .string()
-          .optional()
-          .describe(
-            "Custom API base URL (e.g. `https://gitlab.example.com/api/v4/` or `https://ghe.example.com/api/v3/`). Forwarded as `--endpoint` regardless of `platform`: required for non-default GitHub/GitLab hosts when `platform=github`/`gitlab`, and also useful in the default `platform=local` mode to point `gitlab>…` / `github>…` preset shortcuts at a self-hosted host instead of the public defaults.",
-          ),
-        token: z
-          .string()
-          .optional()
-          .describe(
-            "Auth token, exported as `RENOVATE_TOKEN` to the child. Scrubbed from any log output this tool returns. Used both for the platform connection (when `platform` is `github`/`gitlab`) and for preset resolution against private repos (e.g. when fetching a `gitlab>…` preset from a private project while in local mode). When omitted, falls back to `RENOVATE_TOKEN` from MCP env, then to `GITLAB_TOKEN` (when `platform=gitlab`) or `GITHUB_TOKEN` (when `platform=github`) — same precedence as `resolve_config`. Platform-specific fallbacks only kick in when the matching remote platform is selected; in `platform=local` they're ignored.",
-          ),
-        repository: z
-          .string()
-          .optional()
-          .describe(
-            "Identifier of the repository Renovate should operate on, passed as a positional argument (Renovate has no `--repository` flag). For GitHub: `owner/repo`. For GitLab: `group/project` or a nested-group path like `group/subgroup/project` — both are accepted. Required when `platform` is `github`/`gitlab`. Ignored when `platform=local`.",
-          ),
+        endpoint: endpointString(
+          "Custom API base URL (e.g. `https://gitlab.example.com/api/v4/` or `https://ghe.example.com/api/v3/`). Forwarded as `--endpoint` regardless of `platform`: required for non-default GitHub/GitLab hosts when `platform=github`/`gitlab`, and also useful in the default `platform=local` mode to point `gitlab>…` / `github>…` preset shortcuts at a self-hosted host instead of the public defaults.",
+        ).optional(),
+        token: tokenString(
+          "Auth token, exported as `RENOVATE_TOKEN` to the child. Scrubbed from any log output this tool returns. Used both for the platform connection (when `platform` is `github`/`gitlab`) and for preset resolution against private repos (e.g. when fetching a `gitlab>…` preset from a private project while in local mode). When omitted, falls back to `RENOVATE_TOKEN` from MCP env, then to `GITLAB_TOKEN` (when `platform=gitlab`) or `GITHUB_TOKEN` (when `platform=github`) — same precedence as `resolve_config`. Platform-specific fallbacks only kick in when the matching remote platform is selected; in `platform=local` they're ignored.",
+        ).optional(),
+        repository: repositoryString(
+          "Identifier of the repository Renovate should operate on, passed as a positional argument (Renovate has no `--repository` flag). For GitHub: `owner/repo`. For GitLab: `group/project` or a nested-group path like `group/subgroup/project` — both are accepted. Required when `platform` is `github`/`gitlab`. Ignored when `platform=local`.",
+        ).optional(),
         hostRules: z
           .array(hostRuleSchema)
+          .max(HOST_RULES_MAX_ITEMS)
           .optional()
           .describe(
             "Optional per-invocation Renovate hostRules for private registry auth. Written to a mode-0600 temp file that is passed via the RENOVATE_CONFIG_FILE env var and deleted after the run. Token/password values are scrubbed from any log output this tool returns. Appended to (not replacing) any hostRules declared in the repo's own config.",

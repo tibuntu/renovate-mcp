@@ -1,6 +1,6 @@
-import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { locateConfig } from "../lib/configLocations.js";
+import { pathString } from "../lib/inputLimits.js";
 
 export function registerReadConfig(server: McpServer): void {
   server.registerTool(
@@ -10,7 +10,7 @@ export function registerReadConfig(server: McpServer): void {
       description:
         "Locate and parse the Renovate configuration in a repository. Searches for renovate.json, renovate.json5, .renovaterc(.json|.json5), .github/renovate.json, .gitlab/renovate.json, and the 'renovate' field of package.json — in that priority order.",
       inputSchema: {
-        repoPath: z.string().describe("Absolute path to the repository root"),
+        repoPath: pathString("Absolute path to the repository root"),
       },
     },
     async ({ repoPath }) => {

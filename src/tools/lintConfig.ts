@@ -1,9 +1,9 @@
-import { z } from "zod";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import JSON5 from "json5";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { lintConfig } from "../lib/configLinter.js";
+import { configRecord, pathString } from "../lib/inputLimits.js";
 
 export function registerLintConfig(server: McpServer): void {
   server.registerTool(
@@ -13,14 +13,10 @@ export function registerLintConfig(server: McpServer): void {
       description:
         "Run a semantic lint pass over a Renovate config. Complements validate_config: schema validation catches structural bugs, this catches Renovate-specific footguns schema validation misses — malformed '/…/' regex patterns in fields like matchPackageNames, matchDepNames, matchSourceUrls, matchCurrentVersion, plus unknown manager names in matchManagers / excludeManagers (typos that Renovate silently ignores). Offline; does not shell out. Pass either configPath (file on disk, JSON or JSON5) or configContent (inline object).",
       inputSchema: {
-        configPath: z
-          .string()
-          .optional()
-          .describe("Absolute path to a config file to lint (JSON or JSON5)"),
-        configContent: z
-          .record(z.string(), z.unknown())
-          .optional()
-          .describe("Inline config object to lint"),
+        configPath: pathString(
+          "Absolute path to a config file to lint (JSON or JSON5)",
+        ).optional(),
+        configContent: configRecord("Inline config object to lint").optional(),
       },
     },
     async ({ configPath, configContent }) => {
