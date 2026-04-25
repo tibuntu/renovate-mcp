@@ -2,16 +2,36 @@ import { describe, it, expect, afterEach } from "vitest";
 import {
   checkSetup,
   describeSetup,
+  inspectPlatformContext,
   startupBanner,
   unavailableTools,
+  type PlatformContext,
   type SetupStatus,
 } from "../../src/lib/setupCheck.js";
 
 const originalEnv = { ...process.env };
 
+const PLATFORM_ENV_KEYS = [
+  "RENOVATE_PLATFORM",
+  "RENOVATE_ENDPOINT",
+  "RENOVATE_TOKEN",
+  "GITHUB_TOKEN",
+  "GITLAB_TOKEN",
+] as const;
+
 afterEach(() => {
   process.env = { ...originalEnv };
 });
+
+function emptyPlatformContext(): PlatformContext {
+  return {
+    renovatePlatform: null,
+    renovateEndpoint: null,
+    tokensPresent: { RENOVATE_TOKEN: false, GITHUB_TOKEN: false, GITLAB_TOKEN: false },
+    effectiveDryRunPlatform: "local",
+    notes: [],
+  };
+}
 
 describe("checkSetup", () => {
   it("reports both binaries missing when they ENOENT", async () => {
@@ -64,6 +84,7 @@ describe("describeSetup", () => {
         version: "43.0.0",
       },
       envOverrides: {},
+      platformContext: emptyPlatformContext(),
       ok: true,
       hints: [],
     });
@@ -84,6 +105,7 @@ function buildStatus(overrides: Partial<SetupStatus> = {}): SetupStatus {
       version: "43.0.0",
     },
     envOverrides: {},
+    platformContext: emptyPlatformContext(),
     ok: true,
     hints: [],
   };
@@ -195,11 +217,119 @@ describe("describeSetup (legacy verbose diagnostic)", () => {
         error: "spawn renovate-config-validator ENOENT",
       },
       envOverrides: { RENOVATE_BIN: "/x" },
+      platformContext: emptyPlatformContext(),
       ok: false,
       hints: ["hint A", "hint B"],
     });
     expect(out).toContain("MISSING");
     expect(out).toContain("hint A");
     expect(out).toContain("RENOVATE_BIN=/x");
+  });
+});
+
+describe("inspectPlatformContext", () => {
+  function clean(): NodeJS.ProcessEnv {
+    const env: NodeJS.ProcessEnv = {};
+    for (const key of PLATFORM_ENV_KEYS) {
+      delete env[key];
+    }
+    return env;
+  }
+
+  it("returns nulls and false presence flags when nothing is set", () => {
+    const ctx = inspectPlatformContext(clean());
+    expect(ctx.renovatePlatform).toBeNull();
+    expect(ctx.renovateEndpoint).toBeNull();
+    expect(ctx.tokensPresent).toEqual({
+      RENOVATE_TOKEN: false,
+      GITHUB_TOKEN: false,
+      GITLAB_TOKEN: false,
+    });
+    expect(ctx.effectiveDryRunPlatform).toBe("local");
+    expect(ctx.notes).toEqual([]);
+  });
+
+  it("reports tokens by presence only, never echoes values", () => {
+    const ctx = inspectPlatformContext({
+      ...clean(),
+      RENOVATE_TOKEN: "shh-secret-1",
+      GITLAB_TOKEN: "shh-secret-2",
+    });
+    expect(ctx.tokensPresent).toEqual({
+      RENOVATE_TOKEN: true,
+      GITHUB_TOKEN: false,
+      GITLAB_TOKEN: true,
+    });
+    const serialized = JSON.stringify(ctx);
+    expect(serialized).not.toContain("shh-secret-1");
+    expect(serialized).not.toContain("shh-secret-2");
+  });
+
+  it("derives effectiveDryRunPlatform from RENOVATE_PLATFORM when whitelisted", () => {
+    const ctx = inspectPlatformContext({ ...clean(), RENOVATE_PLATFORM: "gitlab", GITLAB_TOKEN: "x" });
+    expect(ctx.renovatePlatform).toBe("gitlab");
+    expect(ctx.effectiveDryRunPlatform).toBe("gitlab");
+  });
+
+  it("warns and falls back to local when RENOVATE_PLATFORM is outside the dry_run enum", () => {
+    const ctx = inspectPlatformContext({ ...clean(), RENOVATE_PLATFORM: "bitbucket" });
+    expect(ctx.renovatePlatform).toBe("bitbucket");
+    expect(ctx.effectiveDryRunPlatform).toBe("local");
+    expect(ctx.notes.some((n) => n.includes("outside the `dry_run` schema enum"))).toBe(true);
+  });
+
+  it("warns when platform=gitlab has no GITLAB_TOKEN nor RENOVATE_TOKEN", () => {
+    const ctx = inspectPlatformContext({ ...clean(), RENOVATE_PLATFORM: "gitlab" });
+    expect(ctx.notes.some((n) => n.includes("`RENOVATE_PLATFORM=gitlab`") && n.includes("authenticate"))).toBe(true);
+  });
+
+  it("does NOT warn about missing token when RENOVATE_TOKEN covers the platform", () => {
+    const ctx = inspectPlatformContext({ ...clean(), RENOVATE_PLATFORM: "gitlab", RENOVATE_TOKEN: "x" });
+    expect(ctx.notes.some((n) => n.includes("authenticate"))).toBe(false);
+  });
+
+  it("warns when platform=github has no GITHUB_TOKEN nor RENOVATE_TOKEN", () => {
+    const ctx = inspectPlatformContext({ ...clean(), RENOVATE_PLATFORM: "github" });
+    expect(ctx.notes.some((n) => n.includes("`RENOVATE_PLATFORM=github`") && n.includes("authenticate"))).toBe(true);
+  });
+
+  it("flags an endpoint that looks like a UI URL", () => {
+    const ctx = inspectPlatformContext({
+      ...clean(),
+      RENOVATE_PLATFORM: "gitlab",
+      GITLAB_TOKEN: "x",
+      RENOVATE_ENDPOINT: "https://gitlab.example.com/",
+    });
+    expect(ctx.notes.some((n) => n.includes("looks like a UI URL"))).toBe(true);
+  });
+
+  it("does not flag an API URL endpoint", () => {
+    const ctx = inspectPlatformContext({
+      ...clean(),
+      RENOVATE_PLATFORM: "gitlab",
+      GITLAB_TOKEN: "x",
+      RENOVATE_ENDPOINT: "https://gitlab.example.com/api/v4/",
+    });
+    expect(ctx.notes.some((n) => n.includes("looks like a UI URL"))).toBe(false);
+  });
+});
+
+describe("describeSetup platform context block", () => {
+  it("renders tokens by presence only and surfaces notes", () => {
+    const out = describeSetup(buildStatus({
+      platformContext: {
+        renovatePlatform: "gitlab",
+        renovateEndpoint: "https://gitlab.example.com/",
+        tokensPresent: { RENOVATE_TOKEN: false, GITHUB_TOKEN: false, GITLAB_TOKEN: true },
+        effectiveDryRunPlatform: "gitlab",
+        notes: ["RENOVATE_ENDPOINT looks like a UI URL"],
+      },
+    }));
+    expect(out).toContain("Platform context:");
+    expect(out).toContain("RENOVATE_PLATFORM: gitlab");
+    expect(out).toContain("GITLAB_TOKEN=set");
+    expect(out).toContain("RENOVATE_TOKEN=unset");
+    expect(out).toContain("Effective dry_run platform (when input unset): gitlab");
+    expect(out).toContain("UI URL");
   });
 });

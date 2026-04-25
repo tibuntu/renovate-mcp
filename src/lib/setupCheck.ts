@@ -10,11 +10,38 @@ export interface BinaryStatus {
   error?: string;
 }
 
+export type DryRunPlatform = "local" | "github" | "gitlab";
+
+const DRY_RUN_PLATFORMS: readonly DryRunPlatform[] = ["local", "github", "gitlab"] as const;
+
+export interface PlatformContext {
+  /** Raw `RENOVATE_PLATFORM` value from the MCP server's env, or null. */
+  renovatePlatform: string | null;
+  /** Raw `RENOVATE_ENDPOINT` value from the MCP server's env, or null. */
+  renovateEndpoint: string | null;
+  /** Presence-only — never echo the value, since these are secrets. */
+  tokensPresent: {
+    RENOVATE_TOKEN: boolean;
+    GITHUB_TOKEN: boolean;
+    GITLAB_TOKEN: boolean;
+  };
+  /**
+   * What `dry_run` would pick for `--platform=` when its `platform` input is
+   * unset. Mirrors the env fallback in `src/tools/dryRun.ts`: only values
+   * inside the dry_run schema enum (`local`/`github`/`gitlab`) are honored,
+   * anything else silently degrades to `local`.
+   */
+  effectiveDryRunPlatform: DryRunPlatform;
+  /** Cross-checks that are mechanical to compute but easy for callers to miss. */
+  notes: string[];
+}
+
 export interface SetupStatus {
   node: string;
   renovate: BinaryStatus;
   renovateConfigValidator: BinaryStatus;
   envOverrides: Record<string, string>;
+  platformContext: PlatformContext;
   ok: boolean;
   hints: string[];
 }
@@ -79,9 +106,80 @@ export async function checkSetup(): Promise<SetupStatus> {
     renovate,
     renovateConfigValidator,
     envOverrides,
+    platformContext: inspectPlatformContext(process.env),
     ok: renovate.found && renovateConfigValidator.found,
     hints,
   };
+}
+
+/**
+ * Reads platform-related env (RENOVATE_PLATFORM/_ENDPOINT/_TOKEN, plus
+ * GITHUB_TOKEN / GITLAB_TOKEN) and reports what the `dry_run` tool would
+ * actually do when its inputs are unset. Tokens are surfaced as presence
+ * booleans only — values are never echoed.
+ *
+ * The `notes` array carries cross-checks mechanical enough to compute here
+ * but easy to miss when staring at a `dry_run` failure: missing token for the
+ * selected platform, an endpoint that looks like a UI URL instead of an API
+ * URL, and an unsupported `RENOVATE_PLATFORM` value (which silently degrades
+ * to `local` because of dry_run's enum whitelist).
+ */
+export function inspectPlatformContext(env: NodeJS.ProcessEnv): PlatformContext {
+  const renovatePlatformRaw = env.RENOVATE_PLATFORM ?? null;
+  const renovateEndpoint = env.RENOVATE_ENDPOINT ?? null;
+  const tokensPresent = {
+    RENOVATE_TOKEN: Boolean(env.RENOVATE_TOKEN),
+    GITHUB_TOKEN: Boolean(env.GITHUB_TOKEN),
+    GITLAB_TOKEN: Boolean(env.GITLAB_TOKEN),
+  };
+
+  const allowedPlatform = DRY_RUN_PLATFORMS.find((p) => p === renovatePlatformRaw);
+  const effectiveDryRunPlatform: DryRunPlatform = allowedPlatform ?? "local";
+
+  const notes: string[] = [];
+
+  if (renovatePlatformRaw && !allowedPlatform) {
+    notes.push(
+      `\`RENOVATE_PLATFORM=${renovatePlatformRaw}\` is outside the \`dry_run\` schema enum (\`local\`/\`github\`/\`gitlab\`). The env fallback ignores it, so \`dry_run\` will silently use \`local\` — pass \`platform\` explicitly when calling \`dry_run\` if you need a different value.`,
+    );
+  }
+
+  if (allowedPlatform === "gitlab" && !tokensPresent.GITLAB_TOKEN && !tokensPresent.RENOVATE_TOKEN) {
+    notes.push(
+      "`RENOVATE_PLATFORM=gitlab` is set but neither `GITLAB_TOKEN` nor `RENOVATE_TOKEN` is present in the MCP server's env — `gitlab>` presets and private-repo lookups will likely fail to authenticate.",
+    );
+  }
+  if (allowedPlatform === "github" && !tokensPresent.GITHUB_TOKEN && !tokensPresent.RENOVATE_TOKEN) {
+    notes.push(
+      "`RENOVATE_PLATFORM=github` is set but neither `GITHUB_TOKEN` nor `RENOVATE_TOKEN` is present in the MCP server's env — `github>` presets and private-repo lookups will likely fail to authenticate.",
+    );
+  }
+
+  if (renovateEndpoint && looksLikeUiUrl(renovateEndpoint)) {
+    notes.push(
+      `\`RENOVATE_ENDPOINT=${renovateEndpoint}\` looks like a UI URL. Renovate expects an API base URL — typically \`/api/v4/\` for GitLab or \`/api/v3/\` for GitHub Enterprise.`,
+    );
+  }
+
+  return {
+    renovatePlatform: renovatePlatformRaw,
+    renovateEndpoint,
+    tokensPresent,
+    effectiveDryRunPlatform,
+    notes,
+  };
+}
+
+/**
+ * Heuristic: a GitLab/GitHub endpoint is meant to be the API base, but users
+ * routinely paste the web UI URL. Trigger the note when the URL is missing
+ * any `/api/` segment. We avoid hard-coding `/api/v4/` vs `/api/v3/` since
+ * Renovate accepts either depending on platform. Applies regardless of the
+ * effective platform — `dry_run` forwards `--endpoint` even in local mode to
+ * redirect `gitlab>` / `github>` preset shortcuts at a self-hosted host.
+ */
+function looksLikeUiUrl(endpoint: string): boolean {
+  return !/\/api\//.test(endpoint);
 }
 
 // Tools that do not depend on the Renovate CLI and are always callable.
@@ -125,6 +223,20 @@ export function describeSetup(status: SetupStatus): string {
   if (overrideKeys.length > 0) {
     lines.push("Env overrides:");
     for (const key of overrideKeys) lines.push(`  ${key}=${status.envOverrides[key]}`);
+  }
+  lines.push("");
+  lines.push("Platform context:");
+  const ctx = status.platformContext;
+  lines.push(`  RENOVATE_PLATFORM: ${ctx.renovatePlatform ?? "(unset)"}`);
+  lines.push(`  RENOVATE_ENDPOINT: ${ctx.renovateEndpoint ?? "(unset)"}`);
+  const tokens = Object.entries(ctx.tokensPresent)
+    .map(([k, v]) => `${k}=${v ? "set" : "unset"}`)
+    .join(", ");
+  lines.push(`  Tokens: ${tokens}`);
+  lines.push(`  Effective dry_run platform (when input unset): ${ctx.effectiveDryRunPlatform}`);
+  if (ctx.notes.length > 0) {
+    lines.push("  Notes:");
+    for (const n of ctx.notes) lines.push(`    - ${n}`);
   }
   if (status.hints.length > 0) {
     lines.push("");

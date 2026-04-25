@@ -25,7 +25,7 @@ Ten tools plus a preset reference:
 
 | Tool | Purpose |
 | --- | --- |
-| `check_setup` | Report Renovate CLI + validator availability, versions, and install hints. Also runs at startup. |
+| `check_setup` | Report Renovate CLI + validator availability, versions, and install hints. Also surfaces a `platformContext` block (`RENOVATE_PLATFORM` / `RENOVATE_ENDPOINT` values, token-presence booleans, the platform `dry_run` would pick when its input is unset, and notes about likely misconfigurations) so callers can verify env before invoking `dry_run`. Token values are never echoed — only presence booleans. Also runs at startup. |
 | `get_version` | Report the renovate-mcp server version and whether it's a released build (running from `node_modules`) or a local/dev build (typically launched via `command: node` against a checkout). |
 | `read_config` | Locate and parse a repo's Renovate config (`renovate.json`, `renovate.json5`, `.renovaterc*`, `package.json#renovate`, …) in priority order. |
 | `resolve_config` | Expand every `extends` preset offline. Opt in to fetching `github>` / `gitlab>` presets over HTTPS with `externalPresets: true`. |
