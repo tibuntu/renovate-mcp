@@ -50,6 +50,13 @@ describe("check_setup", () => {
       renovate: { found: boolean };
       renovateConfigValidator: { found: boolean };
       envOverrides: Record<string, string>;
+      platformContext: {
+        renovatePlatform: string | null;
+        renovateEndpoint: string | null;
+        tokensPresent: Record<string, boolean>;
+        effectiveDryRunPlatform: string;
+        notes: string[];
+      };
     };
     expect(status.ok).toBe(true);
     expect(status.renovate.found).toBe(true);
@@ -58,6 +65,16 @@ describe("check_setup", () => {
       RENOVATE_BIN: "/bin/echo",
       RENOVATE_CONFIG_VALIDATOR_BIN: "/bin/echo",
     });
+    expect(status.platformContext).toBeDefined();
+    expect(status.platformContext.tokensPresent).toEqual(
+      expect.objectContaining({
+        RENOVATE_TOKEN: expect.any(Boolean),
+        GITHUB_TOKEN: expect.any(Boolean),
+        GITLAB_TOKEN: expect.any(Boolean),
+      }),
+    );
+    expect(["local", "github", "gitlab"]).toContain(status.platformContext.effectiveDryRunPlatform);
+    expect(text).toContain("Platform context:");
   });
 
   it("returns isError with MISSING markers when both binaries are absent", async () => {
