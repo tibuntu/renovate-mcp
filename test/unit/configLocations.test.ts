@@ -69,27 +69,58 @@ describe("locateConfig", () => {
     expect(await locateConfig(repo)).toBeNull();
   });
 
-  it("prefers renovate.json over .renovaterc", async () => {
-    await writeFile(path.join(repo, "renovate.json"), '{"schedule":["weekly"]}');
-    await writeFile(path.join(repo, ".renovaterc"), '{"schedule":["daily"]}');
-    const loc = await locateConfig(repo);
-    expect(loc?.relPath).toBe("renovate.json");
-    expect(loc?.config).toMatchObject({ schedule: ["weekly"] });
-  });
+  // Mirrors the priority order in src/lib/configLocations.ts. Each adjacent
+  // pair is tested below to catch reorderings within the chain.
+  const PRIORITY_CHAIN = [
+    "renovate.json",
+    "renovate.json5",
+    ".github/renovate.json",
+    ".github/renovate.json5",
+    ".gitlab/renovate.json",
+    ".gitlab/renovate.json5",
+    ".renovaterc",
+    ".renovaterc.json",
+    ".renovaterc.json5",
+    "package.json",
+  ] as const;
 
-  it("prefers renovate.json over package.json#renovate", async () => {
-    await writeFile(path.join(repo, "renovate.json"), '{"schedule":["weekly"]}');
-    await writeFile(
-      path.join(repo, "package.json"),
-      JSON.stringify({
-        name: "x",
-        version: "0.0.1",
-        renovate: { schedule: ["daily"] },
-      }),
-    );
-    const loc = await locateConfig(repo);
-    expect(loc?.relPath).toBe("renovate.json");
-  });
+  async function writeConfigAt(relPath: string, marker: string): Promise<void> {
+    const dir = path.dirname(relPath);
+    if (dir !== ".") await mkdir(path.join(repo, dir), { recursive: true });
+    if (relPath === "package.json") {
+      await writeFile(
+        path.join(repo, relPath),
+        JSON.stringify({
+          name: "x",
+          version: "0.0.1",
+          renovate: { schedule: [marker] },
+        }),
+      );
+      return;
+    }
+    if (relPath.endsWith(".json5")) {
+      await writeFile(
+        path.join(repo, relPath),
+        `{\n  // marker\n  schedule: ["${marker}"],\n}`,
+      );
+      return;
+    }
+    await writeFile(path.join(repo, relPath), `{"schedule":["${marker}"]}`);
+  }
+
+  const ADJACENT_PAIRS = PRIORITY_CHAIN.slice(0, -1).map(
+    (higher, i) => [higher, PRIORITY_CHAIN[i + 1]!] as const,
+  );
+
+  for (const [higher, lower] of ADJACENT_PAIRS) {
+    it(`prefers ${higher} over ${lower}`, async () => {
+      await writeConfigAt(higher, "higher");
+      await writeConfigAt(lower, "lower");
+      const loc = await locateConfig(repo);
+      expect(loc?.relPath).toBe(higher);
+      expect(loc?.config).toMatchObject({ schedule: ["higher"] });
+    });
+  }
 
   it("throws on malformed JSON", async () => {
     await writeFile(path.join(repo, "renovate.json"), "{not json");
