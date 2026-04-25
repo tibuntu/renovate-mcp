@@ -7,7 +7,9 @@ import { previewCustomManager } from "../../src/lib/customManagerPreview.js";
 let repo: string;
 
 beforeEach(async () => {
-  repo = await mkdtemp(path.join(tmpdir(), "rmcp-cmp-"));
+  repo = await mkdtemp(
+    path.join(tmpdir(), `rmcp-${path.basename(import.meta.url, ".ts")}-${process.pid}-`),
+  );
 });
 
 afterEach(async () => {

@@ -24,7 +24,9 @@ let repo: string;
 let session: McpSession;
 
 beforeEach(async () => {
-  repo = await mkdtemp(path.join(tmpdir(), "rmcp-write-"));
+  repo = await mkdtemp(
+    path.join(tmpdir(), `rmcp-${path.basename(import.meta.url, ".ts")}-${process.pid}-`),
+  );
 });
 
 afterEach(async () => {
@@ -99,7 +101,12 @@ describe("write_config", () => {
   it("rejects a filename whose resolved parent escapes repoPath via a symlink", async () => {
     session = await startServer();
 
-    const outside = await mkdtemp(path.join(tmpdir(), "rmcp-outside-"));
+    const outside = await mkdtemp(
+      path.join(
+        tmpdir(),
+        `rmcp-${path.basename(import.meta.url, ".ts")}-${process.pid}-outside-`,
+      ),
+    );
     try {
       await symlink(outside, path.join(repo, "escape"));
 
