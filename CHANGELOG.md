@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.7.0](https://github.com/tibuntu/renovate-mcp/compare/v0.6.0...v0.7.0) (2026-04-25)
+
+
+### Features
+
+* add get_version tool exposing server version and build mode ([d39d3f3](https://github.com/tibuntu/renovate-mcp/commit/d39d3f33ecdfaca8563a6e3adc716f2d9b50617d))
+* **check_setup:** note GITLAB_TOKEN/GITHUB_TOKEN auto-translation for dry_run ([c69dbc2](https://github.com/tibuntu/renovate-mcp/commit/c69dbc208cc913631aa7583f36c51633aa2eb374))
+* **check_setup:** surface platform context for dry_run preview ([93bc042](https://github.com/tibuntu/renovate-mcp/commit/93bc042432b72a9c2625d9e87be22970e2df934f))
+* **dry_run_diff:** add semantic diff helper for two dry_run reports ([f934a1b](https://github.com/tibuntu/renovate-mcp/commit/f934a1b235996535bcfff71103e1abfdf190c98a))
+* **dry_run:** auto-translate platform tokens to RENOVATE_TOKEN ([2f9c0fe](https://github.com/tibuntu/renovate-mcp/commit/2f9c0fe67b9276c3638421d44af189680a291dc4))
+* **lint_config:** catch typos in matchManagers / excludeManagers ([0bd6418](https://github.com/tibuntu/renovate-mcp/commit/0bd6418a0f810b30e403122f58e25a5afe2c9dfb))
+* **resolve_config:** point local&gt; error at the platform/endpoint workaround ([bcc6975](https://github.com/tibuntu/renovate-mcp/commit/bcc6975ff120ded6abc7409bd3a923a47f994f88))
+
+
+### Bug Fixes
+
+* **dry_run:** repair self-hosted-host invocation paths ([39ea59f](https://github.com/tibuntu/renovate-mcp/commit/39ea59f85d73877e5bf0052085be4b29f6820332))
+
 ## [0.6.0](https://github.com/tibuntu/renovate-mcp/compare/v0.5.0...v0.6.0) (2026-04-24)
 
 
