@@ -148,10 +148,26 @@ export function inspectPlatformContext(env: NodeJS.ProcessEnv): PlatformContext 
     notes.push(
       "`RENOVATE_PLATFORM=gitlab` is set but neither `GITLAB_TOKEN` nor `RENOVATE_TOKEN` is present in the MCP server's env — `gitlab>` presets and private-repo lookups will likely fail to authenticate.",
     );
+  } else if (
+    allowedPlatform === "gitlab"
+    && tokensPresent.GITLAB_TOKEN
+    && !tokensPresent.RENOVATE_TOKEN
+  ) {
+    notes.push(
+      "Info: `GITLAB_TOKEN` is set without `RENOVATE_TOKEN`. `dry_run` will export `GITLAB_TOKEN` as `RENOVATE_TOKEN` to the spawned Renovate CLI when `platform=gitlab` (Renovate itself only reads `RENOVATE_TOKEN`). `resolve_config` already accepts this fallback directly.",
+    );
   }
   if (allowedPlatform === "github" && !tokensPresent.GITHUB_TOKEN && !tokensPresent.RENOVATE_TOKEN) {
     notes.push(
       "`RENOVATE_PLATFORM=github` is set but neither `GITHUB_TOKEN` nor `RENOVATE_TOKEN` is present in the MCP server's env — `github>` presets and private-repo lookups will likely fail to authenticate.",
+    );
+  } else if (
+    allowedPlatform === "github"
+    && tokensPresent.GITHUB_TOKEN
+    && !tokensPresent.RENOVATE_TOKEN
+  ) {
+    notes.push(
+      "Info: `GITHUB_TOKEN` is set without `RENOVATE_TOKEN`. `dry_run` will export `GITHUB_TOKEN` as `RENOVATE_TOKEN` to the spawned Renovate CLI when `platform=github` (Renovate itself only reads `RENOVATE_TOKEN`). `resolve_config` already accepts this fallback directly.",
     );
   }
 

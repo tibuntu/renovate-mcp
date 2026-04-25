@@ -293,6 +293,53 @@ describe("inspectPlatformContext", () => {
     expect(ctx.notes.some((n) => n.includes("`RENOVATE_PLATFORM=github`") && n.includes("authenticate"))).toBe(true);
   });
 
+  it("surfaces an info note when GITLAB_TOKEN is set without RENOVATE_TOKEN under platform=gitlab", () => {
+    const ctx = inspectPlatformContext({
+      ...clean(),
+      RENOVATE_PLATFORM: "gitlab",
+      GITLAB_TOKEN: "x",
+    });
+    expect(
+      ctx.notes.some((n) =>
+        n.startsWith("Info:")
+          && n.includes("GITLAB_TOKEN")
+          && n.includes("RENOVATE_TOKEN")
+          && n.includes("auto"),
+      ) || ctx.notes.some((n) =>
+        n.startsWith("Info:")
+          && n.includes("GITLAB_TOKEN")
+          && n.includes("RENOVATE_TOKEN")
+          && n.includes("export"),
+      ),
+    ).toBe(true);
+    // And the failure-mode warning should NOT fire (token IS available).
+    expect(ctx.notes.some((n) => n.includes("authenticate"))).toBe(false);
+  });
+
+  it("surfaces an info note when GITHUB_TOKEN is set without RENOVATE_TOKEN under platform=github", () => {
+    const ctx = inspectPlatformContext({
+      ...clean(),
+      RENOVATE_PLATFORM: "github",
+      GITHUB_TOKEN: "x",
+    });
+    expect(
+      ctx.notes.some((n) =>
+        n.startsWith("Info:") && n.includes("GITHUB_TOKEN") && n.includes("RENOVATE_TOKEN"),
+      ),
+    ).toBe(true);
+    expect(ctx.notes.some((n) => n.includes("authenticate"))).toBe(false);
+  });
+
+  it("does NOT surface the info note when RENOVATE_TOKEN is also set", () => {
+    const ctx = inspectPlatformContext({
+      ...clean(),
+      RENOVATE_PLATFORM: "gitlab",
+      GITLAB_TOKEN: "x",
+      RENOVATE_TOKEN: "y",
+    });
+    expect(ctx.notes.some((n) => n.startsWith("Info:"))).toBe(false);
+  });
+
   it("flags an endpoint that looks like a UI URL", () => {
     const ctx = inspectPlatformContext({
       ...clean(),
