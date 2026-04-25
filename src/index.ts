@@ -15,6 +15,17 @@ import { registerGetVersion } from "./tools/getVersion.js";
 import { registerPresetResources } from "./resources/presets.js";
 import { checkSetup, startupBanner } from "./lib/setupCheck.js";
 import { SERVER_VERSION } from "./lib/version.js";
+import { logError } from "./lib/log.js";
+
+// Register before any work: stdout carries JSON-RPC frames, so a stray Node-default
+// log of an unhandled rejection / uncaught exception would corrupt MCP framing.
+process.on("unhandledRejection", (reason) => {
+  logError("unhandled rejection", reason);
+});
+process.on("uncaughtException", (err) => {
+  logError("uncaught exception", err);
+  process.exit(1);
+});
 
 const BASE_INSTRUCTIONS = [
   "Design and debug Renovate configurations interactively.",
