@@ -460,7 +460,7 @@ describe("fetchExternalPreset — unsupported sources", () => {
   it("returns a clear error for local", async () => {
     const result = await fetchExternalPreset(parsePreset("local>acme/cfg"));
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toMatch(/out of scope/i);
+    if (!result.ok) expect(result.reason).toMatch(/need a platform context/i);
   });
 
   it("returns a clear error for npm", async () => {

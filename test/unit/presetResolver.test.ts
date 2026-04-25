@@ -280,7 +280,7 @@ describe("structurally-unsupported sources: identical reason across flag values"
   // These sources can never be fetched by resolve_config — flipping the flag
   // must not change the reason the user sees.
   const cases: Array<{ preset: string; matcher: RegExp }> = [
-    { preset: "local>acme/cfg", matcher: /out of scope/i },
+    { preset: "local>acme/cfg", matcher: /need a platform context/i },
     { preset: "bitbucket>acme/cfg", matcher: /not yet supported/i },
     { preset: "gitea>acme/cfg", matcher: /not yet supported/i },
     { preset: "some-npm-preset", matcher: /npm-hosted/i },
@@ -399,7 +399,10 @@ describe("resolveConfig with endpoint / platform", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(presetsResolved).toEqual([]);
     expect(presetsUnresolved).toHaveLength(1);
-    expect(presetsUnresolved[0]?.reason).toMatch(/out of scope/i);
+    expect(presetsUnresolved[0]?.reason).toMatch(/need a platform context/i);
+    // Reason should point users at the workaround.
+    expect(presetsUnresolved[0]?.reason).toMatch(/`platform`/);
+    expect(presetsUnresolved[0]?.reason).toMatch(/`endpoint`/);
   });
 });
 

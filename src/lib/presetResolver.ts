@@ -74,7 +74,7 @@ export function classifyExternalSource(source: string): SourceClassification {
       return {
         fetchable: false,
         reason:
-          "local> presets require platform/repo context that resolve_config does not have; out of scope.",
+          "local> presets need a platform context. Pass `platform` (`github` or `gitlab`) plus `endpoint` to resolve_config so they're routed through your platform's API. For full-fidelity merging (hostRules, regexManagers, etc.), run `dry_run` with the same params instead.",
       };
     case "bitbucket":
     case "gitea":
