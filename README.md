@@ -21,11 +21,12 @@ An MCP server for designing [Renovate](https://github.com/renovatebot/renovate) 
 
 ## What it does
 
-Nine tools plus a preset reference:
+Ten tools plus a preset reference:
 
 | Tool | Purpose |
 | --- | --- |
 | `check_setup` | Report Renovate CLI + validator availability, versions, and install hints. Also runs at startup. |
+| `get_version` | Report the renovate-mcp server version and whether it's a released build (running from `node_modules`) or a local/dev build (typically launched via `command: node` against a checkout). |
 | `read_config` | Locate and parse a repo's Renovate config (`renovate.json`, `renovate.json5`, `.renovaterc*`, `package.json#renovate`, …) in priority order. |
 | `resolve_config` | Expand every `extends` preset offline. Opt in to fetching `github>` / `gitlab>` presets over HTTPS with `externalPresets: true`. |
 | `preview_custom_manager` | Preview a `customManagers` (regex) entry against a local repo — shows file/line hits and extracted dep info. Offline. |
