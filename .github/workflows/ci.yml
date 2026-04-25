@@ -42,6 +42,18 @@ jobs:
           cache: npm
 
       - run: npm ci
+
+      # Catch drift between package.json and the snapshot in package-lock.json.
+      # `npm ci` validates the dependency tree but ignores root metadata fields
+      # like `os`, `engines`, and `bin`, so a hand-edit of package.json without
+      # `npm install` slips through. The lock file is platform-agnostic, so we
+      # only run this on one OS in the matrix.
+      - name: Verify package-lock.json is in sync with package.json
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          npm install --package-lock-only --no-audit --no-fund
+          git diff --exit-code package-lock.json
+
       - run: npm run typecheck
       - run: npm run build
       - run: npm run test:coverage
