@@ -2,10 +2,6 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Commit authorship
-
-Never add a `Co-Authored-By: Claude …` trailer (or any other Claude attribution) to commits in this repo. Commits should be authored under the human's name only.
-
 ## Project
 
 MCP server that helps users design Renovate configurations interactively. TypeScript, Node ≥ 24 (aligns with Renovate's own engine requirement), built with `@modelcontextprotocol/sdk` 1.x, stdio transport.
