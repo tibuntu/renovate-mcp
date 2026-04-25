@@ -117,6 +117,84 @@ describe("lintConfig", () => {
     });
   });
 
+  describe("matchManagers-unknown-name", () => {
+    it("does not flag known manager names on matchManagers", () => {
+      const findings = lintConfig({
+        packageRules: [
+          {
+            matchManagers: ["npm", "gomod", "docker-compose", "regex"],
+          },
+        ],
+      });
+      expect(findings).toEqual([]);
+    });
+
+    it("does not flag the 'custom.<name>' prefix form", () => {
+      const findings = lintConfig({
+        packageRules: [{ matchManagers: ["custom.regex", "custom.jsonata"] }],
+      });
+      expect(findings).toEqual([]);
+    });
+
+    it("flags an unknown name and suggests the closest match", () => {
+      const findings = lintConfig({
+        packageRules: [{ matchManagers: ["nmp"] }],
+      });
+      expect(findings).toHaveLength(1);
+      expect(findings[0]).toMatchObject({
+        ruleId: "matchManagers-unknown-name",
+        path: "packageRules[0].matchManagers[0]",
+        value: "nmp",
+      });
+      expect(findings[0]!.message).toContain("'npm'");
+    });
+
+    it("flags a typo with an underscore variant", () => {
+      const findings = lintConfig({
+        packageRules: [{ matchManagers: ["docker_compose"] }],
+      });
+      expect(findings).toHaveLength(1);
+      expect(findings[0]!.ruleId).toBe("matchManagers-unknown-name");
+      expect(findings[0]!.message).toContain("'docker-compose'");
+    });
+
+    it("mirrors the rule on excludeManagers", () => {
+      const findings = lintConfig({
+        packageRules: [
+          {
+            matchPackageNames: ["*"],
+            excludeManagers: ["gommod"],
+          },
+        ],
+      });
+      expect(findings).toHaveLength(1);
+      expect(findings[0]).toMatchObject({
+        ruleId: "matchManagers-unknown-name",
+        path: "packageRules[0].excludeManagers[0]",
+        value: "gommod",
+      });
+      expect(findings[0]!.message).toContain("'gomod'");
+    });
+
+    it("omits the suggestion hint when nothing is close enough", () => {
+      const findings = lintConfig({
+        packageRules: [{ matchManagers: ["totally-made-up-thing"] }],
+      });
+      expect(findings).toHaveLength(1);
+      expect(findings[0]!.ruleId).toBe("matchManagers-unknown-name");
+      expect(findings[0]!.message).not.toContain("Did you mean");
+    });
+
+    it("handles a string value (not array) on matchManagers", () => {
+      const findings = lintConfig({
+        packageRules: [{ matchManagers: "npmm" }],
+      });
+      expect(findings).toHaveLength(1);
+      expect(findings[0]!.ruleId).toBe("matchManagers-unknown-name");
+      expect(findings[0]!.path).toBe("packageRules[0].matchManagers");
+    });
+  });
+
   describe("path reporting", () => {
     it("reports nested paths correctly", () => {
       const findings = lintConfig({

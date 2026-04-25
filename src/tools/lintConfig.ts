@@ -11,7 +11,7 @@ export function registerLintConfig(server: McpServer): void {
     {
       title: "Lint Renovate config for semantic footguns",
       description:
-        "Run a semantic lint pass over a Renovate config. Complements validate_config: schema validation catches structural bugs, this catches Renovate-specific footguns schema validation misses — primarily malformed '/…/' regex patterns in fields like matchPackageNames, matchDepNames, matchSourceUrls, matchCurrentVersion. Offline; does not shell out. Pass either configPath (file on disk, JSON or JSON5) or configContent (inline object).",
+        "Run a semantic lint pass over a Renovate config. Complements validate_config: schema validation catches structural bugs, this catches Renovate-specific footguns schema validation misses — malformed '/…/' regex patterns in fields like matchPackageNames, matchDepNames, matchSourceUrls, matchCurrentVersion, plus unknown manager names in matchManagers / excludeManagers (typos that Renovate silently ignores). Offline; does not shell out. Pass either configPath (file on disk, JSON or JSON5) or configContent (inline object).",
       inputSchema: {
         configPath: z
           .string()
