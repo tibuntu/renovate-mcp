@@ -17,16 +17,12 @@ on:
 jobs:
   build-test:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        node-version: [24]
     steps:
       - uses: actions/checkout@v6
 
       - uses: actions/setup-node@v6
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version-file: .nvmrc
           cache: npm
 
       - run: npm ci
@@ -38,6 +34,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: coverage-node-${{ matrix.node-version }}
+          name: coverage
           path: coverage/
           if-no-files-found: ignore
