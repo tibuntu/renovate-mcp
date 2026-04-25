@@ -21,7 +21,7 @@ An MCP server for designing [Renovate](https://github.com/renovatebot/renovate) 
 
 ## What it does
 
-Eight tools plus a preset reference:
+Nine tools plus a preset reference:
 
 | Tool | Purpose |
 | --- | --- |
@@ -32,6 +32,7 @@ Eight tools plus a preset reference:
 | `validate_config` | Run `renovate-config-validator` against a file or inline object. |
 | `lint_config` | Semantic lint for Renovate-specific footguns schema validation misses (mostly malformed `/…/` regex patterns). Offline. |
 | `dry_run` | Run Renovate with `--dry-run` and return the structured JSON report. Defaults to `--platform=local` against `repoPath`; pass `platform` + `endpoint` + `token` + `repository` to run as a real GitHub/GitLab client (needed when the config extends `local>` presets on a private host). No PRs, no pushes. Emits MCP progress notifications during the run when the caller supplies a `progressToken`. |
+| `dry_run_diff` | Semantic diff between two `dry_run` reports — `added` / `removed` / `changed` proposed updates plus a compact text rendering. Stateless; takes both reports as inputs. Useful when iterating on a config to see exactly what each tweak did. |
 | `write_config` | Validate, then atomically write a config to disk. Refuses to save invalid configs unless `force: true`. |
 | `renovate://presets` (resource) | Markdown index of all 1000+ built-in presets grouped by namespace. |
 | `renovate://presets/{namespace}` (resource template) | Markdown listing for a single namespace (e.g. `renovate://presets/config`) — cheaper than the full index. |
@@ -214,4 +215,5 @@ Scope and non-goals are summarized in [What this is NOT](#what-this-is-not); thi
 - `dry_run` defaults to `--platform=local` so no host token is required, but that mode can't resolve `local>` presets (they have no platform context to expand against) and silently hides non-default-host GitHub/GitLab setups. Passing `platform` + `endpoint` + `token` + `repository` switches the run to a real platform client so the preset-fetch path works end-to-end; `--dry-run` is still set, so no PRs are opened. As a guard against the silent-failure mode, `dry_run` preflight-checks the repo's config: if it extends any `local>…` preset while the effective platform is `local`, the tool fails fast with specific remediation rather than spawning a Renovate run that would opaquely report `config-validation`.
 - `dry_run` returns a top-level `ok` boolean that is `false` whenever the CLI exited non-zero OR the structured report contains a validation/error-level problem (`level >= 40`, `message === "config-validation"`, or a non-empty `validationError` field). Renovate frequently writes exit-code 0 alongside report-level failures — trusting the exit code alone hides runs that did nothing.
 - `dry_run` emits MCP progress notifications only when the caller's `tools/call` includes `_meta.progressToken` — no-op otherwise, so legacy clients see zero overhead. A 5-second heartbeat ticks while the child runs; each tick's message is best-effort enriched with the latest Renovate JSON-log `msg` seen on stdout. Notifications are also emitted at start and completion. We deliberately don't couple to Renovate's log schema beyond reading `msg`, since that schema isn't a stable API.
+- `dry_run_diff` is stateless on purpose: both reports are passed as inputs, no per-repo state is kept on the server. Updates are keyed by `(manager, packageFile, depName)` so a version bump on the same dep shows up once under `changed` rather than twice as `removed + added`. Compared per identity: `newValue`, `newVersion`, `updateType`, `branchName`, `groupName`, `schedule`. Either input can be the raw Renovate report or the full `dry_run` summary (with the `report` key) — the tool unwraps `report` automatically.
 - `write_config` writes to a temp file, validates, then atomically renames — so a failed validation never leaves a broken config on disk.

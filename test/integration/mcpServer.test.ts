@@ -11,13 +11,14 @@ afterEach(async () => {
 });
 
 describe("MCP server stdio handshake", () => {
-  it("lists all eight tools with expected names", async () => {
+  it("lists all nine tools with expected names", async () => {
     session = await startServer();
     const res = await session.request<{ tools: Array<{ name: string }> }>("tools/list");
     const names = (res.result?.tools ?? []).map((t) => t.name).sort();
     expect(names).toEqual([
       "check_setup",
       "dry_run",
+      "dry_run_diff",
       "lint_config",
       "preview_custom_manager",
       "read_config",
@@ -342,5 +343,93 @@ describe("resolve_config end-to-end", () => {
     expect(parsed.presetsUnresolved).toHaveLength(1);
     expect(parsed.presetsUnresolved[0].preset).toBe("github>some/repo");
     expect(res.result).not.toHaveProperty("isError", true);
+  });
+});
+
+describe("dry_run_diff end-to-end", () => {
+  function makeReport(upgrades: Array<Record<string, unknown>>): unknown {
+    return {
+      repositories: {
+        "owner/repo": {
+          branches: [{ branchName: "renovate/all", upgrades }],
+        },
+      },
+    };
+  }
+
+  it("returns a structured diff with added/removed/changed plus a text rendering", async () => {
+    session = await startServer();
+    const before = makeReport([
+      {
+        manager: "npm",
+        packageFile: "package.json",
+        depName: "lodash",
+        currentVersion: "4.17.20",
+        newVersion: "4.17.21",
+        updateType: "patch",
+      },
+      { manager: "npm", packageFile: "package.json", depName: "axios", newVersion: "1.5.0" },
+    ]);
+    const after = makeReport([
+      {
+        manager: "npm",
+        packageFile: "package.json",
+        depName: "lodash",
+        currentVersion: "4.17.20",
+        newVersion: "4.18.0",
+        updateType: "minor",
+      },
+      { manager: "npm", packageFile: "package.json", depName: "react", newVersion: "18.2.0" },
+    ]);
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run_diff",
+      arguments: { before, after },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    const parsed = JSON.parse(res.result!.content[0]!.text);
+    expect(parsed.summary).toEqual({ added: 1, removed: 1, changed: 1, unchanged: 0 });
+    expect(parsed.added.map((u: { depName: string }) => u.depName)).toEqual(["react"]);
+    expect(parsed.removed.map((u: { depName: string }) => u.depName)).toEqual(["axios"]);
+    expect(parsed.changed[0].depName).toBe("lodash");
+    expect(parsed.text).toContain("Added:");
+    expect(parsed.text).toContain("Removed:");
+    expect(parsed.text).toContain("Changed:");
+  });
+
+  it("accepts the full dry_run summary form (with `report` key) on either side", async () => {
+    session = await startServer();
+    const wrap = (report: unknown): unknown => ({
+      ok: true,
+      exitCode: 0,
+      hasReport: true,
+      report,
+    });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+    }>("tools/call", {
+      name: "dry_run_diff",
+      arguments: {
+        before: wrap(
+          makeReport([
+            { manager: "npm", packageFile: "p.json", depName: "lodash", newVersion: "1" },
+          ]),
+        ),
+        after: wrap(
+          makeReport([
+            { manager: "npm", packageFile: "p.json", depName: "lodash", newVersion: "2" },
+          ]),
+        ),
+      },
+    });
+
+    const parsed = JSON.parse(res.result!.content[0]!.text);
+    expect(parsed.summary.changed).toBe(1);
+    expect(parsed.changed[0].changes[0].field).toBe("newVersion");
   });
 });
