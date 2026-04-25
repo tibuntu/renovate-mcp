@@ -27,4 +27,12 @@ jobs:
       - run: npm run build
       - run: npm test
 
+      # Smoke-test the would-be-published tarball: pack it, install globally,
+      # and verify the resulting `renovate-mcp` binary answers an MCP
+      # `initialize` request. Catches `files`/`bin`/shebang/startup regressions
+      # that the in-tree tests miss because they read from the working tree.
+      - run: npm pack
+      - run: npm install -g ./renovate-mcp-*.tgz
+      - run: node scripts/smoke-test-tarball.mjs
+
       - run: npm publish
