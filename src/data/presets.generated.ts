@@ -7,7 +7,7 @@ export interface GeneratedPreset {
   body: Record<string, unknown>;
 }
 
-export const RENOVATE_VERSION = "43.141.5";
+export const RENOVATE_VERSION = "43.141.6";
 
 export const PRESETS: Record<string, GeneratedPreset> = {
   "abandonments:recommended": {
