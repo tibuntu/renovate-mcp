@@ -9,7 +9,9 @@
     {
       "customType": "regex",
       "description": "Keep the Renovate version snapshot embedded in the generated preset catalogue in lockstep with the renovate devDependency. Re-run `npm run generate:presets` after the package.json bump merges so the file is fully refreshed.",
-      "fileMatch": ["^src/data/presets\\.generated\\.ts$"],
+      "managerFilePatterns": [
+        "/^src/data/presets\\.generated\\.ts$/"
+      ],
       "matchStrings": [
         "RENOVATE_VERSION = \"(?<currentValue>[^\"]+)\""
       ],
