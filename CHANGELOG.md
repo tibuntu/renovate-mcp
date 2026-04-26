@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/tibuntu/renovate-mcp/compare/v0.9.0...v0.9.1) (2026-04-26)
+
+
+### Bug Fixes
+
+* **security:** add least-privilege permissions to CI workflow ([c20d470](https://github.com/tibuntu/renovate-mcp/commit/c20d470ce34fec5b267238175158fba7bad86afb))
+
 ## [0.9.0](https://github.com/tibuntu/renovate-mcp/compare/v0.8.0...v0.9.0) (2026-04-25)
 
 
