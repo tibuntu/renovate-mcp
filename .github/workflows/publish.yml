@@ -3,12 +3,21 @@ name: Publish to npm
 on:
   release:
     types: [published]
-  workflow_call:
+  # Dispatched by release.yaml after release-please cuts a release. We use
+  # workflow_dispatch (rather than workflow_call) so this stays the *entry*
+  # workflow — npm's trusted-publisher check matches OIDC claims against the
+  # entry workflow, and a reusable-workflow callee changes those claims.
+  # workflow_dispatch is one of the two events GITHUB_TOKEN can trigger
+  # downstream (the other is repository_dispatch).
+  workflow_dispatch:
     inputs:
-      ref:
+      tag:
         type: string
         required: false
-        description: Git ref (typically the release tag) to check out and publish.
+        description: >-
+          Optional release tag to check out (e.g. v0.9.1). Only needed when
+          backfilling a release whose tagged workflow file pre-dates the
+          workflow_dispatch trigger. Leave empty for normal dispatch.
 
 jobs:
   publish:
@@ -19,7 +28,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ inputs.ref || github.ref }}
+          ref: ${{ inputs.tag || github.ref }}
 
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
