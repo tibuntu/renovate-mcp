@@ -26,6 +26,12 @@ on:
       - '.github/workflows/publish.yml'
       - '.github/workflows/release.yaml'
 
+# Least-privilege default for the GITHUB_TOKEN. `actions/checkout` only
+# needs `contents: read`; nothing in this workflow writes back to the repo
+# or interacts with PRs/issues.
+permissions:
+  contents: read
+
 jobs:
   build-test:
     strategy:
