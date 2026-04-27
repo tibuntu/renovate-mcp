@@ -5,25 +5,23 @@
     "config:recommended",
     "helpers:pinGitHubActionDigests"
   ],
-  "customManagers": [
-    {
-      "customType": "regex",
-      "description": "Keep the Renovate version snapshot embedded in the generated preset catalogue in lockstep with the renovate devDependency. Re-run `npm run generate:presets` after the package.json bump merges so the file is fully refreshed.",
-      "managerFilePatterns": [
-        "/^src/data/presets\\.generated\\.ts$/"
-      ],
-      "matchStrings": [
-        "RENOVATE_VERSION = \"(?<currentValue>[^\"]+)\""
-      ],
-      "depNameTemplate": "renovate",
-      "datasourceTemplate": "npm"
-    }
-  ],
   "packageRules": [
     {
       "description": "Group all devDependency updates into a single PR to minimise tooling churn.",
       "matchDepTypes": ["devDependencies"],
       "groupName": "dev dependencies"
+    },
+    {
+      "description": "On every renovate devDependency bump, regenerate src/data/presets.generated.ts so the committed preset snapshot stays in lockstep with the installed Renovate version. Requires the operator's RENOVATE_ALLOWED_POST_UPGRADE_COMMANDS to permit `npm ci` and `npm run generate:presets`.",
+      "matchPackageNames": ["renovate"],
+      "postUpgradeTasks": {
+        "commands": [
+          "npm ci",
+          "npm run generate:presets"
+        ],
+        "fileFilters": ["src/data/presets.generated.ts"],
+        "executionMode": "branch"
+      }
     }
   ]
 }
