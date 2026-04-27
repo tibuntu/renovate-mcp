@@ -127,6 +127,19 @@ export async function startServer(
     closed = true;
   });
 
+  // Writing to a server that has already exited produces an async EPIPE on
+  // child.stdin. The pending request is already going to be rejected by the
+  // 'exit' handler with a meaningful message — swallow the raw EPIPE so it
+  // doesn't surface as an unhandled error and fail the run (macOS-prone race).
+  child.stdin!.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EPIPE") return;
+    terminated = true;
+    terminationError = new Error(
+      `MCP server stdin error: ${err.message}${stderrSuffix()}`,
+    );
+    failAllPending(terminationError);
+  });
+
   const notifications: ServerNotification[] = [];
   const notificationListeners = new Set<(n: ServerNotification) => void>();
 
