@@ -13,9 +13,11 @@ on:
   push:
     branches: [main]
   pull_request:
-    # Skip PRs that only touch docs / non-build files. `main` is unprotected
-    # and `build-test` isn't a required check, so a skipped workflow does not
-    # block merges. Push to `main` stays unfiltered as a post-merge sanity run.
+    # Skip PRs that only touch docs / non-build files. NOTE: `build-test` is
+    # a required status check on `main` (ruleset "main: required CI checks"),
+    # so a doc-only PR whose workflow is skipped here will be blocked from
+    # merging — unblock via admin (edit/disable the ruleset) or by adjusting
+    # this list. Push to `main` stays unfiltered as a post-merge sanity run.
     paths-ignore:
       - '**.md'
       - 'LICENSE'

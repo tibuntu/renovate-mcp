@@ -5,11 +5,17 @@
     "config:recommended",
     "helpers:pinGitHubActionDigests"
   ],
+  "semanticCommitType": "fix",
   "packageRules": [
     {
       "description": "Group all devDependency updates into a single PR to minimise tooling churn.",
       "matchDepTypes": ["devDependencies"],
       "groupName": "dev dependencies"
+    },
+    {
+      "description": "Auto-merge non-major updates once required CI checks pass. Major bumps still require manual review.",
+      "matchUpdateTypes": ["minor", "patch", "digest", "pin", "pinDigest", "lockFileMaintenance"],
+      "automerge": true
     },
     {
       "description": "On every renovate devDependency bump, regenerate src/data/presets.generated.ts so the committed preset snapshot stays in lockstep with the installed Renovate version. Requires the operator's RENOVATE_ALLOWED_POST_UPGRADE_COMMANDS to permit `npm ci` and `npm run generate:presets`.",
