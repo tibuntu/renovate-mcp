@@ -5,6 +5,7 @@
     "config:recommended",
     "helpers:pinGitHubActionDigests"
   ],
+  "prFooter": "",
   "semanticCommitType": "fix",
   "packageRules": [
     {
