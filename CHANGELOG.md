@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.4](https://github.com/tibuntu/renovate-mcp/compare/v0.9.3...v0.9.4) (2026-05-01)
+
+
+### Bug Fixes
+
+* **Renovate:** ensure dependency updates trigger releases ([8d567d1](https://github.com/tibuntu/renovate-mcp/commit/8d567d115129c0a446e3a449e4f4928f8515b5b7))
+
 ## [0.9.3](https://github.com/tibuntu/renovate-mcp/compare/v0.9.2...v0.9.3) (2026-04-27)
 
 
