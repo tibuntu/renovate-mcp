@@ -16,8 +16,14 @@ on:
     # Skip PRs that only touch docs / non-build files. NOTE: `build-test` is
     # a required status check on `main` (ruleset "main: required CI checks"),
     # so a doc-only PR whose workflow is skipped here will be blocked from
-    # merging — unblock via admin (edit/disable the ruleset) or by adjusting
-    # this list. Push to `main` stays unfiltered as a post-merge sanity run.
+    # merging — unblock by admin-merging or by adjusting this list. Push to
+    # `main` stays unfiltered as a post-merge sanity run.
+    #
+    # Bot-authored PRs: Renovate uses its own App token, so its PRs trigger
+    # this workflow normally. release-please's PR uses RELEASE_PLEASE_TOKEN
+    # (see .github/workflows/release.yaml) for the same reason — PRs opened
+    # with the default GITHUB_TOKEN would not trigger this workflow and would
+    # be permanently blocked by the required `build-test` check.
     paths-ignore:
       - '**.md'
       - 'LICENSE'

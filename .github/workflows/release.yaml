@@ -20,7 +20,15 @@ jobs:
         id: rp
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # Use a PAT (or GitHub App token) instead of GITHUB_TOKEN so the release
+          # PR is attributed to a real identity. PRs opened by GITHUB_TOKEN do not
+          # trigger downstream `pull_request` workflows, which would leave the
+          # release PR permanently blocked by the `build-test` required check on
+          # `main`. The PAT only needs `contents: write` and `pull-requests: write`
+          # on this repo. `dispatch-publish` below intentionally still uses
+          # GITHUB_TOKEN so npm's trusted-publisher OIDC `workflow_ref` claim
+          # stays bound to publish.yml — do not consolidate the two tokens.
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           config-file: .release-please-config.json
 
   # Dispatch publish.yml as the entry workflow (not via workflow_call) so npm's
