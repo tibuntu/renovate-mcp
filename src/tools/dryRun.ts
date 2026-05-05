@@ -399,6 +399,10 @@ export function registerDryRun(server: McpServer): void {
           summary.reportErrors = reportErrors;
         }
 
+        if (result.runtimeWarnings.length > 0) {
+          summary.warnings = result.runtimeWarnings;
+        }
+
         // If no structured report, surface the last bit of stderr so Claude can
         // debug without blowing up the context with Renovate's verbose logs.
         if (!report) {

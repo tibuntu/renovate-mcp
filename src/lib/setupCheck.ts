@@ -1,4 +1,5 @@
 import { run, resolveRenovateTool } from "./renovateCli.js";
+import { dedupeRuntimeWarnings, type RuntimeWarning } from "./runtimeWarnings.js";
 
 export type RenovateBinary = "renovate" | "renovate-config-validator";
 
@@ -8,6 +9,11 @@ export interface BinaryStatus {
   found: boolean;
   version?: string;
   error?: string;
+  /**
+   * Runtime warnings parsed from this binary's `--version` stderr (e.g. RE2
+   * dlopen failure). Present only when at least one warning was detected.
+   */
+  runtimeWarnings?: RuntimeWarning[];
 }
 
 export type DryRunPlatform = "local" | "github" | "gitlab";
@@ -44,6 +50,13 @@ export interface SetupStatus {
   platformContext: PlatformContext;
   ok: boolean;
   hints: string[];
+  /**
+   * Deduped union of `runtimeWarnings` from every binary's `--version` probe.
+   * Distinct from `hints`: hints are "things you need to install / fix to use
+   * this server"; warnings are "Renovate is running but degraded." Empty array
+   * when nothing was detected.
+   */
+  warnings: RuntimeWarning[];
 }
 
 const VERSION_TIMEOUT_MS = 10_000;
@@ -55,12 +68,14 @@ async function checkBinary(tool: RenovateBinary): Promise<BinaryStatus> {
   const command = resolveRenovateTool(tool);
   try {
     const result = await run(command, ["--version"], { timeoutMs: VERSION_TIMEOUT_MS });
+    const runtimeWarnings = result.runtimeWarnings.length ? result.runtimeWarnings : undefined;
     if (result.exitCode !== 0) {
       return {
         tool,
         command,
         found: false,
         error: (result.stderr || result.stdout).trim() || `exit code ${result.exitCode}`,
+        runtimeWarnings,
       };
     }
     return {
@@ -68,6 +83,7 @@ async function checkBinary(tool: RenovateBinary): Promise<BinaryStatus> {
       command,
       found: true,
       version: result.stdout.trim() || undefined,
+      runtimeWarnings,
     };
   } catch (err) {
     return {
@@ -101,6 +117,11 @@ export async function checkSetup(): Promise<SetupStatus> {
     );
   }
 
+  const warnings = dedupeRuntimeWarnings([
+    ...(renovate.runtimeWarnings ?? []),
+    ...(renovateConfigValidator.runtimeWarnings ?? []),
+  ]);
+
   return {
     node: process.version,
     renovate,
@@ -109,6 +130,7 @@ export async function checkSetup(): Promise<SetupStatus> {
     platformContext: inspectPlatformContext(process.env),
     ok: renovate.found && renovateConfigValidator.found,
     hints,
+    warnings,
   };
 }
 
@@ -214,20 +236,39 @@ export function unavailableTools(status: SetupStatus): string[] {
 /**
  * Concise startup banner appended to the server's MCP `instructions` so the
  * LLM is primed to treat CLI-missing as a partial-availability signal rather
- * than a setup error. Returns `null` when every tool is available.
+ * than a setup error. Also emits a banner — independent of binary availability
+ * — when Renovate runtime warnings are detected (e.g. RE2 dlopen failure
+ * causing a slow-path fallback). Returns `null` when nothing needs surfacing.
  */
 export function startupBanner(status: SetupStatus): string | null {
   const unavailable = unavailableTools(status);
-  if (unavailable.length === 0) return null;
-  const unavailList = unavailable.map((n) => `\`${n}\``).join(", ");
-  const offlineList = OFFLINE_TOOLS.map((n) => `\`${n}\``).join(", ");
-  return [
-    "Partial availability:",
-    `  Renovate CLI not found — only blocks: ${unavailList}.`,
-    `  Offline tools (${offlineList}) still work; do not flag this as a setup problem when the task only needs those.`,
-    "  Install Renovate (`npm i -g renovate`) before calling the blocked tools, or call `check_setup` for a full diagnostic.",
-    "  Set `RENOVATE_MCP_REQUIRE_CLI=false` to suppress this notice if you have consciously chosen the offline subset.",
-  ].join("\n");
+  const sections: string[] = [];
+
+  if (unavailable.length > 0) {
+    const unavailList = unavailable.map((n) => `\`${n}\``).join(", ");
+    const offlineList = OFFLINE_TOOLS.map((n) => `\`${n}\``).join(", ");
+    sections.push(
+      [
+        "Partial availability:",
+        `  Renovate CLI not found — only blocks: ${unavailList}.`,
+        `  Offline tools (${offlineList}) still work; do not flag this as a setup problem when the task only needs those.`,
+        "  Install Renovate (`npm i -g renovate`) before calling the blocked tools, or call `check_setup` for a full diagnostic.",
+        "  Set `RENOVATE_MCP_REQUIRE_CLI=false` to suppress this notice if you have consciously chosen the offline subset.",
+      ].join("\n"),
+    );
+  }
+
+  if (status.warnings.length > 0) {
+    const lines: string[] = ["Renovate runtime warnings:"];
+    for (const w of status.warnings) {
+      lines.push(`  - ${w.message}`);
+      lines.push(`    Fix: ${w.fix}`);
+    }
+    lines.push("  These do not block tool calls. Surface this if a user reports unexpectedly slow runs.");
+    sections.push(lines.join("\n"));
+  }
+
+  return sections.length === 0 ? null : sections.join("\n\n");
 }
 
 export function describeSetup(status: SetupStatus): string {
@@ -258,6 +299,15 @@ export function describeSetup(status: SetupStatus): string {
     lines.push("");
     lines.push("Hints:");
     for (const h of status.hints) lines.push(`  - ${h}`);
+  }
+  if (status.warnings.length > 0) {
+    lines.push("");
+    lines.push("Warnings:");
+    for (const w of status.warnings) {
+      lines.push(`  - ${w.message}`);
+      if (w.detail) lines.push(`    Detail: ${w.detail}`);
+      lines.push(`    Fix: ${w.fix}`);
+    }
   }
   return lines.join("\n");
 }

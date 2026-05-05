@@ -4,6 +4,7 @@ import { promises as fs } from "node:fs";
 import { randomUUID } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { run, resolveRenovateTool, formatMissingBinaryError } from "../lib/renovateCli.js";
+import type { RuntimeWarning } from "../lib/runtimeWarnings.js";
 import { configRecord, filenameString, pathString } from "../lib/inputLimits.js";
 
 // Resolve symlinks in `p`, walking up to the nearest existing ancestor when
@@ -101,55 +102,53 @@ export function registerWriteConfig(server: McpServer): void {
         let valid = false;
         let validationOutput = "";
         let validatorMissing = false;
+        let runtimeWarnings: RuntimeWarning[] = [];
         try {
           const bin = resolveRenovateTool("renovate-config-validator");
           const v = await run(bin, [tmp], { timeoutMs: 30_000 });
           validationOutput = (v.stdout + v.stderr).trim();
           valid = v.exitCode === 0;
+          runtimeWarnings = v.runtimeWarnings;
         } catch (err) {
           validatorMissing = true;
           validationOutput = formatMissingBinaryError("renovate-config-validator", err as Error);
         }
 
         if (!valid && !force) {
+          const failPayload: Record<string, unknown> = {
+            wrote: false,
+            reason: validatorMissing ? "validator-unavailable" : "validation-failed",
+            validationOutput,
+            hint: validatorMissing
+              ? "Install renovate-config-validator (or set RENOVATE_CONFIG_VALIDATOR_BIN), then retry. Pass force=true to skip validation entirely."
+              : "Pass force=true to write anyway.",
+          };
+          if (runtimeWarnings.length > 0) failPayload.warnings = runtimeWarnings;
           return {
             isError: true,
             content: [
               {
                 type: "text",
-                text: JSON.stringify(
-                  {
-                    wrote: false,
-                    reason: validatorMissing ? "validator-unavailable" : "validation-failed",
-                    validationOutput,
-                    hint: validatorMissing
-                      ? "Install renovate-config-validator (or set RENOVATE_CONFIG_VALIDATOR_BIN), then retry. Pass force=true to skip validation entirely."
-                      : "Pass force=true to write anyway.",
-                  },
-                  null,
-                  2,
-                ),
+                text: JSON.stringify(failPayload, null, 2),
               },
             ],
           };
         }
 
         await fs.rename(tmp, target);
+        const okPayload: Record<string, unknown> = {
+          wrote: true,
+          path: rel,
+          bytes: payload.length,
+          valid,
+          validationOutput: valid ? undefined : validationOutput,
+        };
+        if (runtimeWarnings.length > 0) okPayload.warnings = runtimeWarnings;
         return {
           content: [
             {
               type: "text",
-              text: JSON.stringify(
-                {
-                  wrote: true,
-                  path: rel,
-                  bytes: payload.length,
-                  valid,
-                  validationOutput: valid ? undefined : validationOutput,
-                },
-                null,
-                2,
-              ),
+              text: JSON.stringify(okPayload, null, 2),
             },
           ],
         };

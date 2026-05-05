@@ -87,6 +87,7 @@ describe("describeSetup", () => {
       platformContext: emptyPlatformContext(),
       ok: true,
       hints: [],
+      warnings: [],
     });
     expect(out).toContain("v20.0.0");
     expect(out).toContain("43.0.0");
@@ -108,6 +109,7 @@ function buildStatus(overrides: Partial<SetupStatus> = {}): SetupStatus {
     platformContext: emptyPlatformContext(),
     ok: true,
     hints: [],
+    warnings: [],
   };
   return { ...base, ...overrides };
 }
@@ -220,10 +222,91 @@ describe("describeSetup (legacy verbose diagnostic)", () => {
       platformContext: emptyPlatformContext(),
       ok: false,
       hints: ["hint A", "hint B"],
+      warnings: [],
     });
     expect(out).toContain("MISSING");
     expect(out).toContain("hint A");
     expect(out).toContain("RENOVATE_BIN=/x");
+  });
+
+  it("renders a Warnings: block with message + fix when runtime warnings are present", () => {
+    const out = describeSetup(buildStatus({
+      warnings: [
+        {
+          kind: "re2-unusable",
+          message: "RE2 fallback active",
+          detail: "NODE_MODULE_VERSION mismatch",
+          fix: "Run `npm rebuild re2`",
+        },
+      ],
+    }));
+    expect(out).toContain("Warnings:");
+    expect(out).toContain("RE2 fallback active");
+    expect(out).toContain("Detail: NODE_MODULE_VERSION mismatch");
+    expect(out).toContain("Fix: Run `npm rebuild re2`");
+  });
+});
+
+describe("startupBanner with runtime warnings", () => {
+  it("returns a Renovate runtime warnings section even when all binaries are found", () => {
+    const out = startupBanner(
+      buildStatus({
+        warnings: [
+          {
+            kind: "re2-unusable",
+            message: "RE2 fallback active",
+            fix: "Run `npm rebuild re2`",
+          },
+        ],
+      }),
+    );
+    expect(out).not.toBeNull();
+    expect(out).toContain("Renovate runtime warnings:");
+    expect(out).toContain("RE2 fallback active");
+    expect(out).toContain("Fix: Run `npm rebuild re2`");
+    // Should NOT include the "Partial availability" section when binaries are fine.
+    expect(out).not.toContain("Partial availability");
+  });
+
+  it("combines partial-availability and runtime-warnings sections when both apply", () => {
+    const out = startupBanner(
+      buildStatus({
+        renovate: { tool: "renovate", command: "renovate", found: false, error: "ENOENT" },
+        ok: false,
+        warnings: [
+          { kind: "re2-unusable", message: "RE2 fallback", fix: "Rebuild re2" },
+        ],
+      }),
+    );
+    expect(out).toContain("Partial availability");
+    expect(out).toContain("Renovate runtime warnings:");
+  });
+});
+
+describe("checkSetup runtime warnings aggregation", () => {
+  it("dedupes RE2 warnings emitted by both binaries into a single SetupStatus.warnings entry", async () => {
+    const { mkdtempSync, writeFileSync, chmodSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const path = await import("node:path");
+    const dir = mkdtempSync(path.join(tmpdir(), "rmcp-setup-warn-"));
+    const script = path.join(dir, "fake-renovate.mjs");
+    writeFileSync(
+      script,
+      `#!/usr/bin/env node\nprocess.stderr.write("WARN: RE2 not usable, falling back to RegExp\\n");\nprocess.stdout.write("99.0.0\\n");\n`,
+    );
+    chmodSync(script, 0o755);
+
+    process.env.RENOVATE_BIN = script;
+    process.env.RENOVATE_CONFIG_VALIDATOR_BIN = script;
+
+    const status = await checkSetup();
+
+    expect(status.renovate.found).toBe(true);
+    expect(status.renovateConfigValidator.found).toBe(true);
+    expect(status.warnings).toHaveLength(1);
+    expect(status.warnings[0]?.kind).toBe("re2-unusable");
+    expect(status.renovate.runtimeWarnings).toHaveLength(1);
+    expect(status.renovateConfigValidator.runtimeWarnings).toHaveLength(1);
   });
 });
 

@@ -1,9 +1,17 @@
 import { spawn } from "node:child_process";
+import { detectRuntimeWarnings, type RuntimeWarning } from "./runtimeWarnings.js";
 
 export interface RunResult {
   stdout: string;
   stderr: string;
   exitCode: number;
+  /**
+   * Renovate runtime conditions detected from stderr that the caller benefits
+   * from knowing about even though the run itself may have succeeded (e.g. RE2
+   * native-module dlopen failure causing a silent slow-path fallback). Always
+   * present — empty array when nothing was detected.
+   */
+  runtimeWarnings: RuntimeWarning[];
 }
 
 export interface RunOptions {
@@ -102,7 +110,12 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
         reject(new Error(`Command timed out after ${opts.timeoutMs}ms: ${cmd} ${args.join(" ")}`));
         return;
       }
-      resolve({ stdout, stderr, exitCode: code ?? -1 });
+      resolve({
+        stdout,
+        stderr,
+        exitCode: code ?? -1,
+        runtimeWarnings: detectRuntimeWarnings(stderr),
+      });
     });
 
     if (opts.stdin != null) {

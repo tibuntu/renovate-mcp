@@ -123,6 +123,23 @@ describe("run() streaming observers", () => {
     // All three lines were delivered even though one observer call threw.
     expect(seen).toEqual(["a", "b", "c"]);
   });
+
+  it("populates RunResult.runtimeWarnings when stderr contains the RE2 WARN", async () => {
+    const script = await makeScript(`
+      process.stderr.write("WARN: RE2 not usable, falling back to RegExp\\n");
+      process.stdout.write("99.0.0\\n");
+    `);
+    const result = await run(process.execPath, [script]);
+    expect(result.exitCode).toBe(0);
+    expect(result.runtimeWarnings).toHaveLength(1);
+    expect(result.runtimeWarnings[0]?.kind).toBe("re2-unusable");
+  });
+
+  it("returns an empty runtimeWarnings array when stderr is clean", async () => {
+    const script = await makeScript(`process.stdout.write("ok\\n");`);
+    const result = await run(process.execPath, [script]);
+    expect(result.runtimeWarnings).toEqual([]);
+  });
 });
 
 describe("formatMissingBinaryError", () => {

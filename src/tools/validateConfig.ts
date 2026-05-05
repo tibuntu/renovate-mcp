@@ -54,11 +54,15 @@ export function registerValidateConfig(server: McpServer): void {
         const result = await run(bin, args, { timeoutMs: 30_000 });
         const valid = result.exitCode === 0;
         const output = (result.stdout + result.stderr).trim();
+        const payload: Record<string, unknown> = { valid, output };
+        if (result.runtimeWarnings.length > 0) {
+          payload.warnings = result.runtimeWarnings;
+        }
         return {
           content: [
             {
               type: "text",
-              text: JSON.stringify({ valid, output }, null, 2),
+              text: JSON.stringify(payload, null, 2),
             },
           ],
           isError: !valid,
