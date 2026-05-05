@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.10.0](https://github.com/tibuntu/renovate-mcp/compare/v0.9.4...v0.10.0) (2026-05-05)
+
+
+### Features
+
+* warn when Renovate's RE2 native module is unusable ([343e976](https://github.com/tibuntu/renovate-mcp/commit/343e9762e961b6a5e373ef1c1f0714938d539641))
+
+
+### Bug Fixes
+
+* **ci:** use RELEASE_PLEASE_TOKEN so release PRs trigger required CI ([4e595d3](https://github.com/tibuntu/renovate-mcp/commit/4e595d3baed4b92baf4627b59509a5d76d087343))
+
 ## [0.9.4](https://github.com/tibuntu/renovate-mcp/compare/v0.9.3...v0.9.4) (2026-05-01)
 
 
