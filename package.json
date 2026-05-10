@@ -59,12 +59,17 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "ignore": "^7.0.5",
     "json5": "^2.2.3",
+    "renovate": "^43.139.5",
     "zod": "^4.0.0"
+  },
+  "overrides": {
+    "fast-uri": "^3.1.2",
+    "fast-xml-builder": "^1.1.7",
+    "simple-git": "^3.36.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@vitest/coverage-v8": "^4.1.0",
-    "renovate": "^43.139.5",
     "typescript": "^6.0.0",
     "vitest": "^4.1.0"
   },

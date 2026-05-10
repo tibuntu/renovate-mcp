@@ -28,7 +28,7 @@ const MAX_DETAIL_LENGTH = 300;
 const MAX_WARNINGS = 10;
 
 const RE2_FIX_HINT =
-  "The RE2 native module bundled with Renovate failed to load (likely after a Node version upgrade). Renovate is falling back to JavaScript `RegExp`, which is significantly slower for regex-heavy operations. To restore vectorized regex: `cd $(npm root -g)/renovate && npm rebuild re2`, or reinstall Renovate (`npm i -g renovate`). If `RENOVATE_BIN` points at a project-local install, run `npm rebuild re2` in that project instead.";
+  "The RE2 native module bundled with Renovate failed to load (likely after a Node version upgrade). Renovate is falling back to JavaScript `RegExp`, which is significantly slower for regex-heavy operations. To restore vectorized regex: reinstall renovate-mcp (which reinstalls the bundled `renovate` and rebuilds its native deps), or run `npm rebuild re2` inside the renovate-mcp install's `node_modules/renovate`. If `RENOVATE_BIN` points at a different Renovate install, run `npm rebuild re2` there instead.";
 
 const RE2_MESSAGE = "Renovate's RE2 native module is unusable; falling back to JavaScript `RegExp` (slower).";
 

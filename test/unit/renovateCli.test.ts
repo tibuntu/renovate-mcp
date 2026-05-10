@@ -15,28 +15,49 @@ afterEach(() => {
 });
 
 describe("resolveRenovateTool", () => {
-  it("falls back to 'renovate' when RENOVATE_BIN is unset", () => {
+  it("resolves the bundled `renovate` binary when RENOVATE_BIN is unset", () => {
     delete process.env.RENOVATE_BIN;
-    expect(resolveRenovateTool("renovate")).toBe("renovate");
+    const resolved = resolveRenovateTool("renovate");
+    // Renovate is a runtime dep, so the bundled lookup should always succeed
+    // in the test environment. The returned cmd is `node`, with the JS path
+    // prefix-arg pointing at the renovate package's `bin.renovate` entry.
+    expect(resolved.source).toBe("bundled");
+    expect(resolved.cmd).toBe(process.execPath);
+    expect(resolved.prefixArgs).toHaveLength(1);
+    expect(resolved.prefixArgs[0]).toMatch(/renovate\/dist\/renovate\.js$/);
+    // `command` is the raw tool name — the `(bundled)` label is composed by
+    // formatters using `source`, so callers can render hints cleanly without
+    // nested parens.
+    expect(resolved.command).toBe("renovate");
   });
 
-  it("respects RENOVATE_BIN", () => {
+  it("respects RENOVATE_BIN as an explicit override", () => {
     process.env.RENOVATE_BIN = "/opt/custom/renovate";
-    expect(resolveRenovateTool("renovate")).toBe("/opt/custom/renovate");
+    expect(resolveRenovateTool("renovate")).toEqual({
+      cmd: "/opt/custom/renovate",
+      prefixArgs: [],
+      source: "env",
+      command: "/opt/custom/renovate",
+    });
   });
 
-  it("falls back to 'renovate-config-validator' when RENOVATE_CONFIG_VALIDATOR_BIN is unset", () => {
+  it("resolves the bundled validator when RENOVATE_CONFIG_VALIDATOR_BIN is unset", () => {
     delete process.env.RENOVATE_CONFIG_VALIDATOR_BIN;
-    expect(resolveRenovateTool("renovate-config-validator")).toBe(
-      "renovate-config-validator",
-    );
+    const resolved = resolveRenovateTool("renovate-config-validator");
+    expect(resolved.source).toBe("bundled");
+    expect(resolved.cmd).toBe(process.execPath);
+    expect(resolved.prefixArgs[0]).toMatch(/renovate\/dist\/config-validator\.js$/);
+    expect(resolved.command).toBe("renovate-config-validator");
   });
 
-  it("respects RENOVATE_CONFIG_VALIDATOR_BIN", () => {
+  it("respects RENOVATE_CONFIG_VALIDATOR_BIN as an explicit override", () => {
     process.env.RENOVATE_CONFIG_VALIDATOR_BIN = "/opt/custom/validator";
-    expect(resolveRenovateTool("renovate-config-validator")).toBe(
-      "/opt/custom/validator",
-    );
+    expect(resolveRenovateTool("renovate-config-validator")).toEqual({
+      cmd: "/opt/custom/validator",
+      prefixArgs: [],
+      source: "env",
+      command: "/opt/custom/validator",
+    });
   });
 });
 
@@ -143,7 +164,7 @@ describe("run() streaming observers", () => {
 });
 
 describe("formatMissingBinaryError", () => {
-  it("names the tool, the env var, and points at check_setup", () => {
+  it("names the tool, the env var, mentions the bundled fallback, and points at check_setup", () => {
     const msg = formatMissingBinaryError(
       "renovate",
       new Error("spawn renovate ENOENT"),
@@ -151,6 +172,7 @@ describe("formatMissingBinaryError", () => {
     expect(msg).toContain("renovate");
     expect(msg).toContain("RENOVATE_BIN");
     expect(msg).toContain("check_setup");
+    expect(msg).toContain("bundled");
     expect(msg).toContain("spawn renovate ENOENT");
   });
 

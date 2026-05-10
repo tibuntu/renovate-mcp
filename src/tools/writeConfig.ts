@@ -104,8 +104,8 @@ export function registerWriteConfig(server: McpServer): void {
         let validatorMissing = false;
         let runtimeWarnings: RuntimeWarning[] = [];
         try {
-          const bin = resolveRenovateTool("renovate-config-validator");
-          const v = await run(bin, [tmp], { timeoutMs: 30_000 });
+          const tool = resolveRenovateTool("renovate-config-validator");
+          const v = await run(tool.cmd, [...tool.prefixArgs, tmp], { timeoutMs: 30_000 });
           validationOutput = (v.stdout + v.stderr).trim();
           valid = v.exitCode === 0;
           runtimeWarnings = v.runtimeWarnings;
@@ -120,7 +120,7 @@ export function registerWriteConfig(server: McpServer): void {
             reason: validatorMissing ? "validator-unavailable" : "validation-failed",
             validationOutput,
             hint: validatorMissing
-              ? "Install renovate-config-validator (or set RENOVATE_CONFIG_VALIDATOR_BIN), then retry. Pass force=true to skip validation entirely."
+              ? "The bundled renovate-config-validator failed to spawn. Set RENOVATE_CONFIG_VALIDATOR_BIN to a working binary or reinstall renovate-mcp, then retry. Pass force=true to skip validation entirely."
               : "Pass force=true to write anyway.",
           };
           if (runtimeWarnings.length > 0) failPayload.warnings = runtimeWarnings;
