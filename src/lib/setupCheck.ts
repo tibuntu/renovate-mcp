@@ -6,6 +6,13 @@ export type RenovateBinary = "renovate" | "renovate-config-validator";
 export interface BinaryStatus {
   tool: RenovateBinary;
   command: string;
+  /**
+   * Where the resolved binary came from. `bundled` means renovate-mcp's own
+   * `node_modules/renovate` was used (the default); `env` means the user set
+   * `RENOVATE_BIN` / `RENOVATE_CONFIG_VALIDATOR_BIN`; `path` means the bundled
+   * lookup failed and we fell through to the bare tool name on `PATH`.
+   */
+  source: "env" | "bundled" | "path";
   found: boolean;
   version?: string;
   error?: string;
@@ -62,17 +69,21 @@ export interface SetupStatus {
 const VERSION_TIMEOUT_MS = 10_000;
 
 const INSTALL_HINT =
-  "Install Renovate globally with `npm i -g renovate`, or set RENOVATE_BIN / RENOVATE_CONFIG_VALIDATOR_BIN to existing binaries.";
+  "Renovate ships bundled with renovate-mcp; if that fails to load, set RENOVATE_BIN / RENOVATE_CONFIG_VALIDATOR_BIN to a working binary or reinstall renovate-mcp.";
 
 async function checkBinary(tool: RenovateBinary): Promise<BinaryStatus> {
-  const command = resolveRenovateTool(tool);
+  const resolved = resolveRenovateTool(tool);
+  const command = resolved.command;
   try {
-    const result = await run(command, ["--version"], { timeoutMs: VERSION_TIMEOUT_MS });
+    const result = await run(resolved.cmd, [...resolved.prefixArgs, "--version"], {
+      timeoutMs: VERSION_TIMEOUT_MS,
+    });
     const runtimeWarnings = result.runtimeWarnings.length ? result.runtimeWarnings : undefined;
     if (result.exitCode !== 0) {
       return {
         tool,
         command,
+        source: resolved.source,
         found: false,
         error: (result.stderr || result.stdout).trim() || `exit code ${result.exitCode}`,
         runtimeWarnings,
@@ -81,6 +92,7 @@ async function checkBinary(tool: RenovateBinary): Promise<BinaryStatus> {
     return {
       tool,
       command,
+      source: resolved.source,
       found: true,
       version: result.stdout.trim() || undefined,
       runtimeWarnings,
@@ -89,6 +101,7 @@ async function checkBinary(tool: RenovateBinary): Promise<BinaryStatus> {
     return {
       tool,
       command,
+      source: resolved.source,
       found: false,
       error: (err as Error).message,
     };
@@ -250,9 +263,9 @@ export function startupBanner(status: SetupStatus): string | null {
     sections.push(
       [
         "Partial availability:",
-        `  Renovate CLI not found — only blocks: ${unavailList}.`,
+        `  Renovate CLI not reachable — only blocks: ${unavailList}.`,
         `  Offline tools (${offlineList}) still work; do not flag this as a setup problem when the task only needs those.`,
-        "  Install Renovate (`npm i -g renovate`) before calling the blocked tools, or call `check_setup` for a full diagnostic.",
+        "  Renovate ships bundled with renovate-mcp; if you see this banner, the bundled binary failed to spawn or `RENOVATE_BIN` / `RENOVATE_CONFIG_VALIDATOR_BIN` points at a broken binary. Call `check_setup` for a full diagnostic.",
         "  Set `RENOVATE_MCP_REQUIRE_CLI=false` to suppress this notice if you have consciously chosen the offline subset.",
       ].join("\n"),
     );
@@ -313,6 +326,12 @@ export function describeSetup(status: SetupStatus): string {
 }
 
 function formatBinary(s: BinaryStatus): string {
-  if (s.found) return `${s.version ?? "(version unknown)"} (${s.command})`;
-  return `MISSING — ${s.error ?? "unknown error"}`;
+  if (s.found) {
+    const version = s.version ?? "(version unknown)";
+    if (s.source === "bundled") return `${version} (bundled)`;
+    const prefix = s.source === "env" ? "env" : "PATH";
+    return `${version} (${prefix}: ${s.command})`;
+  }
+  if (s.source === "bundled") return `MISSING — ${s.error ?? "unknown error"} (bundled)`;
+  return `MISSING — ${s.error ?? "unknown error"} (${s.command})`;
 }

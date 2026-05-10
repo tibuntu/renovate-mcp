@@ -1,5 +1,10 @@
 import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
+import path from "node:path";
+import fs from "node:fs";
 import { detectRuntimeWarnings, type RuntimeWarning } from "./runtimeWarnings.js";
+
+const requireFromHere = createRequire(import.meta.url);
 
 export interface RunResult {
   stdout: string;
@@ -126,22 +131,79 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
   });
 }
 
+export interface ResolvedRenovateTool {
+  /** Process to spawn. */
+  cmd: string;
+  /** Args prepended to the caller's args (e.g., the JS file path when `cmd` is `node`). */
+  prefixArgs: string[];
+  /** Where the binary came from — drives setup-status messaging. */
+  source: "env" | "bundled" | "path";
+  /**
+   * Raw user-visible identifier for the resolved binary. For `env` it's the
+   * env-var value (often an absolute path); for `bundled` and `path` it's the
+   * tool name. Callers compose this with `source` when rendering a label —
+   * keeping it raw avoids producing nested parens in error messages like
+   * `MISSING — <err> (<command>)`.
+   */
+  command: string;
+}
+
 /**
- * Resolve how to invoke a Renovate CLI tool. Users can override via env:
- *   RENOVATE_BIN                  — path to the `renovate` binary
- *   RENOVATE_CONFIG_VALIDATOR_BIN — path to the validator binary
- * Otherwise we rely on PATH resolution (globally installed Renovate, or a
- * `npm exec` from a project with Renovate installed locally).
+ * Locate the JS entry-point for one of Renovate's CLI tools inside the
+ * `renovate` npm package shipped as a runtime dep. Returns `null` if the
+ * package can't be resolved or its `bin` field doesn't list the tool —
+ * callers fall back to PATH lookup so a user with a deliberately broken
+ * `renovate` install (or an unusual install topology that hides it from
+ * `require.resolve`) still has an escape hatch.
  */
-export function resolveRenovateTool(tool: "renovate" | "renovate-config-validator"): string {
+function resolveBundledBinary(tool: "renovate" | "renovate-config-validator"): string | null {
+  try {
+    const pkgPath = requireFromHere.resolve("renovate/package.json");
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8")) as { bin?: Record<string, string> };
+    const binEntry = pkg.bin?.[tool];
+    if (typeof binEntry !== "string") return null;
+    const binAbs = path.join(path.dirname(pkgPath), binEntry);
+    if (!fs.existsSync(binAbs)) return null;
+    return binAbs;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve how to invoke a Renovate CLI tool. Resolution order:
+ *   1. `RENOVATE_BIN` / `RENOVATE_CONFIG_VALIDATOR_BIN` env override — if set,
+ *      always wins (even if it points at a broken path; we surface the spawn
+ *      error rather than silently falling through).
+ *   2. Bundled binary — the `renovate` package is a runtime dep, so its
+ *      `bin/renovate.js` / `bin/config-validator.js` ship with the install.
+ *      Spawned as `node <jsPath>` to sidestep shebang/permission concerns.
+ *   3. Bare tool name on `PATH` — last-resort fallback for the unusual case
+ *      where the bundled lookup fails (e.g. a corrupted node_modules). Only
+ *      manually tested; unit-testing this branch would require monkey-patching
+ *      `require.resolve` to fake a bundled-lookup failure.
+ */
+export function resolveRenovateTool(
+  tool: "renovate" | "renovate-config-validator",
+): ResolvedRenovateTool {
   const envKey = tool === "renovate" ? "RENOVATE_BIN" : "RENOVATE_CONFIG_VALIDATOR_BIN";
-  return process.env[envKey] || tool;
+  const envValue = process.env[envKey];
+  if (envValue) {
+    return { cmd: envValue, prefixArgs: [], source: "env", command: envValue };
+  }
+  const bundled = resolveBundledBinary(tool);
+  if (bundled) {
+    return { cmd: process.execPath, prefixArgs: [bundled], source: "bundled", command: tool };
+  }
+  return { cmd: tool, prefixArgs: [], source: "path", command: tool };
 }
 
 /**
  * Centralized message for when a Renovate CLI binary can't be spawned (ENOENT,
  * permission denied, etc.). Used by all tools that shell out so users get
- * consistent, actionable hints instead of raw spawn errors.
+ * consistent, actionable hints instead of raw spawn errors. Renovate ships
+ * bundled with the server, so the most likely cause of failure here is a
+ * deliberately broken `RENOVATE_BIN` override or a corrupted install.
  */
 export function formatMissingBinaryError(
   tool: "renovate" | "renovate-config-validator",
@@ -150,7 +212,7 @@ export function formatMissingBinaryError(
   const envKey = tool === "renovate" ? "RENOVATE_BIN" : "RENOVATE_CONFIG_VALIDATOR_BIN";
   return [
     `Failed to run \`${tool}\`: ${cause.message}.`,
-    `Install Renovate globally with \`npm i -g renovate\`, or set ${envKey} to point at an existing binary.`,
+    `Renovate ships bundled with renovate-mcp; if the bundled binary fails to load, set ${envKey} to a working binary or reinstall renovate-mcp.`,
     "Call the `check_setup` tool for a full diagnostic.",
   ].join(" ");
 }

@@ -64,6 +64,19 @@ describe("checkSetup", () => {
       RENOVATE_BIN: "/bin/echo",
       RENOVATE_CONFIG_VALIDATOR_BIN: "/bin/echo",
     });
+    expect(status.renovate.source).toBe("env");
+    expect(status.renovateConfigValidator.source).toBe("env");
+  });
+
+  it("uses the bundled binary when no env override is set", async () => {
+    delete process.env.RENOVATE_BIN;
+    delete process.env.RENOVATE_CONFIG_VALIDATOR_BIN;
+    const status = await checkSetup();
+    expect(status.renovate.source).toBe("bundled");
+    expect(status.renovate.found).toBe(true);
+    expect(status.renovate.version).toBeDefined();
+    expect(status.renovateConfigValidator.source).toBe("bundled");
+    expect(status.renovateConfigValidator.found).toBe(true);
   });
 });
 
@@ -74,12 +87,14 @@ describe("describeSetup", () => {
       renovate: {
         tool: "renovate",
         command: "renovate",
+        source: "path",
         found: true,
         version: "43.0.0",
       },
       renovateConfigValidator: {
         tool: "renovate-config-validator",
         command: "renovate-config-validator",
+        source: "path",
         found: true,
         version: "43.0.0",
       },
@@ -98,10 +113,17 @@ describe("describeSetup", () => {
 function buildStatus(overrides: Partial<SetupStatus> = {}): SetupStatus {
   const base: SetupStatus = {
     node: "v20.0.0",
-    renovate: { tool: "renovate", command: "renovate", found: true, version: "43.0.0" },
+    renovate: {
+      tool: "renovate",
+      command: "renovate",
+      source: "bundled",
+      found: true,
+      version: "43.0.0",
+    },
     renovateConfigValidator: {
       tool: "renovate-config-validator",
       command: "renovate-config-validator",
+      source: "bundled",
       found: true,
       version: "43.0.0",
     },
@@ -124,6 +146,7 @@ describe("unavailableTools", () => {
       renovateConfigValidator: {
         tool: "renovate-config-validator",
         command: "renovate-config-validator",
+        source: "bundled",
         found: false,
         error: "ENOENT",
       },
@@ -134,7 +157,7 @@ describe("unavailableTools", () => {
 
   it("lists dry_run when only renovate is missing", () => {
     const status = buildStatus({
-      renovate: { tool: "renovate", command: "renovate", found: false, error: "ENOENT" },
+      renovate: { tool: "renovate", command: "renovate", source: "bundled", found: false, error: "ENOENT" },
       ok: false,
     });
     expect(unavailableTools(status)).toEqual(["dry_run"]);
@@ -142,10 +165,11 @@ describe("unavailableTools", () => {
 
   it("lists all three CLI-backed tools when both binaries are missing", () => {
     const status = buildStatus({
-      renovate: { tool: "renovate", command: "renovate", found: false, error: "ENOENT" },
+      renovate: { tool: "renovate", command: "renovate", source: "bundled", found: false, error: "ENOENT" },
       renovateConfigValidator: {
         tool: "renovate-config-validator",
         command: "renovate-config-validator",
+        source: "bundled",
         found: false,
         error: "ENOENT",
       },
@@ -162,10 +186,11 @@ describe("startupBanner", () => {
 
   it("mentions only the blocked tools and reassures that offline tools still work", () => {
     const status = buildStatus({
-      renovate: { tool: "renovate", command: "renovate", found: false, error: "ENOENT" },
+      renovate: { tool: "renovate", command: "renovate", source: "bundled", found: false, error: "ENOENT" },
       renovateConfigValidator: {
         tool: "renovate-config-validator",
         command: "renovate-config-validator",
+        source: "bundled",
         found: false,
         error: "ENOENT",
       },
@@ -190,6 +215,7 @@ describe("startupBanner", () => {
       renovateConfigValidator: {
         tool: "renovate-config-validator",
         command: "renovate-config-validator",
+        source: "bundled",
         found: false,
         error: "ENOENT",
       },
@@ -209,12 +235,14 @@ describe("describeSetup (legacy verbose diagnostic)", () => {
       renovate: {
         tool: "renovate",
         command: "renovate",
+        source: "env",
         found: false,
         error: "spawn renovate ENOENT",
       },
       renovateConfigValidator: {
         tool: "renovate-config-validator",
         command: "renovate-config-validator",
+        source: "env",
         found: false,
         error: "spawn renovate-config-validator ENOENT",
       },
@@ -271,7 +299,7 @@ describe("startupBanner with runtime warnings", () => {
   it("combines partial-availability and runtime-warnings sections when both apply", () => {
     const out = startupBanner(
       buildStatus({
-        renovate: { tool: "renovate", command: "renovate", found: false, error: "ENOENT" },
+        renovate: { tool: "renovate", command: "renovate", source: "bundled", found: false, error: "ENOENT" },
         ok: false,
         warnings: [
           { kind: "re2-unusable", message: "RE2 fallback", fix: "Rebuild re2" },

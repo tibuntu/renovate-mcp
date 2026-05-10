@@ -174,7 +174,7 @@ export function registerDryRun(server: McpServer): void {
       }
 
       const reportPath = path.join(tmpdir(), `renovate-mcp-report-${randomUUID()}.json`);
-      const bin = resolveRenovateTool("renovate");
+      const tool = resolveRenovateTool("renovate");
       const ruleList: HostRule[] = hostRules ?? [];
       // When the caller doesn't pass `platform`, fall back to RENOVATE_PLATFORM
       // from the MCP server's env before defaulting to `local`. Without this,
@@ -347,7 +347,7 @@ export function registerDryRun(server: McpServer): void {
           );
         }
 
-        const result = await run(bin, args, {
+        const result = await run(tool.cmd, [...tool.prefixArgs, ...args], {
           cwd: repoPath,
           env: childEnv,
           timeoutMs,

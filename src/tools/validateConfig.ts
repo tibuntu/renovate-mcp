@@ -47,11 +47,11 @@ export function registerValidateConfig(server: McpServer): void {
       }
 
       try {
-        const bin = resolveRenovateTool("renovate-config-validator");
+        const tool = resolveRenovateTool("renovate-config-validator");
         const args: string[] = [];
         if (strict) args.push("--strict");
         args.push(target);
-        const result = await run(bin, args, { timeoutMs: 30_000 });
+        const result = await run(tool.cmd, [...tool.prefixArgs, ...args], { timeoutMs: 30_000 });
         const valid = result.exitCode === 0;
         const output = (result.stdout + result.stderr).trim();
         const payload: Record<string, unknown> = { valid, output };
