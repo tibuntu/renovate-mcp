@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/tibuntu/renovate-mcp/compare/v0.10.0...v0.11.0) (2026-05-10)
+
+
+### Features
+
+* bundle Renovate as a runtime dependency ([9029e5d](https://github.com/tibuntu/renovate-mcp/commit/9029e5d1aca1aa7f3107f48a0988e1a4536b62a9))
+
 ## [0.10.0](https://github.com/tibuntu/renovate-mcp/compare/v0.9.4...v0.10.0) (2026-05-05)
 
 
