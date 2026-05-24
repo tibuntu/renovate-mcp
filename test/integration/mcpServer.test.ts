@@ -308,6 +308,31 @@ describe("lint_config end-to-end", () => {
     expect(res.result?.isError).toBe(true);
     expect(res.result?.content[0]?.text).toContain("Provide either configPath");
   });
+
+  it("flags a deprecated key and points the user at migrate_config", async () => {
+    session = await startServer();
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+    }>("tools/call", {
+      name: "lint_config",
+      arguments: {
+        configContent: { masterIssue: true },
+      },
+    });
+    const parsed = JSON.parse(res.result?.content[0]?.text ?? "{}");
+    expect(parsed.clean).toBe(false);
+    const dep = parsed.findings.filter(
+      (f: { ruleId: string }) => f.ruleId === "deprecated-key",
+    );
+    expect(dep).toHaveLength(1);
+    expect(dep[0]).toMatchObject({
+      ruleId: "deprecated-key",
+      path: "masterIssue",
+      value: "masterIssue",
+    });
+    expect(dep[0].message).toContain("dependencyDashboard");
+    expect(dep[0].message).toContain("migrate_config");
+  });
 });
 
 describe("resolve_config end-to-end", () => {
