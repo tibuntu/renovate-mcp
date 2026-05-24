@@ -19,14 +19,20 @@
       "automerge": true
     },
     {
-      "description": "On every renovate devDependency bump, regenerate src/data/presets.generated.ts so the committed preset snapshot stays in lockstep with the installed Renovate version. Requires the operator's RENOVATE_ALLOWED_POST_UPGRADE_COMMANDS to permit `npm ci` and `npm run generate:presets`.",
+      "description": "On every renovate devDependency bump, regenerate the committed snapshots under src/data/ so they stay in lockstep with the installed Renovate version. Requires the operator's RENOVATE_ALLOWED_POST_UPGRADE_COMMANDS to permit `npm ci` and the three `npm run generate:*` commands.",
       "matchPackageNames": ["renovate"],
       "postUpgradeTasks": {
         "commands": [
           "npm ci",
-          "npm run generate:presets"
+          "npm run generate:presets",
+          "npm run generate:managers",
+          "npm run generate:migrations"
         ],
-        "fileFilters": ["src/data/presets.generated.ts"],
+        "fileFilters": [
+          "src/data/presets.generated.ts",
+          "src/data/managers.generated.ts",
+          "src/data/migrations.generated.ts"
+        ],
         "executionMode": "branch"
       }
     }
