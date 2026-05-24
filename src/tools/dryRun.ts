@@ -28,6 +28,32 @@ import {
   tokenString,
 } from "../lib/inputLimits.js";
 
+/**
+ * Verbatim advisory warning emitted by `dry_run` when an inline secret is
+ * detected on the tool input (the top-level `token` parameter or any non-empty
+ * `hostRules[].token`). Exported so the integration tests can assert against
+ * the source-of-truth string rather than duplicating the literal (which would
+ * silently drift if the message ever changed).
+ */
+export const INLINE_SECRET_WARNING =
+  "Secret supplied inline. Prefer setting `RENOVATE_TOKEN` (or `GITHUB_TOKEN` / `GITLAB_TOKEN`) on the MCP server environment; inline secrets are stored in tool transcripts that may be shared, persisted by clients, or fed back into LLMs.";
+
+/**
+ * Returns true when any rule in the list carries a non-empty string `token`
+ * field. Deliberately only inspects `token` (NOT `password`): the locked
+ * trigger for the inline-secret warning is `token`-only — `collectSecrets` in
+ * `hostRulesConfig.ts` harvests both for scrubbing purposes, but the warning
+ * must not fire on a `password`-only host rule.
+ */
+function hasInlineHostRuleToken(rules: HostRule[]): boolean {
+  for (const rule of rules) {
+    if (!rule || typeof rule !== "object") continue;
+    const value = rule.token;
+    if (typeof value === "string" && value.length > 0) return true;
+  }
+  return false;
+}
+
 const hostRuleSchema = hostRuleRecord(
   "A single Renovate hostRule (matchHost, hostType, username, password, token, …). Structure is not validated here — Renovate's own config loader checks it when the temp file is read.",
 );
@@ -112,7 +138,7 @@ export function registerDryRun(server: McpServer): void {
     {
       title: "Dry-run Renovate",
       description:
-        "Run Renovate in dry-run mode to preview what it would do — no PRs opened, no git pushes. Returns a structured JSON report plus a top-level `ok` boolean (false when the CLI failed OR the report records a validation/error-level problem, even if the exit code was 0).\n\nDefault mode runs `--platform=local` against the filesystem at `repoPath`. If your config extends `local>…` presets, pass `platform` (`github` or `gitlab`), `endpoint` (API base URL), `token`, and `repository` to run as a real platform client that can actually fetch those presets — Renovate still runs with `--dry-run`, so no PRs are opened. If you only need `gitlab>…` / `github>…` presets resolved against a self-hosted host (not a full remote run), pass just `endpoint` (and `token` if needed) while leaving `platform` unset — both flow through to Renovate in local mode too, which is enough to redirect those preset shortcuts away from the public defaults. The tool preflight-checks for `local>` presets under `--platform=local` (in `lookup` and `full` modes) and fails fast with remediation guidance rather than spawning a Renovate run that would fail opaquely with `config-validation`. The preflight is skipped for `dryRunMode=extract` so manifest-only extraction can be attempted regardless.\n\nWhen the `token` input is omitted, the tool falls back to `RENOVATE_TOKEN` from the MCP server's env, then to `GITLAB_TOKEN` (when `platform=gitlab`) or `GITHUB_TOKEN` (when `platform=github`) — whichever is auto-translated to `RENOVATE_TOKEN` for the spawned Renovate CLI. This matches the precedence `resolve_config` already uses, so a single `GITLAB_TOKEN` in `.mcp.json` works for both tools. For a remote-platform run, an actionable preflight error is returned before spawning Renovate when no token can be resolved at all.\n\nCredentials for private registries (e.g. `COMPOSER_AUTH` for Packagist/Satis proxies, `NPM_TOKEN` / `.npmrc` for npm, Docker registry creds, `RENOVATE_HOST_RULES` for anything else) must be set on the MCP server process itself — via the `env` key in `claude_desktop_config.json` / `.mcp.json`, not your shell, since the MCP server runs as a child of Claude and does not inherit shell env. Alternatively, encode credentials as `hostRules` in the Renovate config, or pass them per-call via the `hostRules` input on this tool (written to a mode-0600 temp file that is cleaned up after the run; token/password values — including the platform `token` input — are scrubbed from `logTail` and `problems`). Per-call `hostRules` are appended to any the repo's own config already declares. If a lookup can't auth to a registry, Renovate often reports 0 updates without a loud error; when that happens this tool surfaces detected auth failures under `problems` in the output so callers can distinguish a genuine \"no updates\" from a silent registry-auth failure.",
+        "Run Renovate in dry-run mode to preview what it would do — no PRs opened, no git pushes. Returns a structured JSON report plus a top-level `ok` boolean (false when the CLI failed OR the report records a validation/error-level problem, even if the exit code was 0).\n\n**Auth — prefer env vars.** Set `RENOVATE_TOKEN` (or `GITHUB_TOKEN` / `GITLAB_TOKEN`, auto-translated to `RENOVATE_TOKEN` for the spawned Renovate CLI) on the MCP server's env via `claude_desktop_config.json` / `.mcp.json`. This matches the precedence `resolve_config` uses, so a single `GITLAB_TOKEN` in `.mcp.json` works for both tools. The `token` input is retained as an ad-hoc / testing fallback — when supplied inline it is persisted in the MCP tool transcript that the client may share, replay, or feed back into the LLM, so an advisory entry is appended to the result `warnings` array steering callers toward env-var auth. For a remote-platform run, an actionable preflight error is returned before spawning Renovate when no token can be resolved at all.\n\nDefault mode runs `--platform=local` against the filesystem at `repoPath`. If your config extends `local>…` presets, pass `platform` (`github` or `gitlab`), `endpoint` (API base URL), `token`, and `repository` to run as a real platform client that can actually fetch those presets — Renovate still runs with `--dry-run`, so no PRs are opened. If you only need `gitlab>…` / `github>…` presets resolved against a self-hosted host (not a full remote run), pass just `endpoint` (and `token` if needed) while leaving `platform` unset — both flow through to Renovate in local mode too, which is enough to redirect those preset shortcuts away from the public defaults. The tool preflight-checks for `local>` presets under `--platform=local` (in `lookup` and `full` modes) and fails fast with remediation guidance rather than spawning a Renovate run that would fail opaquely with `config-validation`. The preflight is skipped for `dryRunMode=extract` so manifest-only extraction can be attempted regardless.\n\nCredentials for private registries (e.g. `COMPOSER_AUTH` for Packagist/Satis proxies, `NPM_TOKEN` / `.npmrc` for npm, Docker registry creds, `RENOVATE_HOST_RULES` for anything else) must be set on the MCP server process itself — via the `env` key in `claude_desktop_config.json` / `.mcp.json`, not your shell, since the MCP server runs as a child of Claude and does not inherit shell env. Alternatively, encode credentials as `hostRules` in the Renovate config, or pass them per-call via the `hostRules` input on this tool (written to a mode-0600 temp file that is cleaned up after the run; token/password values — including the platform `token` input — are scrubbed from `logTail` and `problems`). Per-call `hostRules` are appended to any the repo's own config already declares. If a lookup can't auth to a registry, Renovate often reports 0 updates without a loud error; when that happens this tool surfaces detected auth failures under `problems` in the output so callers can distinguish a genuine \"no updates\" from a silent registry-auth failure.",
       inputSchema: {
         repoPath: pathString(
           "Absolute path to the repository root. Required for the default `platform=local` mode. When `platform` is overridden (e.g. `gitlab` / `github`), Renovate runs against the remote `repository` instead — `repoPath` is still used as the child's working directory but its manifest files are ignored.",
@@ -213,6 +239,18 @@ export function registerDryRun(server: McpServer): void {
 
       const secrets = collectSecrets(ruleList);
       if (resolvedToken) secrets.push(resolvedToken);
+
+      // Inline-secret detection: fires when the *original* `token` parameter
+      // (not the env-resolved fallback) is a non-empty string, or when any
+      // host rule carries a non-empty `token`. Evaluated here — after input
+      // parsing but before spawn — so the advisory warning still surfaces
+      // even if the subsequent Renovate spawn fails. One consolidated warning
+      // is emitted regardless of how many triggers fire (no N+1 spam).
+      const inlineSecretDetected =
+        (typeof token === "string" && token.length > 0) || hasInlineHostRuleToken(ruleList);
+      const mcpWarnings: string[] = [];
+      if (inlineSecretDetected) mcpWarnings.push(INLINE_SECRET_WARNING);
+
       let hostRulesConfigPath: string | undefined;
 
       if (isRemotePlatform && !repository) {
@@ -399,8 +437,12 @@ export function registerDryRun(server: McpServer): void {
           summary.reportErrors = reportErrors;
         }
 
-        if (result.runtimeWarnings.length > 0) {
-          summary.warnings = result.runtimeWarnings;
+        // Merge MCP-side advisory warnings (currently just the inline-secret
+        // notice) ahead of Renovate's own runtime warnings so they surface at
+        // the top of the array — easier for clients to render prominently.
+        const combinedWarnings = [...mcpWarnings, ...result.runtimeWarnings];
+        if (combinedWarnings.length > 0) {
+          summary.warnings = combinedWarnings;
         }
 
         // If no structured report, surface the last bit of stderr so Claude can
