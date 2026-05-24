@@ -11,7 +11,7 @@ afterEach(async () => {
 });
 
 describe("MCP server stdio handshake", () => {
-  it("lists all eleven tools with expected names", async () => {
+  it("lists all twelve tools with expected names", async () => {
     session = await startServer();
     const res = await session.request<{ tools: Array<{ name: string }> }>("tools/list");
     const names = (res.result?.tools ?? []).map((t) => t.name).sort();
@@ -22,6 +22,7 @@ describe("MCP server stdio handshake", () => {
       "explain_config",
       "get_version",
       "lint_config",
+      "migrate_config",
       "preview_custom_manager",
       "read_config",
       "resolve_config",

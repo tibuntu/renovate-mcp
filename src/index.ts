@@ -11,6 +11,7 @@ import { registerPreviewCustomManager } from "./tools/previewCustomManager.js";
 import { registerDryRun } from "./tools/dryRun.js";
 import { registerDryRunDiff } from "./tools/dryRunDiff.js";
 import { registerWriteConfig } from "./tools/writeConfig.js";
+import { registerMigrateConfig } from "./tools/migrateConfig.js";
 import { registerGetVersion } from "./tools/getVersion.js";
 import { registerPresetResources } from "./resources/presets.js";
 import { checkSetup, startupBanner } from "./lib/setupCheck.js";
@@ -39,7 +40,8 @@ const BASE_INSTRUCTIONS = [
   "  6. lint_config            — semantic lint pass: catches Renovate-specific footguns schema validation misses (e.g. malformed /…/ regex patterns)",
   "  7. dry_run                — preview what Renovate would actually do (no PRs)",
   "  8. dry_run_diff           — semantic diff between two dry_run reports (added/removed/changed updates)",
-  "  9. write_config           — save the agreed-upon config (validates first)",
+  "  9. migrate_config         — apply Renovate's built-in migrations (deprecated keys → current schema) and return the migrated config",
+  " 10. write_config           — save the agreed-upon config (validates first)",
   "",
   "If any tool fails unexpectedly, call check_setup to diagnose CLI availability.",
   "Built-in preset reference: renovate://presets (namespace index), renovate://presets/{namespace} (one namespace), renovate://preset/{name} (one preset's expanded JSON).",
@@ -73,6 +75,7 @@ registerValidateConfig(server);
 registerLintConfig(server);
 registerDryRun(server);
 registerDryRunDiff(server);
+registerMigrateConfig(server);
 registerWriteConfig(server);
 registerGetVersion(server);
 registerPresetResources(server);

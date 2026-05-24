@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 MCP server that helps users design Renovate configurations interactively. TypeScript, Node ≥ 24 (aligns with Renovate's own engine requirement), built with `@modelcontextprotocol/sdk` 1.x, stdio transport.
 
-Surface is intentionally small: eleven tools (`check_setup`, `read_config`, `resolve_config`, `explain_config`, `preview_custom_manager`, `validate_config`, `lint_config`, `dry_run`, `dry_run_diff`, `write_config`, `get_version`) plus the `renovate://presets` resource family (namespace index, per-namespace listings, per-preset JSON). Don't grow this without a reason — the roadmap for expansion lives in the GitHub issues, not in ad-hoc additions.
+Surface is intentionally small: twelve tools (`check_setup`, `read_config`, `resolve_config`, `explain_config`, `preview_custom_manager`, `validate_config`, `lint_config`, `dry_run`, `dry_run_diff`, `migrate_config`, `write_config`, `get_version`) plus the `renovate://presets` resource family (namespace index, per-namespace listings, per-preset JSON). Don't grow this without a reason — the roadmap for expansion lives in the GitHub issues, not in ad-hoc additions.
 
 ## Commands
 
@@ -28,7 +28,9 @@ Two tsconfigs: the root `tsconfig.json` includes both `src/` and `test/` and is 
 
 ## Architecture — the non-obvious bits
 
-**Shell out to the Renovate CLI at runtime; never import `renovate` as a library in `src/`.** Every tool that needs Renovate goes through `src/lib/renovateCli.ts`, which resolves the binary name (overridable via `RENOVATE_BIN` / `RENOVATE_CONFIG_VALIDATOR_BIN` env vars) and spawns it as a child process. Importing `renovate` from `src/` is the wrong pattern — the whole runtime design hinges on staying decoupled from Renovate's API surface. (Exception: build-time scripts under `scripts/` may import Renovate to generate committed snapshots — see the preset catalogue.)
+**Shell out to the Renovate CLI at runtime; never import `renovate` as a library in `src/` from the main process.** Every tool that needs Renovate goes through `src/lib/renovateCli.ts`, which resolves the binary name (overridable via `RENOVATE_BIN` / `RENOVATE_CONFIG_VALIDATOR_BIN` env vars) and spawns it as a child process. Importing `renovate` from the main server process is the wrong pattern — the whole runtime design hinges on staying decoupled from Renovate's API surface. Exceptions:
+- Build-time scripts under `scripts/` may import Renovate to generate committed snapshots — see the preset catalogue.
+- **Worker-thread isolation is an explicit carve-out** for tools that need a Renovate library export with no CLI equivalent. `migrate_config` does this via `src/lib/migrationWorker.ts` + `src/lib/migrationWorkerImpl.ts`: the main process spawns a worker on demand; the worker imports `renovate/dist/config/migration.js`; the main process itself never imports `renovate`. See `docs/adr/0001-worker-isolated-renovate-migration.md` for the rationale. Future tools wanting the same shape need their own ADR.
 
 **Each tool is a `register<Name>(server)` function in its own file** under `src/tools/`. `src/index.ts` wires them all into a single `McpServer` instance. Same pattern for resources under `src/resources/`.
 
