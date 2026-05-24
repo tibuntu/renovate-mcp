@@ -7,6 +7,5 @@ coverage/
 .DS_Store
 .claude*/
 .serena/
-.swarm/
+.planning/
 docs/
-*.db
