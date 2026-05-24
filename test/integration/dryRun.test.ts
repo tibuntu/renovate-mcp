@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile, readFile, chmod, access } from "node:fs/promise
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { startServer, type McpSession } from "../helpers/mcpSession.js";
+import { INLINE_SECRET_WARNING } from "../../src/tools/dryRun.js";
 
 /**
  * dry_run shells out to `renovate`; CI does not install it. We point
@@ -947,5 +948,131 @@ process.exit(1);
     const text = res.result!.content[0]!.text;
     expect(text).not.toContain("glpat-leaky-987");
     expect(text).toContain("[REDACTED]");
+  });
+});
+
+describe("dry_run inline-secret warning", () => {
+  // All four cases use the same fake binary shape as the hostRules describe:
+  // emit an empty report so the handler reaches the `summary.warnings`
+  // assignment, exit 0, no runtime warnings of its own. Whatever ends up in
+  // `summary.warnings` therefore came from our MCP-side detection branch.
+  it("inline token triggers exactly one warning", async () => {
+    const fakeBin = await makeFakeRenovate(repo);
+    session = await startServer({ RENOVATE_BIN: fakeBin });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: { repoPath: repo, token: "secret-inline-abc" },
+    });
+
+    const summary = JSON.parse(res.result!.content[0]!.text) as {
+      warnings?: string[];
+    };
+    expect(summary.warnings).toBeDefined();
+    const matches = summary.warnings!.filter((w) => w === INLINE_SECRET_WARNING);
+    expect(matches).toHaveLength(1);
+  });
+
+  it("inline hostRules[].token triggers exactly one warning", async () => {
+    const fakeBin = await makeFakeRenovate(repo);
+    session = await startServer({ RENOVATE_BIN: fakeBin });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: {
+        repoPath: repo,
+        hostRules: [{ matchHost: "registry.example.com", token: "host-secret-1" }],
+      },
+    });
+
+    const summary = JSON.parse(res.result!.content[0]!.text) as {
+      warnings?: string[];
+    };
+    expect(summary.warnings).toBeDefined();
+    const matches = summary.warnings!.filter((w) => w === INLINE_SECRET_WARNING);
+    expect(matches).toHaveLength(1);
+  });
+
+  it("both inline token AND hostRules[].token still emit only ONE warning (N+1 guard)", async () => {
+    const fakeBin = await makeFakeRenovate(repo);
+    session = await startServer({ RENOVATE_BIN: fakeBin });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: {
+        repoPath: repo,
+        token: "t1",
+        hostRules: [
+          { matchHost: "x", token: "t2" },
+          { matchHost: "y", token: "t3" },
+        ],
+      },
+    });
+
+    const summary = JSON.parse(res.result!.content[0]!.text) as {
+      warnings?: string[];
+    };
+    expect(summary.warnings).toBeDefined();
+    const matches = summary.warnings!.filter((w) => w === INLINE_SECRET_WARNING);
+    expect(matches).toHaveLength(1);
+  });
+
+  it("no inline secrets → no inline-secret warning entry", async () => {
+    const fakeBin = await makeFakeRenovate(repo);
+    session = await startServer({ RENOVATE_BIN: fakeBin });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: { repoPath: repo },
+    });
+
+    const summary = JSON.parse(res.result!.content[0]!.text) as {
+      warnings?: string[];
+    };
+    // Other runtime warnings from Renovate may legitimately appear; assert
+    // specifically that the inline-secret advisory text is absent.
+    const matches = (summary.warnings ?? []).filter(
+      (w) => w === INLINE_SECRET_WARNING,
+    );
+    expect(matches).toHaveLength(0);
+  });
+
+  it("hostRules with only password (no token) does NOT trigger the warning", async () => {
+    // Locked decision: trigger is \`token\`-only; \`password\`-only host rules
+    // must not fire it. This guards against accidental re-broadening to
+    // \`collectSecrets\` semantics (which harvests both).
+    const fakeBin = await makeFakeRenovate(repo);
+    session = await startServer({ RENOVATE_BIN: fakeBin });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: {
+        repoPath: repo,
+        hostRules: [{ matchHost: "registry.example.com", username: "u", password: "p" }],
+      },
+    });
+
+    const summary = JSON.parse(res.result!.content[0]!.text) as {
+      warnings?: string[];
+    };
+    const matches = (summary.warnings ?? []).filter(
+      (w) => w === INLINE_SECRET_WARNING,
+    );
+    expect(matches).toHaveLength(0);
   });
 });
