@@ -22,6 +22,7 @@ interface ScriptCase {
 const SCRIPTS: ScriptCase[] = [
   { scriptName: "generate-presets.mjs", outputName: "presets.generated.ts" },
   { scriptName: "generate-managers.mjs", outputName: "managers.generated.ts" },
+  { scriptName: "generate-migrations.mjs", outputName: "migrations.generated.ts" },
 ];
 
 let tempRoot: string;
