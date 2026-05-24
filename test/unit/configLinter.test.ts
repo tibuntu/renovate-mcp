@@ -227,4 +227,80 @@ describe("lintConfig", () => {
     expect(lintConfig("string")).toEqual([]);
     expect(lintConfig(42)).toEqual([]);
   });
+
+  describe("deprecated-key rule", () => {
+    it("flags a top-level deprecated key with the rename embedded in the message", () => {
+      const findings = lintConfig({ masterIssue: true });
+      expect(findings).toHaveLength(1);
+      expect(findings[0]).toMatchObject({
+        ruleId: "deprecated-key",
+        path: "masterIssue",
+        value: "masterIssue",
+      });
+      expect(findings[0]!.message).toContain("dependencyDashboard");
+      expect(findings[0]!.message).toContain("migrate_config");
+    });
+
+    it("flags a deprecated key inside packageRules[]", () => {
+      const findings = lintConfig({
+        packageRules: [{ matchPackageNames: ["lodash"], versionScheme: "semver" }],
+      });
+      const dep = findings.filter((f) => f.ruleId === "deprecated-key");
+      expect(dep).toHaveLength(1);
+      expect(dep[0]).toMatchObject({
+        ruleId: "deprecated-key",
+        path: "packageRules[0].versionScheme",
+        value: "versionScheme",
+      });
+      expect(dep[0]!.message).toContain("versioning");
+    });
+
+    it("flags a deprecated key inside hostRules[]", () => {
+      const findings = lintConfig({
+        hostRules: [{ masterIssue: true }],
+      });
+      const dep = findings.filter((f) => f.ruleId === "deprecated-key");
+      expect(dep).toHaveLength(1);
+      expect(dep[0]!.path).toBe("hostRules[0].masterIssue");
+    });
+
+    it("flags a deprecated key inside customManagers[]", () => {
+      const findings = lintConfig({
+        customManagers: [{ masterIssue: true }],
+      });
+      const dep = findings.filter((f) => f.ruleId === "deprecated-key");
+      expect(dep).toHaveLength(1);
+      expect(dep[0]!.path).toBe("customManagers[0].masterIssue");
+    });
+
+    it("does not flag a deprecated-key name nested inside a non-container object", () => {
+      const findings = lintConfig({ someUserKey: { masterIssue: true } });
+      expect(findings.filter((f) => f.ruleId === "deprecated-key")).toEqual([]);
+    });
+
+    it("does not crash on a malformed container entry", () => {
+      const findings = lintConfig({ packageRules: ["a string element"] });
+      expect(findings.filter((f) => f.ruleId === "deprecated-key")).toEqual([]);
+    });
+
+    it("returns no findings for a config with only modern keys", () => {
+      const findings = lintConfig({
+        extends: ["config:recommended"],
+        dependencyDashboard: true,
+        packageRules: [{ matchPackageNames: ["lodash"], versioning: "semver" }],
+      });
+      expect(findings.filter((f) => f.ruleId === "deprecated-key")).toEqual([]);
+    });
+
+    it("emits one finding per occurrence when multiple deprecated keys are present", () => {
+      const findings = lintConfig({
+        masterIssue: true,
+        packageRules: [{ versionScheme: "semver" }],
+      });
+      const dep = findings.filter((f) => f.ruleId === "deprecated-key");
+      expect(dep).toHaveLength(2);
+      const paths = dep.map((f) => f.path).sort();
+      expect(paths).toEqual(["masterIssue", "packageRules[0].versionScheme"]);
+    });
+  });
 });
