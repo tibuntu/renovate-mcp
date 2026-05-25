@@ -351,6 +351,84 @@ describe("lintConfig", () => {
     });
   });
 
+  describe("empty-extends", () => {
+    const RULE = "empty-extends";
+
+    it("flags root extends:[] with severity warn", () => {
+      const findings = lintConfig({ extends: [] }).filter(
+        (f) => f.ruleId === RULE,
+      );
+      expect(findings).toHaveLength(1);
+      expect(findings[0]).toMatchObject({
+        ruleId: RULE,
+        severity: "warn",
+        path: "extends",
+        value: "[]",
+      });
+      expect(findings[0]!.suggestion).toBeUndefined();
+    });
+
+    it("does not flag root extends with at least one entry", () => {
+      const findings = lintConfig({ extends: ["config:recommended"] }).filter(
+        (f) => f.ruleId === RULE,
+      );
+      expect(findings).toEqual([]);
+    });
+
+    it("does not flag a config with no extends key", () => {
+      const findings = lintConfig({
+        packageRules: [{ matchPackageNames: ["lodash"] }],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toEqual([]);
+    });
+
+    it("flags packageRules[0].extends:[]", () => {
+      const findings = lintConfig({
+        packageRules: [{ matchPackageNames: ["lodash"], extends: [] }],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toHaveLength(1);
+      expect(findings[0]).toMatchObject({
+        ruleId: RULE,
+        severity: "warn",
+        path: "packageRules[0].extends",
+        value: "[]",
+      });
+    });
+
+    it("emits two findings for root + packageRules[1] empty extends", () => {
+      const findings = lintConfig({
+        extends: [],
+        packageRules: [
+          { matchPackageNames: ["a"] },
+          { matchPackageNames: ["b"], extends: [] },
+        ],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toHaveLength(2);
+      const paths = findings.map((f) => f.path).sort();
+      expect(paths).toEqual(["extends", "packageRules[1].extends"]);
+    });
+
+    it("does not flag extends when it is a string (not an array)", () => {
+      const findings = lintConfig({ extends: "config:recommended" }).filter(
+        (f) => f.ruleId === RULE,
+      );
+      expect(findings).toEqual([]);
+    });
+
+    it("does not flag extends:[''] (non-empty array of one empty string)", () => {
+      const findings = lintConfig({ extends: [""] }).filter(
+        (f) => f.ruleId === RULE,
+      );
+      expect(findings).toEqual([]);
+    });
+
+    it("is robust to non-object inputs", () => {
+      expect(lintConfig(null)).toEqual([]);
+      expect(lintConfig("string")).toEqual([]);
+      expect(lintConfig(42)).toEqual([]);
+    });
+  });
+
   describe("automerge-without-automerge-type", () => {
     const RULE = "automerge-without-automerge-type";
 

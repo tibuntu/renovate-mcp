@@ -6,7 +6,8 @@ export type LintRuleId =
   | "unwrapped-regex"
   | "matchManagers-unknown-name"
   | "deprecated-key"
-  | "automerge-without-automerge-type";
+  | "automerge-without-automerge-type"
+  | "empty-extends";
 
 export interface LintFinding {
   ruleId: LintRuleId;
@@ -139,6 +140,15 @@ function walk(node: unknown, pathStr: string, findings: LintFinding[]): void {
         } else if (typeof value === "string") {
           checkPattern(value, childPath, findings);
         }
+      } else if (key === "extends" && Array.isArray(value) && value.length === 0) {
+        findings.push({
+          ruleId: "empty-extends",
+          severity: "warn",
+          path: childPath,
+          value: "[]",
+          message:
+            "`extends: []` is empty. Renovate will inherit no presets here, which is almost always a paste error. Either populate the array (e.g. `[\"config:recommended\"]`) or remove the key entirely.",
+        });
       } else if (MANAGER_FIELDS.has(key)) {
         if (Array.isArray(value)) {
           value.forEach((entry, i) => {
