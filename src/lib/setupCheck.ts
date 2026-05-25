@@ -148,9 +148,53 @@ export function checkRenovateEnginesMatch(nodeVersion: string): string | null {
   return `Renovate requires Node \`${range}\`; you're on \`${nodeVersion}\`. Use nvm/asdf/volta to switch — Renovate will log \`Unsupported node environment\` otherwise.`;
 }
 
+/**
+ * Read the bundled Renovate's version from its `package.json` without
+ * spawning. Both `bin` entries (`renovate` + `renovate-config-validator`)
+ * ship from the same package and share its version, so one filesystem read
+ * answers both probes. Returns `null` if the package can't be resolved.
+ *
+ * Spawning `node <bundled-cli> --version` cold-loads Renovate's full ESM
+ * graph (≈2 s per probe on a fast laptop, much more on cold caches) and
+ * blocks the MCP `initialize` handshake — every session pays that cost
+ * before the LLM can call any tool. Reading `package.json#version` is
+ * ~milliseconds and removes the dominant startup-latency source for the
+ * default install path. RE2 dlopen failures and other runtime warnings
+ * would normally be surfaced by parsing the `--version` stderr; with the
+ * spawn skipped at startup, they still fire on the first real tool call
+ * (every shell-out through `renovateCli.ts:run` parses stderr the same
+ * way), so the only thing lost is the startup-banner advance notice.
+ */
+function readBundledRenovateVersion(): string | null {
+  try {
+    const pkgPath = requireFromHere.resolve("renovate/package.json");
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8")) as { version?: string };
+    return typeof pkg.version === "string" && pkg.version.length > 0 ? pkg.version : null;
+  } catch {
+    return null;
+  }
+}
+
 async function checkBinary(tool: RenovateBinary): Promise<BinaryStatus> {
   const resolved = resolveRenovateTool(tool);
   const command = resolved.command;
+  // Fast path: when we're using the bundled binary (the default), skip the
+  // child-process spawn entirely and read the version from package.json.
+  // See `readBundledRenovateVersion` for the rationale.
+  if (resolved.source === "bundled") {
+    const version = readBundledRenovateVersion();
+    if (version) {
+      return {
+        tool,
+        command,
+        source: resolved.source,
+        found: true,
+        version,
+      };
+    }
+    // Fall through to the spawn-based probe if package.json is missing or
+    // unreadable — we want a real error message rather than a silent miss.
+  }
   try {
     const result = await run(resolved.cmd, [...resolved.prefixArgs, "--version"], {
       timeoutMs: VERSION_TIMEOUT_MS,
