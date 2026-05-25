@@ -71,6 +71,16 @@ Renovate ships bundled — the `renovate` package is a runtime dependency, so `v
 
 ## Install
 
+### Quick install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/tibuntu/renovate-mcp/main/install.sh | bash
+```
+
+The script checks Node ≥ 24, asks whether you want `npx`-on-demand or a global install, runs an MCP `initialize` handshake to verify the binary works, and — when the Claude Code CLI is on PATH — auto-registers `renovate` in user scope via `claude mcp add`. Useful flags (pass after `bash -s --`): `--global`, `--npx`, `--no-mcp-add`, `--mcp-scope=user|project|local`, `--version=X.Y.Z`. The same flags are also accepted as env vars (`RENOVATE_MCP_GLOBAL=1`, `RENOVATE_MCP_NO_MCP_ADD=1`, `RENOVATE_MCP_VERSION=…`).
+
+### Manual install
+
 `npx` fetches the [published package](https://www.npmjs.com/package/renovate-mcp) on demand — no manual install needed. For local development, clone and build first:
 
 ```bash
