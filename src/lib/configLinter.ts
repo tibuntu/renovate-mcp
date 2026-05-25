@@ -9,9 +9,11 @@ export type LintRuleId =
 
 export interface LintFinding {
   ruleId: LintRuleId;
+  severity: "error" | "warn";
   path: string;
   value: string;
   message: string;
+  suggestion?: string;
 }
 
 const REGEX_AWARE_FIELDS = new Set<string>([
@@ -52,9 +54,11 @@ function makeDeprecatedKeyFinding(
 ): LintFinding {
   return {
     ruleId: "deprecated-key",
+    severity: "warn",
     path,
     value: oldKey,
     message: `Key '${oldKey}' is deprecated; Renovate renames it to '${newKey}'. Run migrate_config to auto-apply, or rename manually.`,
+    suggestion: newKey,
   };
 }
 
@@ -133,6 +137,7 @@ function checkPattern(raw: string, path: string, findings: LintFinding[]): void 
   if (startsSlash !== endsSlash) {
     findings.push({
       ruleId: "dead-regex-missing-slash",
+      severity: "error",
       path,
       value: raw,
       message: startsSlash
@@ -147,6 +152,7 @@ function checkPattern(raw: string, path: string, findings: LintFinding[]): void 
   if (hasStrongRegexSignal(stripped)) {
     findings.push({
       ruleId: "unwrapped-regex",
+      severity: "warn",
       path,
       value: raw,
       message: `Value contains regex metacharacters but is not wrapped in '/…/'. Renovate will treat it as an exact-match string. Wrap it as '/${stripped}/' (or '!/${stripped}/' to negate) if a regex match was intended.`,
@@ -159,12 +165,15 @@ function checkManager(raw: string, path: string, findings: LintFinding[]): void 
 
   const suggestion = nearestManager(raw);
   const hint = suggestion ? ` Did you mean '${suggestion}'?` : "";
-  findings.push({
+  const finding: LintFinding = {
     ruleId: "matchManagers-unknown-name",
+    severity: "error",
     path,
     value: raw,
     message: `'${raw}' is not a known Renovate manager. Renovate will silently apply this rule to zero packages.${hint}`,
-  });
+  };
+  if (suggestion) finding.suggestion = suggestion;
+  findings.push(finding);
 }
 
 function nearestManager(name: string): string | null {

@@ -303,4 +303,51 @@ describe("lintConfig", () => {
       expect(paths).toEqual(["masterIssue", "packageRules[0].versionScheme"]);
     });
   });
+
+  describe("severity backfill", () => {
+    it("dead-regex-missing-slash is severity 'error'", () => {
+      const findings = lintConfig({
+        packageRules: [{ matchPackageNames: ["/devops\\/pipelines\\/.+"] }],
+      });
+      expect(findings[0]!.severity).toBe("error");
+    });
+
+    it("unwrapped-regex is severity 'warn'", () => {
+      const findings = lintConfig({
+        packageRules: [{ matchPackageNames: ["foo.+"] }],
+      });
+      expect(findings[0]!.severity).toBe("warn");
+    });
+
+    it("matchManagers-unknown-name is severity 'error'", () => {
+      const findings = lintConfig({
+        packageRules: [{ matchManagers: ["nmp"] }],
+      });
+      expect(findings[0]!.severity).toBe("error");
+    });
+
+    it("deprecated-key is severity 'warn'", () => {
+      const findings = lintConfig({ masterIssue: true });
+      expect(findings[0]!.severity).toBe("warn");
+    });
+
+    it("matchManagers-unknown-name populates suggestion when a close match exists", () => {
+      const findings = lintConfig({
+        packageRules: [{ matchManagers: ["nmp"] }],
+      });
+      expect(findings[0]!.suggestion).toBe("npm");
+    });
+
+    it("matchManagers-unknown-name omits suggestion when nothing is close enough", () => {
+      const findings = lintConfig({
+        packageRules: [{ matchManagers: ["totally-made-up-thing"] }],
+      });
+      expect(findings[0]!.suggestion).toBeUndefined();
+    });
+
+    it("deprecated-key populates suggestion with the migrated key name", () => {
+      const findings = lintConfig({ masterIssue: true });
+      expect(findings[0]!.suggestion).toBe("dependencyDashboard");
+    });
+  });
 });
