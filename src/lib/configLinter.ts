@@ -7,7 +7,8 @@ export type LintRuleId =
   | "matchManagers-unknown-name"
   | "deprecated-key"
   | "automerge-without-automerge-type"
-  | "empty-extends";
+  | "empty-extends"
+  | "contradictory-disabled-with-package-rules";
 
 export interface LintFinding {
   ruleId: LintRuleId;
@@ -43,7 +44,31 @@ export function lintConfig(config: unknown): LintFinding[] {
   walk(config, "", findings);
   checkDeprecatedKeys(config, findings);
   checkAutomergeWithoutType(config, findings);
+  checkContradictoryDisabled(config, findings);
   return findings;
+}
+
+function checkContradictoryDisabled(
+  config: unknown,
+  findings: LintFinding[],
+): void {
+  if (!isPlainObject(config)) return;
+  if (config.enabled !== false) return;
+  if (!Array.isArray(config.packageRules)) return;
+
+  config.packageRules.forEach((entry, i) => {
+    if (!isPlainObject(entry)) return;
+    if (entry.enabled !== true) return;
+    findings.push({
+      ruleId: "contradictory-disabled-with-package-rules",
+      severity: "error",
+      path: `packageRules[${i}].enabled`,
+      value: "true",
+      message: `Root config has \`enabled: false\`, but \`packageRules[${i}].enabled: true\` tries to re-enable a subset. Renovate does NOT re-enable specific deps from packageRules when the root is disabled — the whole repo stays off. Either remove root \`enabled: false\` and disable deps individually, or remove the packageRule's \`enabled: true\`.`,
+      suggestion:
+        "Remove root `enabled: false`, OR remove this packageRule's `enabled: true`.",
+    });
+  });
 }
 
 function makeAutomergeFinding(path: string): LintFinding {

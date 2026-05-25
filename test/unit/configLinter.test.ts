@@ -513,4 +513,87 @@ describe("lintConfig", () => {
       expect(findings).toEqual([]);
     });
   });
+
+  describe("contradictory-disabled-with-package-rules", () => {
+    const RULE = "contradictory-disabled-with-package-rules";
+
+    it("flags root enabled:false with a single packageRule enabled:true", () => {
+      const findings = lintConfig({
+        enabled: false,
+        packageRules: [{ matchPackageNames: ["lodash"], enabled: true }],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toHaveLength(1);
+      expect(findings[0]).toMatchObject({
+        ruleId: RULE,
+        severity: "error",
+        path: "packageRules[0].enabled",
+        value: "true",
+      });
+      expect(findings[0]!.message).toContain("packageRules[0].enabled: true");
+      expect(findings[0]!.suggestion).toBeDefined();
+    });
+
+    it("emits one finding per offending packageRules entry", () => {
+      const findings = lintConfig({
+        enabled: false,
+        packageRules: [
+          { matchPackageNames: ["a"], enabled: true },
+          { matchPackageNames: ["b"], enabled: true },
+        ],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toHaveLength(2);
+      const paths = findings.map((f) => f.path).sort();
+      expect(paths).toEqual([
+        "packageRules[0].enabled",
+        "packageRules[1].enabled",
+      ]);
+    });
+
+    it("does not fire when packageRule has enabled:false (consistent intent)", () => {
+      const findings = lintConfig({
+        enabled: false,
+        packageRules: [{ matchPackageNames: ["lodash"], enabled: false }],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toEqual([]);
+    });
+
+    it("does not fire when root enabled is true even if packageRule enabled is true", () => {
+      const findings = lintConfig({
+        enabled: true,
+        packageRules: [{ matchPackageNames: ["lodash"], enabled: true }],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toEqual([]);
+    });
+
+    it("does not fire when root enabled is absent", () => {
+      const findings = lintConfig({
+        packageRules: [{ matchPackageNames: ["lodash"], enabled: true }],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toEqual([]);
+    });
+
+    it("does not fire when packageRules is absent", () => {
+      const findings = lintConfig({ enabled: false }).filter(
+        (f) => f.ruleId === RULE,
+      );
+      expect(findings).toEqual([]);
+    });
+
+    it("does not fire when root enabled is the string 'false' (type mismatch out of scope)", () => {
+      const findings = lintConfig({
+        enabled: "false",
+        packageRules: [{ enabled: true }],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toEqual([]);
+    });
+
+    it("is robust to malformed packageRules entries", () => {
+      const findings = lintConfig({
+        enabled: false,
+        packageRules: ["a string", null, 42, { enabled: true }],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toHaveLength(1);
+      expect(findings[0]!.path).toBe("packageRules[3].enabled");
+    });
+  });
 });
