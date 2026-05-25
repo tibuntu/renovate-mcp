@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.12.0](https://github.com/tibuntu/renovate-mcp/compare/v0.11.0...v0.12.0) (2026-05-25)
+
+
+### Features
+
+* **dry-run:** noise filtering, platform origin, and large-report escape hatch ([198edbd](https://github.com/tibuntu/renovate-mcp/commit/198edbdee92f72de4c02fcea5fb858ee5d444eb7))
+* **dry-run:** warn when inline secrets are supplied ([796360b](https://github.com/tibuntu/renovate-mcp/commit/796360b0df0d82a472b7c3db60b3733c81d102d1))
+* **install:** add curl-pipe install.sh with MCP handshake verification ([1af9c47](https://github.com/tibuntu/renovate-mcp/commit/1af9c47e743ef4f0b7f4e0d06187e7dd03e3e0e5))
+* **lint:** add automerge-without-automerge-type rule ([795b6df](https://github.com/tibuntu/renovate-mcp/commit/795b6dffa084a9139507286e8f4ca084ee5ee02b))
+* **lint:** add contradictory-disabled-with-package-rules rule ([7c2febf](https://github.com/tibuntu/renovate-mcp/commit/7c2febfcd75aff20e330a6bdc95b1f52ed9e4f42))
+* **lint:** add deprecated-key rule ([c41acce](https://github.com/tibuntu/renovate-mcp/commit/c41acce5e239b16a5586b3d5283e006bd377d57e))
+* **lint:** add empty-extends rule ([d347d6d](https://github.com/tibuntu/renovate-mcp/commit/d347d6d7bf99ad210494785e913c7c311cd1c5c5))
+* **lint:** add invalid-schedule rule ([778ef47](https://github.com/tibuntu/renovate-mcp/commit/778ef474d91406733701a47374ee275dff13091f))
+* **lint:** add package-rule-without-action rule ([96517c3](https://github.com/tibuntu/renovate-mcp/commit/96517c3adcc47825bdd0f275dcf3d5a726e07cf2))
+* **lint:** extend LintFinding with severity and suggestion ([50a0b94](https://github.com/tibuntu/renovate-mcp/commit/50a0b9471217bd4635952bf64d9ede2c2d5395ae))
+* **lint:** snapshot Renovate's renamed-property map ([8cff87c](https://github.com/tibuntu/renovate-mcp/commit/8cff87c76ad3ed9d9b5b9d922aa5fb6ccfc48c28))
+* **migrate-config:** add tool that applies Renovate's built-in config migrations ([06f3cad](https://github.com/tibuntu/renovate-mcp/commit/06f3cadb39ff409e3b4eea5189934ea40bb67345))
+* **preview:** scaffold jsonata customType (worker variant + parser dispatcher) ([ca46b3a](https://github.com/tibuntu/renovate-mcp/commit/ca46b3afd7beb190f16a96ae7b0a8ae7a33a21da))
+* **preview:** wire jsonata customType end-to-end ([b0fd9e9](https://github.com/tibuntu/renovate-mcp/commit/b0fd9e9fadb2f3bd7a2c84e91e38adcbb5b02c6f))
+* **scripts:** add snapshot-versions drift detector ([6086ce5](https://github.com/tibuntu/renovate-mcp/commit/6086ce5c46611c7075f2a84faf53dcfdc9638047))
+* **write-config:** dispatch refusal reason on .json5 extension; preserve trailing commas ([9194cbe](https://github.com/tibuntu/renovate-mcp/commit/9194cbe6a73bca50de84102a51a6040c6a7199ba))
+* **write-config:** introduce configWriter module with fresh-write path ([6b9e525](https://github.com/tibuntu/renovate-mcp/commit/6b9e525874814817371395782b2a7cef12d588c7))
+* **write-config:** preserve comments and key order on existing-file writes ([e8cd014](https://github.com/tibuntu/renovate-mcp/commit/e8cd014026dac82b3d68dbaddc4ca6a6932d8621))
+
 ## [0.11.0](https://github.com/tibuntu/renovate-mcp/compare/v0.10.0...v0.11.0) (2026-05-10)
 
 
