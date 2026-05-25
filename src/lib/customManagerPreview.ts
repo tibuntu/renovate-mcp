@@ -60,6 +60,40 @@ export interface PreviewResult {
   warnings: string[];
 }
 
+export type StructuredFileFormat = "json" | "yaml" | "toml";
+export type ParseStructuredResult =
+  | { ok: true; value: unknown }
+  | { ok: false; error: string };
+
+/**
+ * Parse `content` according to `fileFormat`. YAML / TOML parsers are lazy-
+ * imported on first use of the matching format so sessions that never preview
+ * a JSONata-customType manager pay zero load cost. Failures (parser throws,
+ * unsupported format) are converted to `{ ok: false, error }` — no exceptions
+ * leak.
+ */
+export async function parseStructured(
+  content: string,
+  fileFormat: StructuredFileFormat,
+): Promise<ParseStructuredResult> {
+  try {
+    if (fileFormat === "json") {
+      return { ok: true, value: JSON.parse(content) };
+    }
+    if (fileFormat === "yaml") {
+      const { parse } = await import("yaml");
+      return { ok: true, value: parse(content) };
+    }
+    if (fileFormat === "toml") {
+      const { parse } = await import("smol-toml");
+      return { ok: true, value: parse(content) };
+    }
+    return { ok: false, error: `Unsupported fileFormat: ${fileFormat}` };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
 const DEFAULT_MAX_FILES_WALKED = 2000;
 const DEFAULT_MAX_FILES_MATCHED = 500;
 const DEFAULT_MAX_HITS_PER_FILE = 100;
@@ -465,38 +499,52 @@ function lineNumberAt(content: string, index: number): number {
 type MatchResult = { index: number; match: string; groups: Record<string, string> };
 type WorkerRequest =
   | { mode: "test"; pattern: string; flags: string; paths: string[] }
-  | { mode: "matchAll"; pattern: string; flags: string; content: string };
+  | { mode: "matchAll"; pattern: string; flags: string; content: string }
+  | { mode: "evaluateJsonata"; expression: string; json: unknown };
 type TestResponse = { ok: true; mode: "test"; paths: string[] };
 type MatchAllResponse = { ok: true; mode: "matchAll"; matches: MatchResult[] };
+type EvaluateJsonataResponse = { ok: true; mode: "evaluateJsonata"; result: unknown };
 type ErrorResponse = { ok: false; error: string };
-type WorkerResponse = TestResponse | MatchAllResponse | ErrorResponse;
+type WorkerResponse =
+  | TestResponse
+  | MatchAllResponse
+  | EvaluateJsonataResponse
+  | ErrorResponse;
 
 const WORKER_SOURCE = `
 const { parentPort, workerData } = require('node:worker_threads');
-try {
-  const { mode, pattern, flags } = workerData;
-  const re = new RegExp(pattern, flags);
-  if (mode === 'test') {
-    const out = [];
-    for (const p of workerData.paths) {
-      re.lastIndex = 0;
-      if (re.test(p)) out.push(p);
+(async () => {
+  try {
+    const { mode } = workerData;
+    if (mode === 'test') {
+      const re = new RegExp(workerData.pattern, workerData.flags);
+      const out = [];
+      for (const p of workerData.paths) {
+        re.lastIndex = 0;
+        if (re.test(p)) out.push(p);
+      }
+      parentPort.postMessage({ ok: true, mode: 'test', paths: out });
+    } else if (mode === 'matchAll') {
+      const re = new RegExp(workerData.pattern, workerData.flags);
+      const out = [];
+      for (const m of workerData.content.matchAll(re)) {
+        out.push({
+          index: m.index == null ? 0 : m.index,
+          match: m[0],
+          groups: m.groups == null ? {} : Object.assign({}, m.groups),
+        });
+      }
+      parentPort.postMessage({ ok: true, mode: 'matchAll', matches: out });
+    } else if (mode === 'evaluateJsonata') {
+      const jsonata = require('jsonata');
+      const expr = jsonata(workerData.expression);
+      const result = await expr.evaluate(workerData.json);
+      parentPort.postMessage({ ok: true, mode: 'evaluateJsonata', result });
     }
-    parentPort.postMessage({ ok: true, mode: 'test', paths: out });
-  } else {
-    const out = [];
-    for (const m of workerData.content.matchAll(re)) {
-      out.push({
-        index: m.index == null ? 0 : m.index,
-        match: m[0],
-        groups: m.groups == null ? {} : Object.assign({}, m.groups),
-      });
-    }
-    parentPort.postMessage({ ok: true, mode: 'matchAll', matches: out });
+  } catch (err) {
+    parentPort.postMessage({ ok: false, error: err && err.message ? err.message : String(err) });
   }
-} catch (err) {
-  parentPort.postMessage({ ok: false, error: err && err.message ? err.message : String(err) });
-}
+})();
 `;
 
 async function runWorker(
@@ -563,6 +611,30 @@ async function runMatchAllInWorker(
     throw new Error(`Regex worker returned wrong mode: ${response.mode}`);
   }
   return { timedOut: false, matches: response.matches };
+}
+
+// Unlike the regex helpers (runTestInWorker / runMatchAllInWorker), JSONata
+// compile/eval errors are surfaced as { ok: false, error } rather than thrown —
+// the main flow treats them as per-expression warnings, not internal failures.
+export async function runEvaluateJsonataInWorker(
+  expression: string,
+  json: unknown,
+  timeoutMs: number,
+): Promise<
+  | { timedOut: true }
+  | { timedOut: false; ok: true; result: unknown }
+  | { timedOut: false; ok: false; error: string }
+> {
+  const response = await runWorker(
+    { mode: "evaluateJsonata", expression, json },
+    timeoutMs,
+  );
+  if (response === "timeout") return { timedOut: true };
+  if (!response.ok) return { timedOut: false, ok: false, error: response.error };
+  if (response.mode !== "evaluateJsonata") {
+    throw new Error(`Regex worker returned wrong mode: ${response.mode}`);
+  }
+  return { timedOut: false, ok: true, result: response.result };
 }
 
 /**

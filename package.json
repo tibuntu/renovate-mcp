@@ -61,8 +61,11 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "ignore": "^7.0.5",
     "json5": "^2.2.3",
+    "jsonata": "2.1.0",
     "jsonc-parser": "^3.3.1",
     "renovate": "^43.139.5",
+    "smol-toml": "^1.6.1",
+    "yaml": "^2.9.0",
     "zod": "^4.0.0"
   },
   "overrides": {
