@@ -7,67 +7,71 @@
 
 An MCP server for designing [Renovate](https://github.com/renovatebot/renovate) configurations interactively. Point it at a local repo and let an LLM help you read, validate, preview, and save `renovate.json`.
 
-## Contents
+## Quick start
 
-- [What it does](#what-it-does)
-- [What this is NOT](#what-this-is-not)
-- [Requirements](#requirements)
-- [Install](#install)
-- [Platform setup](#platform-setup)
-- [Example prompts](#example-prompts)
-- [Example session](#example-session)
-- [Development](#development)
-- [Release flow](#release-flow)
-- [Design notes](#design-notes)
+```bash
+curl -fsSL https://raw.githubusercontent.com/tibuntu/renovate-mcp/main/install.sh | bash
+```
 
-## What it does
+Or add this entry manually to your client's `mcpServers` config:
 
-Twelve tools plus a preset reference:
+```json
+{
+  "mcpServers": {
+    "renovate": {
+      "command": "npx",
+      "args": ["-y", "renovate-mcp"]
+    }
+  }
+}
+```
+
+Restart your client and try the prompt: *"List the namespaces available under `renovate://presets`."* A response listing `config`, `docker`, `npm`, … confirms the server is reachable. Long-form install options are under [Install](#install) below.
+
+## What you can do
+
+- **Read and explain configs** — locate the active `renovate.json*`, expand every `extends` preset offline, and trace which preset set each field.
+- **Preview custom managers** before running Renovate — regex and JSONata, with file/line hits and extracted dep info.
+- **Validate and lint** — schema validation plus a semantic lint pass for Renovate-specific footguns (unwrapped regexes, unknown manager names, deprecated keys).
+- **Dry-run** against a local checkout or a remote GitHub/GitLab — see exactly which PRs Renovate would open.
+- **Save back atomically** — round-trip writes preserve comments and key order in existing JSON-with-comments files.
+
+## Tools & resources
+
+Twelve tools and three resource templates. Each tool name below links to its full reference in [`docs/tools.md`](docs/tools.md).
 
 | Tool | Purpose |
 | --- | --- |
-| `check_setup` | Report Renovate CLI + validator availability, versions, and install hints. Also surfaces a `platformContext` block (`RENOVATE_PLATFORM` / `RENOVATE_ENDPOINT` values, token-presence booleans, the platform `dry_run` would pick when its input is unset, and notes about likely misconfigurations) so callers can verify env before invoking `dry_run`. Token values are never echoed — only presence booleans. Compares the running Node version against the bundled Renovate's declared `engines.node` range and emits an actionable hint when they're incompatible — the same condition Renovate would otherwise log only as `Unsupported node environment` during a `dry_run`. Also runs at startup. |
-| `get_version` | Report the renovate-mcp server version and whether it's a released build (running from `node_modules`) or a local/dev build (typically launched via `command: node` against a checkout). |
-| `read_config` | Locate and parse a repo's Renovate config (`renovate.json`, `renovate.json5`, `.renovaterc*`, `package.json#renovate`, …) in priority order. |
-| `resolve_config` | Expand every `extends` preset offline. Opt in to fetching `github>` / `gitlab>` presets over HTTPS with `externalPresets: true`. |
-| `explain_config` | Inverse of `resolve_config`: walk the same preset tree but annotate every leaf field with the chain of presets that touched it. Each leaf is `{ value, setBy }` where `setBy` lists every contribution in merge order — last entry wins for scalars; for arrays each entry adds its own slice. Same offline-by-default behaviour and same `externalPresets` / `endpoint` / `platform` opt-ins as `resolve_config`. |
-| `preview_custom_manager` | Preview a `customManagers` entry (regex or JSONata) against a local repo — for regex, shows file/line hits and extracted dep info; for `customType: "jsonata"` (`fileFormat: "json" \| "yaml" \| "toml"`), parses the file structure and extracts deps from each `matchStrings` JSONata projection. Offline. |
-| `validate_config` | Run `renovate-config-validator` against a file or inline object. |
-| `lint_config` | Semantic lint pass: regex hygiene (`/…/` wrapping), unknown manager names, deprecated keys, automerge/extends/enabled correctness, packageRule completeness, and schedule sanity. Offline; complements `validate_config`. |
-| `dry_run` | Run Renovate with `--dry-run` and return the structured JSON report. Defaults to `--platform=local` against `repoPath`; pass `platform` + `endpoint` + `token` + `repository` to run as a real GitHub/GitLab client (needed when the config extends `local>` presets on a private host). When `platform` is not passed, the tool reads `RENOVATE_PLATFORM` from the MCP server's env before defaulting to `local`; the response echoes `platformSource` (`input` / `env` / `default`) and `effectivePlatform`, and an advisory warning fires when env-derived platform is non-local so a surprising `gitlab`/`github` is never mysterious. Preflight error messages also tag the platform origin. When `token` is not passed, falls back to `RENOVATE_TOKEN` from MCP env, then to `GITLAB_TOKEN` (when `platform=gitlab`) or `GITHUB_TOKEN` (when `platform=github`) — auto-translated to `RENOVATE_TOKEN` for the spawned Renovate CLI, since Renovate itself only reads that one var. `repository` accepts GitHub-style `owner/repo` and GitLab nested-group paths like `group/subgroup/project`. `endpoint`/`token` also flow through in local mode so `gitlab>…` / `github>…` preset shortcuts can be redirected at a self-hosted host without setting up a full remote run. Two optional inputs handle reports that would exceed MCP response-content caps: `reportOutputPath` redirects the structured report to a file (mode 0600) and collapses `summary.report` to `{ reportPath, repoCount, updateCount }`, and `summaryOnly: true` strips per-repo update arrays from the inline payload (only meaningful with `reportOutputPath`). No PRs, no pushes. Emits MCP progress notifications during the run when the caller supplies a `progressToken`. When `token` or any `hostRules[].token` is passed inline, the result `warnings` array carries an advisory steering callers toward env-var auth (see [Secrets](#secrets) under Design notes). RE2 native-fallback noise and `Unsupported node environment` notices are filtered out of `reportErrors` — the former still surfaces under `warnings`, the latter under a separate `environmentWarnings` array — so `ok` reflects whether the run actually failed, not benign degradation. |
-| `dry_run_diff` | Semantic diff between two `dry_run` reports — `added` / `removed` / `changed` proposed updates plus a compact text rendering. Stateless; takes both reports as inputs. Each side accepts either the inline report (raw `{ repositories }` or a full `dry_run` summary with a `report` key) or `{ reportPath: "<absolute path>" }` pointing at a file written by `dry_run`'s `reportOutputPath` — pair the two when reports would otherwise hit the inline truncation cap. Useful when iterating on a config to see exactly what each tweak did. |
-| `migrate_config` | Apply Renovate's built-in config migrations (deprecated key renames like `masterIssue` → `dependencyDashboard`, template-variable rewrites, `packageRules` matcher consolidation, `host-rules` unification, …) and return the migrated config plus a unified diff. Does not write — chain with `write_config` to persist. Runs in an isolated worker thread (see [Design notes](#design-notes)); first call carries a one-time cold-load cost of a few seconds. |
-| `write_config` | Validate, then atomically write a config to disk. When the target file already exists and parses as JSON-with-comments, edits go through a round-trip serializer (`jsonc-parser`) that preserves comments, key order, and trailing trivia; brand-new writes fall back to plain `JSON.stringify`. Refuses to save invalid configs unless `force: true` is paired with `confirmForce: "YES_OVERRIDE_VALIDATION"` — the literal sentinel makes accidental overrides under prompt-injected tool calls harder. Also refuses `.json5` files that use JSON5-only syntax (`reason: "json5-not-jsonc-compatible"`) and corrupted existing files (`reason: "existing-file-unparseable"`); `force: true` is the escape hatch and is a destructive rewrite that skips both validation and round-trip preservation. |
-| `renovate://presets` (resource) | Markdown index of all 1000+ built-in presets grouped by namespace. |
-| `renovate://presets/{namespace}` (resource template) | Markdown listing for a single namespace (e.g. `renovate://presets/config`) — cheaper than the full index. |
-| `renovate://preset/{name}` (resource template) | Expanded JSON body for one preset (e.g. `renovate://preset/config:recommended`). |
-
-See [Design notes](#design-notes) for implementation details (timeouts, safety caps, auth scrubbing, merge semantics).
-
-## What this is NOT
-
-- **Not a Renovate replacement.** This server doesn't open PRs, run scheduled updates, or execute in CI — it's a design-time companion for a local `renovate.json`. Use the real Renovate for the actual dependency-update pipeline.
-- **`resolve_config` is preview-quality.** Preset expansion runs against a committed snapshot, and template substitution implements only positional `{{argN}}` placeholders — non-positional tokens and Handlebars helpers are flagged in `warnings` and pass through verbatim. For authoritative output, run `dry_run`.
-- **`preview_custom_manager` is a subset of Renovate's custom managers.** It covers `customType: "regex"` (with `matchStringsStrategy` of `any` / `combination` / `recursive`) and `customType: "jsonata"` (with `fileFormat: "json" \| "yaml" \| "toml"`); each `matchStrings` JSONata expression may return an array of objects OR a single bare object (auto-wrapped to a one-element array, mirroring Renovate's own `QueryResultZod` schema). Numeric/boolean values in JSONata results are stringified for `{{groupName}}` template substitution; `null` / `undefined` / nested objects / arrays are dropped from the substitution bag. Template substitution is `{{groupName}}` only — full Handlebars helpers/conditionals are not implemented. Other custom types (e.g. `html`) are out of scope. Use it for fast iteration; confirm with `dry_run`.
-- **`validate_config` / `dry_run` aren't exercised end-to-end in CI.** The bundled Renovate is available (it's a runtime dep), but the integration tests use fake binaries via `RENOVATE_BIN` / `RENOVATE_CONFIG_VALIDATOR_BIN` env overrides for determinism and speed. Run the tools locally against a real config to validate behaviour.
+| [`check_setup`](docs/tools.md#check_setup) | Report Renovate CLI + validator availability, versions, install hints, and a `platformContext` block for env diagnosis. Also runs at startup. |
+| [`get_version`](docs/tools.md#get_version) | Report the renovate-mcp server version and whether it's a released or local/dev build. |
+| [`read_config`](docs/tools.md#read_config) | Locate and parse a repo's Renovate config in Renovate's own discovery order. |
+| [`resolve_config`](docs/tools.md#resolve_config) | Expand every `extends` preset offline. Opt in to fetching `github>` / `gitlab>` presets over HTTPS. |
+| [`explain_config`](docs/tools.md#explain_config) | Inverse of `resolve_config`: annotate every leaf field with the chain of presets that set it. |
+| [`preview_custom_manager`](docs/tools.md#preview_custom_manager) | Preview a `customManagers` entry (regex or JSONata) against a local repo. Offline. |
+| [`validate_config`](docs/tools.md#validate_config) | Run `renovate-config-validator` against a file or inline object. |
+| [`lint_config`](docs/tools.md#lint_config) | Semantic lint pass for Renovate-specific footguns the schema validator declares valid. Offline. |
+| [`dry_run`](docs/tools.md#dry_run) | Run Renovate with `--dry-run` and return the structured JSON report. Local-by-default; remote with `platform` + `endpoint` + `token` + `repository`. No PRs, no pushes. |
+| [`dry_run_diff`](docs/tools.md#dry_run_diff) | Stateless semantic diff between two `dry_run` reports — added / removed / changed updates. |
+| [`migrate_config`](docs/tools.md#migrate_config) | Apply Renovate's built-in migrations and return the migrated config plus a unified diff. Does not write. |
+| [`write_config`](docs/tools.md#write_config) | Validate, then atomically write a config to disk. Preserves comments/key order on existing JSON-with-comments files. |
+| [`renovate://presets`](docs/tools.md#renovatepresets) (resource) | Markdown index of all built-in presets grouped by namespace. |
+| [`renovate://presets/{namespace}`](docs/tools.md#renovatepresetsnamespace) (resource) | Markdown listing for a single namespace. |
+| [`renovate://preset/{name}`](docs/tools.md#renovatepresetname) (resource) | Expanded JSON body for one preset. |
 
 ## Requirements
 
-**Required**
-
-- Linux or macOS. Windows is not supported — `package.json` declares `"os": ["darwin", "linux"]`, so `npm i` surfaces an `EBADPLATFORM` warning on Windows, and the server exits with a clear stderr message at startup. Run on WSL2 or a Linux/macOS host instead.
-- Node.js ≥ 24 (aligns with Renovate's own engine requirement).
+- **Linux or macOS.** Windows is not supported — `package.json` declares `"os": ["darwin", "linux"]`, so `npm i` surfaces an `EBADPLATFORM` warning on Windows and the server exits with a clear stderr message at startup. Use WSL2 or a Linux/macOS host instead.
+- **Node.js ≥ 24** (aligns with Renovate's own engine requirement).
 
 Renovate ships bundled — the `renovate` package is a runtime dependency, so `validate_config`, `dry_run`, and `write_config` work out of the box with no separate install. The offline tools (`read_config`, `resolve_config`, `explain_config`, `preview_custom_manager`, `lint_config`) never spawn Renovate at all.
 
-**Optional**
+**Optional env vars:**
 
-- `RENOVATE_BIN` / `RENOVATE_CONFIG_VALIDATOR_BIN` — override the bundled binaries (e.g., to point at a different Renovate install). When set, the override always wins.
+- `RENOVATE_BIN` / `RENOVATE_CONFIG_VALIDATOR_BIN` — override the bundled binaries. When set, the override always wins.
 - `RENOVATE_MCP_REQUIRE_CLI=false` — suppress the startup "partial availability" notice when you only intend to use the offline tools.
-- Platform env vars — `RENOVATE_PLATFORM`, `RENOVATE_ENDPOINT`, and a token (`RENOVATE_TOKEN` / `GITHUB_TOKEN` / `GITLAB_TOKEN`). Needed for `dry_run` against a remote platform and for `resolve_config` with `externalPresets: true`. See [Platform setup](#platform-setup) for the matrix and a worked example.
-- Private-registry credentials for `dry_run` — whatever Renovate itself would need at lookup time (`COMPOSER_AUTH`, `NPM_TOKEN` / `.npmrc`, Docker registry creds, or a `RENOVATE_HOST_RULES` JSON blob). Alternatively encode these as `hostRules` in the Renovate config, or pass them per-call via the `hostRules` input on `dry_run` (no MCP restart needed). Per-call `hostRules` are appended to whatever the repo's own config declares. Values reach Renovate as JSON through the tool-call transport, so the calling LLM sees them in its context — prefer the env route if that matters. Without any of these, Renovate's lookup often returns 0 updates silently; `dry_run` scans its logs for auth failures and surfaces them under `problems`.
+- Platform + token env vars — see [`docs/platform-setup.md`](docs/platform-setup.md) for the per-platform matrix.
 
-> **Note:** all env vars (tokens, `COMPOSER_AUTH`, `RENOVATE_HOST_RULES`, binary overrides, …) must be set on the MCP server process itself — via the `env` key in `claude_desktop_config.json` / `.mcp.json`, not your shell — since the MCP server runs as a child of the client and does not inherit shell env.
+> Heads up: MCP servers do **not** inherit your shell env. Set every env var via the `env` key in `.mcp.json` / `claude_desktop_config.json`. See [`docs/security.md`](docs/security.md#where-env-vars-must-live).
 
 ## Install
 
@@ -88,89 +92,30 @@ npm install
 npm run build
 ```
 
-Add the following `mcpServers` entry to your client's config file:
+### Client config locations
 
-```json
-{
-  "mcpServers": {
-    "renovate": {
-      "command": "npx",
-      "args": ["-y", "renovate-mcp"]
-    }
-  }
-}
-```
+- **Claude Code** — `.mcp.json` (project) or `~/.claude.json` (user).
+- **Claude Desktop** — `~/Library/Application Support/Claude/claude_desktop_config.json`.
+- **Other MCP clients** — any client that can launch a stdio MCP server works; point it at the same `npx -y renovate-mcp` command.
 
 For local development, swap to `"command": "node"` with `"args": ["/absolute/path/to/renovate-mcp/dist/index.js"]`.
 
-### Claude Code
-
-Config lives in `.mcp.json` (project-scoped) or `~/.claude.json` (user-scoped).
-
-### Claude Desktop
-
-Config lives in `~/Library/Application Support/Claude/claude_desktop_config.json`.
-
-### Other MCP clients
-
-Any client that can launch a stdio MCP server works — point it at the same command shown above.
-
-### Verify the wiring
-
-Restart your client and prompt it:
-
-> List the namespaces available under `renovate://presets`.
-
-A response listing namespaces like `config`, `docker`, `npm`, `helpers`, … confirms the server is reachable and the resource is exposed. If the client reports the tool or resource as unavailable, re-check the config file path and command.
-
 ## Platform setup
 
-The four common configurations differ in three settings: `RENOVATE_PLATFORM`, `RENOVATE_ENDPOINT`, and which token env var you set. Pick the row that matches your environment and put the values in your client's `mcpServers.renovate.env` block.
+For `dry_run` against a remote platform or `resolve_config` with `externalPresets: true`:
 
-| Setup | `RENOVATE_PLATFORM` | `RENOVATE_ENDPOINT` | Token env var |
+| Setup | `RENOVATE_PLATFORM` | `RENOVATE_ENDPOINT` | Token |
 | --- | --- | --- | --- |
-| github.com | `github` | (omit — defaults to `https://api.github.com`) | `RENOVATE_TOKEN` *or* `GITHUB_TOKEN` |
+| github.com | `github` | (omit) | `RENOVATE_TOKEN` *or* `GITHUB_TOKEN` |
 | GitHub Enterprise | `github` | `https://github.example.com/api/v3/` | `RENOVATE_TOKEN` *or* `GITHUB_TOKEN` |
-| gitlab.com | `gitlab` | (omit — defaults to `https://gitlab.com/api/v4`) | `RENOVATE_TOKEN` *or* `GITLAB_TOKEN` |
+| gitlab.com | `gitlab` | (omit) | `RENOVATE_TOKEN` *or* `GITLAB_TOKEN` |
 | Self-hosted GitLab | `gitlab` | `https://gitlab.example.com/api/v4/` | `RENOVATE_TOKEN` *or* `GITLAB_TOKEN` |
 
-Notes that apply to every row:
-
-- All env vars must be on the MCP server process — set them via the `env` key in `.mcp.json` / `claude_desktop_config.json`, not your shell, since the MCP server runs as a child of the client and does not inherit shell env.
-- `RENOVATE_TOKEN` wins when both it and the platform-specific var are set. `dry_run` and `resolve_config` honour the same precedence; for `dry_run` the platform-specific var is auto-translated to `RENOVATE_TOKEN` for the spawned Renovate CLI (Renovate itself only reads that one var).
-- For repository identifiers, GitLab accepts nested-group paths like `group/subgroup/project`, not just `group/project`.
-- If you only intend to use the offline tools (`read_config`, `resolve_config` without `externalPresets`, `preview_custom_manager`, `lint_config`), you can skip all of the above.
-
-### Worked example — self-hosted GitLab
-
-```jsonc
-{
-  "mcpServers": {
-    "renovate": {
-      "command": "npx",
-      "args": ["-y", "renovate-mcp"],
-      "env": {
-        "RENOVATE_PLATFORM": "gitlab",
-        "RENOVATE_ENDPOINT": "https://gitlab.example.com/api/v4/",
-        "GITLAB_TOKEN": "<your token>"
-      }
-    }
-  }
-}
-```
-
-This is enough for both `dry_run` (remote-platform runs) and `resolve_config` (private preset fetches). With this set, `dry_run` against `group/subgroup/project` works without passing `platform` / `endpoint` / `token` per call: `RENOVATE_PLATFORM` and the auto-translated `GITLAB_TOKEN` cover the platform side, and `RENOVATE_ENDPOINT` is inherited naturally by the spawned Renovate CLI. For `resolve_config`, `platform` and `endpoint` are tool *inputs* (not env vars) — pass them when you need `local>` presets routed through your host, since `resolve_config` is in-process and doesn't read `RENOVATE_*` env vars itself.
-
-### `local>` presets
-
-A config that extends `local>owner/repo:preset` only resolves when there's a platform context to expand it against:
-
-- **For `dry_run`** — pass `platform` + `endpoint` + `repository` (token falls back to env). Use `dryRunMode=extract` if you only need manifest extraction; the preset preflight is skipped in that mode.
-- **For `resolve_config`** — pass `platform` + `endpoint` as inputs and the tool rewrites `local>` into `<platform>>` and fetches over HTTPS. Without these inputs, `local>` stays in `presetsUnresolved` with a pointer to the workaround. Run `dry_run` afterwards for full-fidelity merging.
+See [`docs/platform-setup.md`](docs/platform-setup.md) for a worked self-hosted GitLab example, `local>` preset handling, and private-registry credentials.
 
 ## Example prompts
 
-Once the server is wired up, try prompts like these. They're written for Claude but work with any MCP-capable client.
+Once the server is wired up, try prompts like these. Written for Claude but work with any MCP-capable client.
 
 **Understanding an existing config**
 
@@ -231,78 +176,33 @@ A transcript-style walkthrough: design a Dockerfile custom manager from scratch,
 ## Development
 
 ```bash
-npm run dev              # build watch mode
-npm run typecheck        # tsc --noEmit
-npm run build            # compile to dist/
-npm start                # run the built server over stdio
-npm test                 # vitest run (builds first)
-npm run test:watch       # vitest watch mode
-npm run test:coverage    # vitest run --coverage (writes coverage/ report)
-npm run generate:presets # regenerate src/data/presets.generated.ts from the renovate devDep
-npm run generate:managers # regenerate src/data/managers.generated.ts from the renovate devDep
-npm run generate:migrations # regenerate src/data/migrations.generated.ts from the renovate devDep
-npm run check:snapshot-versions # fail if src/data/*.generated.ts is stale vs installed renovate devDep
+npm run dev                     # build watch mode
+npm run typecheck               # tsc --noEmit
+npm run build                   # compile to dist/
+npm start                       # run the built server over stdio
+npm test                        # vitest run (builds first)
+npm run test:watch              # vitest watch mode
+npm run test:coverage           # vitest run --coverage
+npm run generate:presets        # regenerate src/data/presets.generated.ts
+npm run generate:managers       # regenerate src/data/managers.generated.ts
+npm run generate:migrations     # regenerate src/data/migrations.generated.ts
+npm run check:snapshot-versions # fail if any src/data/*.generated.ts is stale vs installed renovate
 ```
 
-The preset catalogue at `src/data/presets.generated.ts`, the manager-name list at `src/data/managers.generated.ts`, and the deprecated-key rename map at `src/data/migrations.generated.ts` are committed snapshots of Renovate's built-in presets, manager registry, and renamed-property map. Runtime code never imports the `renovate` package — only the `scripts/generate-*.mjs` scripts do. All three are wired into a `postUpgradeTasks` block in this repo's `renovate.json` so a Renovate bump auto-regenerates them on the bot's branch (assuming the operator's `RENOVATE_ALLOWED_POST_UPGRADE_COMMANDS` permits `npm ci` and the three `npm run generate:*` commands); regenerate manually otherwise. `npm run check:snapshot-versions` (also run in CI) compares the `RENOVATE_VERSION` embedded in each generated file against `node_modules/renovate/package.json#version` and fails fast naming the stale file(s) and the `npm run generate:*` command to fix them.
+See [`docs/development.md`](docs/development.md) for snapshot-file mechanics, CI matrix, the nightly upstream-drift workflow, dependency review, and integration-test setup.
 
-CI runs `typecheck`, `build`, and `test:coverage` on Node 24 for every PR and push to `main` (see `.github/workflows/ci.yml`), across an OS matrix of `ubuntu-latest` and `macos-latest` with `fail-fast: false` so a platform-specific regression on either side surfaces. Coverage is uploaded as a per-run artifact from the Ubuntu job only (to avoid name collisions); no threshold is enforced yet. The Ubuntu job also re-runs `npm install --package-lock-only` and fails on a non-empty diff, catching drift between `package.json` root metadata (`os`, `engines`, `bin`, dep ranges) and `package-lock.json` that `npm ci` does not validate.
+## Further reading
 
-A separate scheduled workflow (`.github/workflows/nightly-real-renovate.yml`) runs daily at 04:17 UTC, installs `renovate@latest` on top of `npm ci`, and re-runs the full suite. It's an upstream-drift signal — failures notify the maintainer by email and do not gate per-PR CI.
+- [`docs/tools.md`](docs/tools.md) — full per-tool reference with all inputs, outputs, and edge cases.
+- [`docs/platform-setup.md`](docs/platform-setup.md) — per-platform env vars, worked example, `local>` presets, private-registry credentials.
+- [`docs/security.md`](docs/security.md) — token handling, env-var precedence, endpoint allowlist, redirect/body-cap policy, inline-secrets warning.
+- [`docs/operations.md`](docs/operations.md) — timeouts, caps, large-report escape hatch, `ok` semantics, RE2 / nodeEnv handling, progress notifications.
+- [`docs/architecture.md`](docs/architecture.md) — shell-out vs import, worker isolation, round-trip writer, preset catalogue.
+- [`docs/development.md`](docs/development.md) — snapshot mechanics, CI matrix, nightly drift workflow, integration testing.
 
-`.github/workflows/dependency-review.yml` runs [`actions/dependency-review-action`](https://github.com/actions/dependency-review-action) on every PR and fails the check when a newly introduced dependency carries a CVE of `high` severity or above. Findings also render inline in the PR's "Files changed" / Conversation tabs.
+## What this is NOT
 
-`.github/workflows/claude.yml` is maintainer tooling: it lets the repo owner trigger [`anthropics/claude-code-action`](https://github.com/anthropics/claude-code-action) by mentioning `@claude` in an issue, issue comment, PR review, or PR review comment. It's gated on `sender.login == repository_owner`, so mentions from anyone else are ignored. The workflow needs the `CLAUDE_CODE_OAUTH_TOKEN` secret on the repo; outside contributors and forks do not need any Anthropic credentials to work on this project.
-
-## Release flow
-
-Releases are automated via [release-please](https://github.com/googleapis/release-please) (see `.github/workflows/release.yaml`):
-
-1. Merge Conventional Commits to `main` (`feat:`, `fix:`, etc.)
-2. release-please opens or updates a release PR that bumps the version and updates `CHANGELOG.md`
-3. Merging the release PR creates a GitHub release and tag
-4. The `publish` workflow (`.github/workflows/publish.yml`) fires on the release event, runs the test suite, smoke-tests the packed tarball end-to-end (install globally, then run an MCP `initialize` handshake against the resulting `renovate-mcp` binary), and only then runs `npm publish` with provenance
-
-Publishing uses [npm Trusted Publishers](https://docs.npmjs.com/trusted-publishers) — no npm token is stored in the repo. Instead the workflow authenticates to npm via OIDC using the `id-token: write` permission. Trusted Publishers must be configured on the npm package settings page before OIDC publishes will succeed; this requires the package to already exist, so the **first release must be published manually once** (`npm login && npm publish` from a clean build), after which Trusted Publishers can be wired up and all subsequent releases go through this workflow.
-
-Secrets required on the repo: `RELEASE_PLEASE_TOKEN` (a PAT for release-please). No npm token is needed.
-
-## Design notes
-
-Scope and non-goals are summarized in [What this is NOT](#what-this-is-not); this section covers implementation decisions behind the scope that *is* supported.
-
-### Secrets
-
-- **Env-var auth is the preferred path.** `RENOVATE_TOKEN` wins; `GITHUB_TOKEN` / `GITLAB_TOKEN` are platform-specific fallbacks that `dry_run` and `resolve_config` resolve through `src/lib/credentialResolver.ts`. For `dry_run`, the platform-specific var is auto-translated to `RENOVATE_TOKEN` for the spawned Renovate CLI (Renovate itself only reads that one var). See [Platform setup](#platform-setup) for the matrix.
-- **MCP servers do NOT inherit your shell env.** Tokens (and every other env var — `COMPOSER_AUTH`, `RENOVATE_HOST_RULES`, `RENOVATE_PLATFORM`, …) must be set via the `env` key in `claude_desktop_config.json` / `.mcp.json`, not your shell. The MCP server runs as a child of the client; exporting `GITLAB_TOKEN` in your terminal does not reach it.
-- **Inline secrets persist in the tool transcript.** Anything passed as a tool input — `token`, `hostRules[].token`, `hostRules[].password` — is stored in the MCP transcript that the client may share, replay, or feed back into the LLM. As of v0.12, `dry_run` detects inline `token` / `hostRules[].token` on its input and appends a single advisory entry to the result `warnings` array steering callers toward env-var auth. The warning is advisory only — it does not change `isError`, does not block the spawn, and does not alter the report shape. (`password`-only host rules are not yet covered by the warning; the locked v0.12 trigger is `token`-only.)
-- This warning is `dry_run`-only as of v0.12. Other tools that accept inline tokens (e.g. `resolve_config`) follow the same env-var precedence but do not currently emit the warning.
-
-- `validate_config`, `dry_run`, and `write_config` shell out to the Renovate CLI rather than importing Renovate as a library — this decouples our Node version from Renovate's (currently Node 24).
-- The `renovate` package is bundled as a runtime dependency so users don't need a separate `npm i -g renovate`. We still spawn the binary as a child process (via `node node_modules/renovate/dist/renovate.js`) — never `import "renovate"` from `src/`. Resolution order is `RENOVATE_BIN` env override → bundled JS entry resolved via `require.resolve("renovate/package.json")` → bare tool name on `PATH`. The env override is the supported escape hatch when a user wants a different Renovate version.
-- `resolve_config`, `preview_custom_manager`, and `lint_config` are fully in-process and never invoke the Renovate CLI, so they work without a Renovate install.
-- `lint_config` is a semantic lint pass that sits alongside `validate_config` rather than replacing it: schema validation catches structural bugs, the linter catches Renovate-specific footguns that schema validation declares valid — most commonly a pattern like `"matchPackageNames": ["/devops\\/pipelines\\/.+"]` where a trailing `/` is missing and Renovate silently degrades the value to an exact-string match that never hits, or a typo like `"matchManagers": ["npmm"]` that silently applies the rule to zero packages. The ruleset is intentionally small (nine rules: `dead-regex-missing-slash`, `unwrapped-regex`, `matchManagers-unknown-name`, `deprecated-key`, `automerge-without-automerge-type`, `empty-extends`, `contradictory-disabled-with-package-rules`, `package-rule-without-action`, `invalid-schedule`), scoped to the regex-aware and manager-aware fields plus a handful of `packageRules`-level footguns, and tuned to avoid false positives on benign exact strings containing a `.`. The valid-manager list is snapshotted from the `renovate` devDep at `src/data/managers.generated.ts` (regenerate with `npm run generate:managers`), and unknown names get a Damerau-Levenshtein "did you mean?" suggestion when something close enough exists. The `deprecated-key` rule scans the top level plus `packageRules` / `hostRules` / `customManagers` entries for keys Renovate has renamed (e.g. `masterIssue` → `dependencyDashboard`); the rename is embedded in the finding message and the user is pointed at `migrate_config` to auto-apply. The rename map is snapshotted from `MigrationsService.renamedProperties` at `src/data/migrations.generated.ts` (regenerate with `npm run generate:migrations`). Rule IDs are stable so findings can be suppressed by callers.
-- `preview_custom_manager` honors `.gitignore` (including nested `.gitignore`s and `.git/info/exclude`) when walking the repo, so generated/vendored directories like `dist/`, `.next/`, `target/`, `__pycache__/` don't crowd out real hits against the `maxFilesWalked` cap. `node_modules/` and `.git/` are always skipped as a safety net even when no `.gitignore` is present.
-- `preview_custom_manager` exposes two separate safety caps so the warning text can name which one tripped: `maxFilesWalked` (default 2000) bounds the directory walk before any `fileMatch` testing, and `maxFilesMatched` (default 500) bounds the result set after `fileMatch` is applied. Previously a single `maxFilesScanned` conflated the two, leaving the user unable to tell whether to narrow `fileMatch` or widen the walk.
-- `preview_custom_manager` runs every user-supplied regex on a `worker_threads` worker with a wall-clock budget per operation (default 2 s, configurable via `matchTimeoutMs`). Catastrophic backtracking — e.g. `^(a+)+b$` against `aaaa…c`, or `(.*)*=` against a modestly sized file — would otherwise pin the MCP server's event loop indefinitely. On timeout the worker is terminated and a warning is appended identifying which `fileMatch[i]` or `matchStrings[i]` was aborted, so the user can simplify the pattern or raise the budget.
-- `preview_custom_manager` also stats each matched file before reading it and skips anything larger than `maxFileBytes` (default 5 MiB) with a warning, so a stray lockfile, generated artifact, or SQL dump caught by a loose `fileMatch` can't OOM the server. `maxHitsPerFile` already bounds output size; this guards input size.
-- `preview_custom_manager` supports two `customType` values: `regex` (the original path) and `jsonata` (added in v0.13). For `customType: "jsonata"`, `fileFormat` is required and must be one of `json`, `yaml`, or `toml` — the file is parsed structurally up front (via `JSON.parse`, the `yaml` package, or `smol-toml`), then each `matchStrings` entry is evaluated as a JSONata expression against the parsed value. Each expression must return either an array of objects whose keys map to dep fields (`depName`, `currentValue`, `datasource`, `versioning`, …) OR a single bare object that is auto-wrapped to a one-element array — this mirrors Renovate's own `QueryResultZod` schema. Non-string primitive values in the returned objects are stringified for `{{groupName}}` template substitution (e.g. `currentValue: 1.2` → `"1.2"`); `null` / `undefined` and nested objects/arrays are dropped from the substitution bag. The `{{groupName}}` template-substitution gap is shared with the regex path — full Handlebars helpers and conditionals are not implemented. JSONata expressions evaluate inside the same `worker_threads` worker as user regexes and share the `matchTimeoutMs` budget (default 2 s, configurable) — a pathological expression that doesn't return in time is killed by `worker.terminate()`, identical to the regex safety posture. Run `dry_run` afterwards for full-fidelity confirmation.
-- `resolve_config` expands `extends` against a committed snapshot of Renovate's built-in presets (`src/data/presets.generated.ts`). External `github>` / `gitlab>` fetching is opt-in, uses each platform's contents API with a 10 s timeout, and caches results per call. The `endpoint` input swaps in a custom API base for GHE / self-hosted GitLab; `platform` additionally rewrites `local>` presets to be fetched against that endpoint.
-- External preset fetches refuse to follow HTTP redirects (`redirect: "manual"`) and never attach `Authorization: Bearer …` / `PRIVATE-TOKEN: …` headers to non-`https://` URLs. Following redirects with custom auth headers can leak `RENOVATE_TOKEN` / `GITHUB_TOKEN` / `GITLAB_TOKEN` cross-host (undici only strips the standard `Authorization` header on cross-*origin* redirects, not `PRIVATE-TOKEN`); rejecting them outright avoids the leak path and matches the fact that the GitHub/GitLab content APIs don't normally redirect for valid presets.
-- External preset fetches cap the response body at 1 MB. A `Content-Length` over the cap is rejected up front; chunked responses without a declared length are streamed into a bounded buffer that aborts the read once the running total passes the cap. Auth-failure bodies (401/403) are read with an 8 KB cap so a misconfigured endpoint returning a giant HTML error page can't OOM the long-lived MCP process. Preset bodies are tiny in practice, so the cap is well above any legitimate value.
-- The `endpoint` input on `resolve_config` / `explain_config` / `dry_run` is validated before any token-bearing request is built or forwarded to the Renovate child as `--endpoint=`. Anything that isn't an `https://` URL with a non-empty public host is refused: non-https schemes (`http:`, `file:`, `data:`, …), userinfo (`user:pass@host`), and any RFC 1918 / loopback / link-local literal (`localhost`, `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16` (incl. cloud-metadata), `0.0.0.0/8`, `::1`, `::`, `::ffff:*`, `fc00::/7`, `fe80::/10`). Self-hosted GitHub Enterprise / GitLab on public-DNS https URLs is unaffected. The check is string-level (no DNS) — the goal is to make a prompt-injected `endpoint` value unable to coerce a token-bearing request to an attacker-controlled or internal-only address.
-- `resolve_config` merges preset bodies with a close approximation of Renovate's own `mergeChildConfig` — arrays concat, objects recursively merge, scalars overwrite — not a bit-identical port. Rule-specific semantics for `hostRules`, `regexManagers` / `customManagers`, and certain boolean flags aren't modeled here. Every response carries `mergeQuality: "preview"` plus a human-readable `disclaimer` so callers can't miss the limitation; run `dry_run` for authoritative output.
-- When `resolve_config` encounters template tokens outside its supported subset, it records a structured entry in `warnings`: under-argument cases (`{{arg2}}` referenced when only one arg was passed) substitute an empty string, while non-positional tokens (`{{packageRules}}`, Handlebars helpers like `{{#if …}}`) pass through verbatim.
-- `explain_config` reuses the same expansion machinery as `resolve_config` (`parsePreset`, `loadPresetBody`, `applyArgs`, `recordTemplateWarnings`) so the two can't drift — if `resolve_config` resolves a preset, `explain_config` does too. The annotated layer threads each preset body's leaves through a parallel `mergeAnnotated` that preserves contributors instead of dropping them, then pins each contribution with the source name (literal `extends` entry, or `<own>` for the user's input config) and a `via` chain naming every parent preset traversed to reach it. Arrays accumulate every contribution in `setBy` and concat their `value`s; scalars list every contribution in merge order with the last as the winner. `merge_quality: "preview"` carries the same disclaimer as `resolve_config` — Renovate's rule-specific semantics for `hostRules`, `regexManagers`, and certain boolean flags aren't modelled.
-- `dry_run` uses `--report-type=file` so we get a structured JSON report instead of scraping stdout. The report path is pre-created with mode 0600 before Renovate is spawned (Renovate overwrites in place with `O_TRUNC`, preserving the mode), so the on-disk JSON is never world-readable while the run is in flight — Renovate's `problems` array can carry host-rule values that we don't want exposed under the default `umask`. The file is unlinked in a `finally` block. When a `hostRules` input is passed it's written to a mode-0600 temp file in `os.tmpdir()`, handed to Renovate via the `RENOVATE_CONFIG_FILE` env var (the CLI has no `--config-file` flag), and deleted in a `finally` block. Token/password values — including the platform `token` input — are scrubbed from the detected `problems` list and the `logTail` fallback before returning.
-- `dry_run` defaults to `--platform=local` so no host token is required, but that mode can't resolve `local>` presets (they have no platform context to expand against) and silently hides non-default-host GitHub/GitLab setups. When the caller doesn't pass a `platform` input, the tool first falls back to `RENOVATE_PLATFORM` from the MCP server's env (if it's one of `local`/`github`/`gitlab`) before defaulting to `local` — without that fallback, the wrapper would unconditionally pass `--platform=local` and silently override an env var the user had set in their `mcp.json`. Passing `platform` + `endpoint` + `token` + `repository` (or relying on the `RENOVATE_PLATFORM` / `RENOVATE_ENDPOINT` env vars) switches the run to a real platform client so the preset-fetch path works end-to-end; `--dry-run` is still set, so no PRs are opened. The repository is passed to Renovate as a positional argument because the CLI has no `--repository` flag. `endpoint` and `token` are also forwarded in the default `platform=local` mode so `gitlab>…` / `github>…` preset shortcuts (which are otherwise hardcoded to gitlab.com/github.com) can be redirected at a self-hosted host. As a guard against the silent-failure mode, `dry_run` preflight-checks the repo's config: if it extends any `local>…` preset while the effective platform is `local`, the tool fails fast with specific remediation rather than spawning a Renovate run that would opaquely report `config-validation`. The preflight is skipped for `dryRunMode=extract` so manifest-only extraction can still be attempted.
-- `dry_run` returns a top-level `ok` boolean that is `false` whenever the CLI exited non-zero OR the structured report contains a validation/error-level problem (`level >= 40`, `message === "config-validation"`, or a non-empty `validationError` field). Renovate frequently writes exit-code 0 alongside report-level failures — trusting the exit code alone hides runs that did nothing. Two specific kinds of in-report problems are *filtered out* of `reportErrors` because they describe benign degradation rather than a failed run: the bundled RE2 native module failing to load (Renovate falls back to JS `RegExp` and keeps running — still surfaced under `warnings`) and Renovate's own `Unsupported node environment` notice (the run still produces a usable report — surfaced under a separate `environmentWarnings[]` array). For the nodeEnv case, `ok` also stays `true` even when Renovate exits non-zero, because the report is intact. Classification lives in `src/lib/runtimeWarnings.ts` (`classifyReportProblem`).
-- **Platform-source precedence is visible to callers.** Resolution is `platform` input → `RENOVATE_PLATFORM` env → `local`, and the response echoes which step won via `platformSource: "input" | "env" | "default"` and `effectivePlatform`. Both preflight error messages (missing `repository`, missing token for a remote platform) carry an origin tag so a surprising `gitlab` value can be traced without reading source. When `platform` is unset and the env fallback yields a non-local platform, an advisory entry is appended to `warnings` reminding the caller they can pass `platform: 'local'` to override.
-- **Large-report escape hatch.** MCP harnesses truncate tool responses at modest sizes (≈75 KB on Claude Desktop), and a real Renovate report easily exceeds that. `dry_run` accepts `reportOutputPath` (absolute path; mode-0600 write of the full report) which collapses `summary.report` to `{ reportPath, repoCount, updateCount }`, plus `summaryOnly: true` for further inline trimming. `dry_run_diff` accepts each input as either an inline report or `{ reportPath: … }`, so the iterative workflow becomes: `dry_run({ reportOutputPath: "/tmp/before.json" })`, tweak config, `dry_run({ reportOutputPath: "/tmp/after.json" })`, then `dry_run_diff({ before: { reportPath }, after: { reportPath } })`. `warnings` / `problems` / `reportErrors` / `environmentWarnings` always stay inline — those are the actionable bits.
-- `dry_run` emits MCP progress notifications only when the caller's `tools/call` includes `_meta.progressToken` — no-op otherwise, so legacy clients see zero overhead. A 5-second heartbeat ticks while the child runs; each tick's message is best-effort enriched with the latest Renovate JSON-log `msg` seen on stdout. Notifications are also emitted at start and completion. We deliberately don't couple to Renovate's log schema beyond reading `msg`, since that schema isn't a stable API.
-- `dry_run_diff` is stateless on purpose: both reports are passed as inputs, no per-repo state is kept on the server. Updates are keyed by `(manager, packageFile, depName)` so a version bump on the same dep shows up once under `changed` rather than twice as `removed + added`. Compared per identity: `newValue`, `newVersion`, `updateType`, `branchName`, `groupName`, `schedule`. Either input can be the raw Renovate report, the full `dry_run` summary (with the `report` key), or a `{ reportPath: "<absolute path>" }` pointer at a file on disk (the tool reads + JSON-parses it) — the inline and path forms can be mixed. The path form is the round-trip with `dry_run`'s `reportOutputPath`.
-- `write_config` writes to a temp file, validates, then atomically renames — so a failed validation never leaves a broken config on disk. The `force: true` escape hatch is gated behind a separate `confirmForce: "YES_OVERRIDE_VALIDATION"` literal: a single boolean is too easy for a prompt-injected agent to flip, but emitting an unusual sentinel string is a deliberate step that's harder to navigate accidentally.
-- **Round-trip writes.** When the target file already exists and parses as JSON-with-comments, `write_config` performs a surgical edit through `src/lib/configWriter.ts` (backed by `jsonc-parser`, the same library VS Code uses to edit `settings.json`): comments, key order, trailing commas, blank-line groupings, and any unrelated trivia are preserved — only the keys the caller actually changed are rewritten. Brand-new file writes (no prior file at the target path) fall back to `JSON.stringify(config, null, 2) + "\n"` — byte-identical to pre-Phase-4 behavior. `.json5` files that lean on JSON5-only syntax (unquoted keys, single-quoted strings, hex literals, etc.) are refused with `reason: "json5-not-jsonc-compatible"`, and corrupted/unparseable existing files are refused with `reason: "existing-file-unparseable"`; both refusals hint at `force: true` as the documented escape hatch. `force: true` (with `confirmForce`) is intentionally destructive — it skips both validation AND the round-trip path and rewrites the file with a clean `JSON.stringify` rendering. The `bytes` field on a successful response is the full file size after the round-trip edit, not the size of the diff. The implementation lives in `src/lib/configWriter.ts` and is the single place `jsonc-parser` is used; the existing `json5` dependency stays for parse-only consumers (`migrate_config`, `lint_config`, `configLocations.ts`) and is not migrated.
-- `migrate_config` is the only tool that calls into Renovate as a library rather than shelling out to it — Renovate ships no `renovate-config-migrate` CLI, only a library export. To keep the main MCP server process decoupled from Renovate's internal API surface (and to avoid the ~20-30 MB resident cost of `getOptions()` eagerly loading the manager registry), the tool spawns a `node:worker_threads` worker on demand that imports `renovate/dist/config/migration.js` inside the worker. The main process never imports `renovate`. First call carries a one-time cold-load latency (a few seconds) for the worker's ESM graph; the worker is terminated after each call. See `docs/adr/0001-worker-isolated-renovate-migration.md` for the full rationale. The tool returns the migrated config plus a unified diff but never writes — chain with `write_config` to persist.
-- **`check_setup` fast-paths the bundled binary probe.** Each Renovate CLI binary is `node node_modules/renovate/dist/<cli>.js`, and a cold `--version` spawn loads Renovate's full ESM graph (~2 s per binary). Two of those at every MCP session start used to dominate cold-start latency and could blow past clients' `initialize` timeout. When the binary resolves via the bundled path (the default install), `check_setup` now reads the version directly from `node_modules/renovate/package.json` — no spawn — bringing the probe to a few milliseconds. The `RENOVATE_BIN` / `RENOVATE_CONFIG_VALIDATOR_BIN` env overrides keep the spawn-based check (a user pointing those at a custom binary wants real proof of life). Side effect: runtime warnings derived from `--version` stderr (e.g. RE2 dlopen failure) no longer appear in the startup banner for the bundled path; they still fire on the first actual tool call through `renovateCli.ts:run`, so users see the warning on first use rather than at session start.
-- `check_setup` and the shell-out tools (`validate_config`, `write_config`, `dry_run`) detect Renovate runtime conditions that degrade the tool silently — currently the bundled `re2` native module failing to load (typically after a Node major-version upgrade leaves a prebuilt `re2.node` compiled against the old ABI). When the WARN appears in Renovate's stderr, the tool response carries a `warnings: [{ kind: "re2-unusable", … }]` entry alongside its normal output and `check_setup` aggregates the same warning into `SetupStatus.warnings` plus the startup `instructions` banner. Renovate keeps running on JavaScript `RegExp` so calls don't fail, but regex-heavy operations (custom managers, validation, lookups) are noticeably slower; the fix hint is to reinstall renovate-mcp (which reinstalls the bundled `renovate` and rebuilds its native deps), or run `npm rebuild re2` inside the renovate-mcp install's `node_modules/renovate`. This is passive detection only — the server doesn't rebuild anything itself.
+- **Not a Renovate replacement.** This server doesn't open PRs, run scheduled updates, or execute in CI — it's a design-time companion for a local `renovate.json`. Use the real Renovate for the actual dependency-update pipeline.
+- **`resolve_config` is preview-quality.** Preset expansion runs against a committed snapshot, and template substitution implements only positional `{{argN}}` placeholders — non-positional tokens and Handlebars helpers are flagged in `warnings` and pass through verbatim. For authoritative output, run `dry_run`.
+- **`preview_custom_manager` is a subset of Renovate's custom managers.** It covers `customType: "regex"` (with `matchStringsStrategy` of `any` / `combination` / `recursive`) and `customType: "jsonata"` (with `fileFormat: "json" | "yaml" | "toml"`). Template substitution is `{{groupName}}` only — full Handlebars helpers/conditionals are not implemented. Other custom types (e.g. `html`) are out of scope. Use it for fast iteration; confirm with `dry_run`. Full coverage matrix in [`docs/tools.md#preview_custom_manager`](docs/tools.md#preview_custom_manager).
+- **`validate_config` / `dry_run` aren't exercised end-to-end in CI.** The bundled Renovate is available (it's a runtime dep), but the integration tests use fake binaries via `RENOVATE_BIN` / `RENOVATE_CONFIG_VALIDATOR_BIN` env overrides for determinism and speed. Run the tools locally against a real config to validate behaviour.

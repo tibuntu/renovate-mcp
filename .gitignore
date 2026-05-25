@@ -8,4 +8,5 @@ coverage/
 .claude*/
 .serena/
 .planning/
-docs/
+docs/adrs/
+docs/superpowers/
