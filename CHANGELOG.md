@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0](https://github.com/tibuntu/renovate-mcp/compare/v0.12.1...v0.13.0) (2026-05-25)
+
+
+### Features
+
+* **check_setup:** repo-aware diagnosis via optional repoPath ([946f13b](https://github.com/tibuntu/renovate-mcp/commit/946f13b19474d619f65a980930534af369dcb319))
+
 ## [0.12.1](https://github.com/tibuntu/renovate-mcp/compare/v0.12.0...v0.12.1) (2026-05-25)
 
 
