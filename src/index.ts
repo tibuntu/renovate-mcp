@@ -43,6 +43,7 @@ const BASE_INSTRUCTIONS = [
   "  9. migrate_config         — apply Renovate's built-in migrations (deprecated keys → current schema) and return the migrated config",
   " 10. write_config           — save the agreed-upon config (validates first)",
   "",
+  "Before the first repo-touching tool call in a session (read_config, resolve_config, dry_run, write_config, …), call check_setup with the same repoPath. It surfaces token / endpoint / connectivity problems up front (e.g. \"set GITHUB_TOKEN or github-actions deps will be skipped\") instead of waiting for dry_run to fail. Skip if the user has already confirmed setup or is doing offline-only work that doesn't depend on git origin or registries.",
   "If any tool fails unexpectedly, call check_setup to diagnose CLI availability.",
   "Built-in preset reference: renovate://presets (namespace index), renovate://presets/{namespace} (one namespace), renovate://preset/{name} (one preset's expanded JSON).",
 ].join("\n");

@@ -1,5 +1,16 @@
 import { createRequire } from "node:module";
 import fs from "node:fs";
+import { locateConfig } from "./configLocations.js";
+import { resolveCredential } from "./credentialResolver.js";
+import { probeEndpoint, type EndpointProbeResult } from "./endpointProbe.js";
+import {
+  classifyRemoteHost,
+  parseRemoteUrl,
+  readOriginRemote,
+  type ClassifiedRemote,
+  type ParsedRemote,
+  type RemoteClassification,
+} from "./gitRemote.js";
 import { run, resolveRenovateTool } from "./renovateCli.js";
 import { dedupeRuntimeWarnings, type RuntimeWarning } from "./runtimeWarnings.js";
 
@@ -53,6 +64,33 @@ export interface PlatformContext {
   notes: string[];
 }
 
+export type EffectivePlatform = "github" | "gitlab" | "local" | "unknown";
+export type EffectivePlatformSource = "remote" | "config" | "env" | "default";
+
+export interface RepoContext {
+  repoPath: string;
+  remote:
+    | (ParsedRemote & ClassifiedRemote & { url: string })
+    | null;
+  configFile: { path: string; format: string } | null;
+  configEndpoint?: string;
+  configPlatform?: "github" | "gitlab" | "local";
+  effectivePlatform: EffectivePlatform;
+  effectivePlatformSource: EffectivePlatformSource;
+  endpointProbe?: EndpointProbeResult & { derivedFrom: "config" | "env" | "default" };
+  inconsistencies: string[];
+}
+
+export interface CheckSetupOptions {
+  repoPath?: string;
+  /**
+   * Override the network probe (for tests). When set, the helper is called
+   * instead of `probeEndpoint` for any reachability check. Production callers
+   * should leave this unset.
+   */
+  probe?: (url: string) => Promise<EndpointProbeResult>;
+}
+
 export interface SetupStatus {
   node: string;
   renovate: BinaryStatus;
@@ -68,6 +106,12 @@ export interface SetupStatus {
    * when nothing was detected.
    */
   warnings: RuntimeWarning[];
+  /**
+   * Repo-aware diagnosis. Populated only when `checkSetup` is called with a
+   * `repoPath`. Omitted entirely otherwise so the startup-time invocation in
+   * `src/index.ts` (no repoPath) keeps its existing output shape.
+   */
+  repoContext?: RepoContext;
 }
 
 const VERSION_TIMEOUT_MS = 10_000;
@@ -229,7 +273,7 @@ async function checkBinary(tool: RenovateBinary): Promise<BinaryStatus> {
   }
 }
 
-export async function checkSetup(): Promise<SetupStatus> {
+export async function checkSetup(options: CheckSetupOptions = {}): Promise<SetupStatus> {
   const [renovate, renovateConfigValidator] = await Promise.all([
     checkBinary("renovate"),
     checkBinary("renovate-config-validator"),
@@ -261,16 +305,217 @@ export async function checkSetup(): Promise<SetupStatus> {
     ...(renovateConfigValidator.runtimeWarnings ?? []),
   ]);
 
+  const platformContext = inspectPlatformContext(process.env);
+
+  let repoContext: RepoContext | undefined;
+  if (options.repoPath) {
+    repoContext = await gatherRepoContext(options.repoPath, platformContext, options.probe);
+    appendRepoHints(repoContext, hints, platformContext);
+  }
+
   return {
     node: process.version,
     renovate,
     renovateConfigValidator,
     envOverrides,
-    platformContext: inspectPlatformContext(process.env),
+    platformContext,
     ok: renovate.found && renovateConfigValidator.found,
     hints,
     warnings,
+    ...(repoContext ? { repoContext } : {}),
   };
+}
+
+async function gatherRepoContext(
+  repoPath: string,
+  platformContext: PlatformContext,
+  probe: ((url: string) => Promise<EndpointProbeResult>) | undefined,
+): Promise<RepoContext> {
+  const inconsistencies: string[] = [];
+
+  const remoteUrl = await readOriginRemote(repoPath);
+  let remote: RepoContext["remote"] = null;
+  if (remoteUrl) {
+    const parsed = parseRemoteUrl(remoteUrl);
+    if (parsed) {
+      const classification = classifyRemoteHost(parsed.host);
+      remote = { url: remoteUrl, ...parsed, ...classification };
+    }
+  }
+
+  let configFile: RepoContext["configFile"] = null;
+  let configEndpoint: string | undefined;
+  let configPlatform: RepoContext["configPlatform"];
+  try {
+    const located = await locateConfig(repoPath);
+    if (located) {
+      configFile = { path: located.relPath, format: located.format };
+      const cfgEndpoint = located.config.endpoint;
+      if (typeof cfgEndpoint === "string" && cfgEndpoint.length > 0) {
+        configEndpoint = cfgEndpoint;
+      }
+      const cfgPlatform = located.config.platform;
+      if (cfgPlatform === "github" || cfgPlatform === "gitlab" || cfgPlatform === "local") {
+        configPlatform = cfgPlatform;
+      }
+    }
+  } catch {
+    // Parsing errors are surfaced by read_config; for setup diagnosis we
+    // intentionally swallow them rather than failing the whole tool.
+  }
+
+  const { platform: effectivePlatform, source: effectivePlatformSource } = derivePlatform(
+    remote,
+    configPlatform,
+    platformContext.renovatePlatform,
+  );
+
+  if (remote && configEndpoint) {
+    const cfgHost = safeHostFromUrl(configEndpoint);
+    if (cfgHost && cfgHost !== remote.host) {
+      inconsistencies.push(
+        `Remote origin (\`${remote.host}\`) and config \`endpoint\` (\`${cfgHost}\`) point at different hosts. Renovate will use the config endpoint.`,
+      );
+    }
+  }
+  if (remote && platformContext.renovatePlatform) {
+    const remoteSays =
+      remote.classified === "github" || remote.classified === "gitlab"
+        ? remote.classified
+        : remote.flavor;
+    if (
+      remoteSays
+      && remoteSays !== platformContext.renovatePlatform
+      && platformContext.renovatePlatform !== "local"
+    ) {
+      inconsistencies.push(
+        `Remote origin classifies as \`${remoteSays}\` but \`RENOVATE_PLATFORM=${platformContext.renovatePlatform}\`. \`dry_run\` will use the env value when its \`platform\` input is unset.`,
+      );
+    }
+  }
+
+  const probeUrlInfo = resolveProbeUrl(remote, configEndpoint, platformContext.renovateEndpoint);
+  let endpointProbe: RepoContext["endpointProbe"];
+  if (probeUrlInfo) {
+    const fn = probe ?? probeEndpoint;
+    const result = await fn(probeUrlInfo.url);
+    endpointProbe = { ...result, derivedFrom: probeUrlInfo.derivedFrom };
+  }
+
+  return {
+    repoPath,
+    remote,
+    configFile,
+    configEndpoint,
+    configPlatform,
+    effectivePlatform,
+    effectivePlatformSource,
+    endpointProbe,
+    inconsistencies,
+  };
+}
+
+function derivePlatform(
+  remote: RepoContext["remote"],
+  configPlatform: RepoContext["configPlatform"],
+  envPlatform: string | null,
+): { platform: EffectivePlatform; source: EffectivePlatformSource } {
+  if (remote) {
+    if (remote.classified === "github") return { platform: "github", source: "remote" };
+    if (remote.classified === "gitlab") return { platform: "gitlab", source: "remote" };
+    if (remote.classified === "self-hosted" && remote.flavor && remote.flavor !== "unknown") {
+      return { platform: remote.flavor, source: "remote" };
+    }
+  }
+  if (configPlatform) return { platform: configPlatform, source: "config" };
+  if (envPlatform === "github" || envPlatform === "gitlab" || envPlatform === "local") {
+    return { platform: envPlatform, source: "env" };
+  }
+  if (remote?.classified === "self-hosted") {
+    return { platform: "unknown", source: "remote" };
+  }
+  return { platform: "local", source: "default" };
+}
+
+function resolveProbeUrl(
+  remote: RepoContext["remote"],
+  configEndpoint: string | undefined,
+  envEndpoint: string | null,
+): { url: string; derivedFrom: "config" | "env" | "default" } | null {
+  if (configEndpoint) return { url: configEndpoint, derivedFrom: "config" };
+  if (envEndpoint) return { url: envEndpoint, derivedFrom: "env" };
+  if (!remote) return null;
+  if (remote.classified === "github") {
+    return { url: "https://api.github.com", derivedFrom: "default" };
+  }
+  if (remote.classified === "gitlab") {
+    return { url: "https://gitlab.com/api/v4/version", derivedFrom: "default" };
+  }
+  // self-hosted with no configured endpoint: don't guess a path on someone's
+  // private host.
+  return null;
+}
+
+function safeHostFromUrl(url: string): string | null {
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+function appendRepoHints(
+  ctx: RepoContext,
+  hints: string[],
+  platformContext: PlatformContext,
+): void {
+  const platform = ctx.effectivePlatform;
+  if (platform === "github") {
+    const cred = resolveCredential(["RENOVATE_TOKEN", "GITHUB_TOKEN"]);
+    if (!cred.envVar) {
+      hints.push(
+        "This repo's origin is on GitHub. Set `GITHUB_TOKEN` (a read-only PAT is enough — used for rate-limit headroom on public deps) in the MCP server's env, or `dry_run` will skip your github-actions dependencies with `skipReason: github-token-required`.",
+      );
+    }
+  } else if (platform === "gitlab") {
+    const cred = resolveCredential(["RENOVATE_TOKEN", "GITLAB_TOKEN"]);
+    if (!cred.envVar) {
+      hints.push(
+        "This repo's origin is on GitLab. Set `GITLAB_TOKEN` (or `RENOVATE_TOKEN`) in the MCP server's env, or private-preset / private-registry lookups will fail.",
+      );
+    }
+  }
+
+  if (
+    ctx.remote?.classified === "self-hosted"
+    && !ctx.configEndpoint
+    && !platformContext.renovateEndpoint
+  ) {
+    hints.push(
+      `Self-hosted host \`${ctx.remote.host}\` detected from origin, but no \`endpoint\` is configured. Set \`endpoint\` in renovate.json or \`RENOVATE_ENDPOINT\` in the MCP server's env — see docs/platform-setup.md.`,
+    );
+    if (ctx.remote.flavor === "unknown") {
+      hints.push(
+        `Could not infer GitHub vs GitLab from hostname \`${ctx.remote.host}\`. Set \`RENOVATE_PLATFORM=github\` or \`RENOVATE_PLATFORM=gitlab\` explicitly.`,
+      );
+    }
+  }
+
+  if (ctx.endpointProbe && !ctx.endpointProbe.reachable) {
+    if (ctx.endpointProbe.skipped === "endpoint-blocked") {
+      hints.push(
+        `Skipped reachability probe of \`${ctx.endpointProbe.url}\`: ${ctx.endpointProbe.error ?? "blocked by endpoint allowlist"}. Use a public-DNS https URL for \`endpoint\` / \`RENOVATE_ENDPOINT\` — see docs/security.md#endpoint-validation.`,
+      );
+    } else {
+      hints.push(
+        `Could not reach \`${ctx.endpointProbe.url}\`: ${ctx.endpointProbe.error ?? "no response"}. If you're behind a VPN/proxy, \`dry_run\` will fail with the same network error.`,
+      );
+    }
+  }
+
+  for (const item of ctx.inconsistencies) {
+    hints.push(item);
+  }
 }
 
 /**
@@ -433,6 +678,40 @@ export function describeSetup(status: SetupStatus): string {
   if (ctx.notes.length > 0) {
     lines.push("  Notes:");
     for (const n of ctx.notes) lines.push(`    - ${n}`);
+  }
+  if (status.repoContext) {
+    const rc = status.repoContext;
+    lines.push("");
+    lines.push(`Repo context (${rc.repoPath}):`);
+    if (rc.remote) {
+      const flavor = rc.remote.flavor ? ` (${rc.remote.flavor})` : "";
+      lines.push(`  origin: ${rc.remote.url}`);
+      lines.push(`  host: ${rc.remote.host} → ${rc.remote.classified}${flavor}`);
+    } else {
+      lines.push("  origin: (no git remote found)");
+    }
+    if (rc.configFile) {
+      lines.push(`  config: ${rc.configFile.path} (${rc.configFile.format})`);
+    } else {
+      lines.push("  config: (no renovate config found)");
+    }
+    if (rc.configEndpoint) lines.push(`  config.endpoint: ${rc.configEndpoint}`);
+    if (rc.configPlatform) lines.push(`  config.platform: ${rc.configPlatform}`);
+    lines.push(`  effective platform: ${rc.effectivePlatform} (from ${rc.effectivePlatformSource})`);
+    if (rc.endpointProbe) {
+      if (rc.endpointProbe.skipped) {
+        lines.push(`  endpoint probe (${rc.endpointProbe.derivedFrom}): SKIPPED — ${rc.endpointProbe.skipped}`);
+      } else if (rc.endpointProbe.reachable) {
+        const status = rc.endpointProbe.status ?? "?";
+        lines.push(`  endpoint probe (${rc.endpointProbe.derivedFrom}): ${rc.endpointProbe.url} → ${status}`);
+      } else {
+        lines.push(`  endpoint probe (${rc.endpointProbe.derivedFrom}): ${rc.endpointProbe.url} → UNREACHABLE (${rc.endpointProbe.error ?? "no response"})`);
+      }
+    }
+    if (rc.inconsistencies.length > 0) {
+      lines.push("  Inconsistencies:");
+      for (const i of rc.inconsistencies) lines.push(`    - ${i}`);
+    }
   }
   if (status.hints.length > 0) {
     lines.push("");

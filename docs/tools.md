@@ -33,7 +33,28 @@ Surfaces a `platformContext` block with `RENOVATE_PLATFORM` / `RENOVATE_ENDPOINT
 
 Compares the running Node version against the bundled Renovate's declared `engines.node` range and emits an actionable hint when they're incompatible — the same condition Renovate would otherwise log only as `Unsupported node environment` during a `dry_run`.
 
-See also: [Operational notes — `check_setup` bundled-binary fast path](operations.md#check_setup-bundled-binary-fast-path).
+### Optional `repoPath` — repo-aware diagnosis
+
+Pass an absolute `repoPath` to add a `repoContext` block. Three signals are combined into actionable hints *before* the user runs `dry_run`:
+
+1. **Git origin remote** — read directly from `.git/config` (no `git` spawn). Both SSH (`git@host:owner/repo.git`) and HTTPS (`https://host/owner/repo`) forms parse; nested GitLab subgroup paths are preserved. The host is classified as `github` (`github.com`), `gitlab` (`gitlab.com`), or `self-hosted` with a best-effort flavor (`github` / `gitlab` / `unknown`).
+2. **Repo config endpoint / platform** — uses the same discovery path as [`read_config`](#read_config) to locate `renovate.json` / `renovate.json5` / etc., then pulls top-level `endpoint` and `platform` if present. Mismatches against the origin host land in `repoContext.inconsistencies`.
+3. **Endpoint reachability** — best-effort HEAD (fallback GET on 405) against the resolved endpoint. Probe URL precedence: `config.endpoint` → `RENOVATE_ENDPOINT` → defaults derived from origin (`https://api.github.com`, `https://gitlab.com/api/v4/version`). Self-hosted with no configured endpoint deliberately skips the probe — the tool won't guess a path on a private host.
+
+**Security invariant:** every probe URL goes through the same allowlist validator (`https://`-only, no userinfo, no RFC1918 / loopback / link-local / cloud-metadata addresses) used by `dry_run`, `resolve_config`, and `externalPresetFetcher`. Blocked URLs surface as a hint with `skipped: "endpoint-blocked"` and never reach `fetch`. The probe sends no credentials — it's a bare HEAD / GET with no `Authorization` header. See [Security & secrets — endpoint validation](security.md#endpoint-validation).
+
+**Hint synthesis.** Examples of the hints the cross-reference can emit:
+
+- Origin is `github.com` and no `GITHUB_TOKEN` / `RENOVATE_TOKEN` is set → "your github-actions deps will be skipped at `dry_run` time."
+- Origin is `gitlab.example.com` (self-hosted) and no `endpoint` is configured → "set `endpoint` in renovate.json or `RENOVATE_ENDPOINT` in the MCP server's env."
+- Origin and `config.endpoint` point at different hosts → recorded under `inconsistencies` (Renovate will use the config endpoint).
+- Endpoint probe failed → "If you're behind a VPN/proxy, `dry_run` will fail with the same network error."
+
+Token-presence checks go through the same `credentialResolver` that `dry_run` and `resolve_config` use, so the diagnosis cannot drift from how Renovate actually resolves credentials.
+
+`repoContext` is omitted entirely when `repoPath` is unset, so the startup-time invocation in `src/index.ts` keeps its existing output shape. The new diagnosis never flips `ok` to `false` — that flag remains tied to binary availability.
+
+See also: [Operational notes — `check_setup` bundled-binary fast path](operations.md#check_setup-bundled-binary-fast-path) and [Platform setup](platform-setup.md).
 
 ## `get_version`
 

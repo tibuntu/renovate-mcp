@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { startServer, type McpSession } from "../helpers/mcpSession.js";
@@ -62,6 +62,49 @@ describe("startup instructions banner", () => {
     expect(session.instructions).not.toContain("Partial availability");
     // BASE_INSTRUCTIONS content should still be present
     expect(session.instructions).toContain("Design and debug Renovate configurations");
+  });
+});
+
+describe("check_setup with repoPath end-to-end", () => {
+  let repo: string;
+  beforeEach(async () => {
+    repo = await mkdtemp(
+      path.join(
+        tmpdir(),
+        `rmcp-${path.basename(import.meta.url, ".ts")}-${process.pid}-cs-`,
+      ),
+    );
+  });
+  afterEach(async () => {
+    await rm(repo, { recursive: true, force: true });
+  });
+
+  it("returns a repoContext block diagnosing a self-hosted GitLab origin", async () => {
+    // Self-hosted with no configured endpoint → no probe runs (we don't guess
+    // a path on a private host), so the integration test stays offline.
+    await mkdir(path.join(repo, ".git"), { recursive: true });
+    await writeFile(
+      path.join(repo, ".git", "config"),
+      `[remote "origin"]\n\turl = git@gitlab.example.com:group/sub/project.git\n`,
+    );
+    session = await startServer();
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+    }>("tools/call", { name: "check_setup", arguments: { repoPath: repo } });
+    const text = res.result?.content[0]?.text ?? "";
+    // The summary plus the JSON payload are concatenated in the response.
+    const jsonStart = text.lastIndexOf("\n\n{");
+    const payload = JSON.parse(text.slice(jsonStart + 2));
+    expect(payload.repoContext).toBeDefined();
+    expect(payload.repoContext.remote).toMatchObject({
+      host: "gitlab.example.com",
+      classified: "self-hosted",
+      flavor: "gitlab",
+      owner: "group/sub",
+      repo: "project",
+    });
+    expect(payload.repoContext.endpointProbe).toBeUndefined();
+    expect(payload.hints.some((h: string) => h.includes("Self-hosted"))).toBe(true);
   });
 });
 

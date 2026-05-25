@@ -42,7 +42,7 @@ Twelve tools and three resource templates. Each tool name below links to its ful
 
 | Tool | Purpose |
 | --- | --- |
-| [`check_setup`](docs/tools.md#check_setup) | Report Renovate CLI + validator availability, versions, install hints, and a `platformContext` block for env diagnosis. Also runs at startup. |
+| [`check_setup`](docs/tools.md#check_setup) | Report Renovate CLI + validator availability, versions, install hints, and a `platformContext` block for env diagnosis. Also runs at startup. Pass an optional `repoPath` to add a `repoContext` block diagnosing the repo's git origin, config endpoint/platform, endpoint reachability, and token coverage. |
 | [`get_version`](docs/tools.md#get_version) | Report the renovate-mcp server version and whether it's a released or local/dev build. |
 | [`read_config`](docs/tools.md#read_config) | Locate and parse a repo's Renovate config in Renovate's own discovery order. |
 | [`resolve_config`](docs/tools.md#resolve_config) | Expand every `extends` preset offline. Opt in to fetching `github>` / `gitlab>` presets over HTTPS. |

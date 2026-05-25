@@ -6,6 +6,8 @@ Configure `renovate-mcp` for github.com, GitHub Enterprise, gitlab.com, or self-
 
 The four common configurations differ in three settings: `RENOVATE_PLATFORM`, `RENOVATE_ENDPOINT`, and which token env var you set. Pick the row that matches your environment and put the values in your client's `mcpServers.renovate.env` block.
 
+> **Verify before you run.** Call [`check_setup`](tools.md#check_setup) with the absolute path to the repo you'll be operating on. It reads `.git/config`, cross-references with the env you've set here, and probes endpoint reachability — so you can confirm the matrix row matches your repo *before* `dry_run` discovers the mismatch the slow way.
+
 | Setup | `RENOVATE_PLATFORM` | `RENOVATE_ENDPOINT` | Token env var |
 | --- | --- | --- | --- |
 | github.com | `github` | (omit — defaults to `https://api.github.com`) | `RENOVATE_TOKEN` *or* `GITHUB_TOKEN` |
