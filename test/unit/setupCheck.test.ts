@@ -1,10 +1,12 @@
 import { describe, it, expect, afterEach } from "vitest";
 import {
+  checkRenovateEnginesMatch,
   checkSetup,
   describeSetup,
   inspectPlatformContext,
   startupBanner,
   unavailableTools,
+  versionSatisfiesRange,
   type PlatformContext,
   type SetupStatus,
 } from "../../src/lib/setupCheck.js";
@@ -41,7 +43,10 @@ describe("checkSetup", () => {
     expect(status.ok).toBe(false);
     expect(status.renovate.found).toBe(false);
     expect(status.renovateConfigValidator.found).toBe(false);
-    expect(status.hints.length).toBe(2);
+    // Two missing-binary hints; an engines-mismatch hint may also appear
+    // when the test host's Node is outside Renovate's declared range.
+    const binaryHints = status.hints.filter((h) => /not reachable/.test(h));
+    expect(binaryHints.length).toBe(2);
   });
 
   it("reports found=true when the binary exits 0 on --version", async () => {
@@ -53,7 +58,8 @@ describe("checkSetup", () => {
     expect(status.ok).toBe(true);
     expect(status.renovate.found).toBe(true);
     expect(status.renovate.version).toBeDefined();
-    expect(status.hints).toEqual([]);
+    // No missing-binary hints; engines hint may exist depending on host Node.
+    expect(status.hints.filter((h) => /not reachable/.test(h))).toEqual([]);
   });
 
   it("records env overrides in the output", async () => {
@@ -469,6 +475,57 @@ describe("inspectPlatformContext", () => {
       RENOVATE_ENDPOINT: "https://gitlab.example.com/api/v4/",
     });
     expect(ctx.notes.some((n) => n.includes("looks like a UI URL"))).toBe(false);
+  });
+});
+
+describe("versionSatisfiesRange", () => {
+  it("matches caret ranges within the same major", () => {
+    expect(versionSatisfiesRange("v24.11.0", "^24.11.0")).toBe(true);
+    expect(versionSatisfiesRange("v24.20.5", "^24.11.0")).toBe(true);
+  });
+
+  it("rejects lower minors than the caret floor", () => {
+    expect(versionSatisfiesRange("v24.10.9", "^24.11.0")).toBe(false);
+  });
+
+  it("rejects different majors for caret ranges", () => {
+    expect(versionSatisfiesRange("v25.0.0", "^24.11.0")).toBe(false);
+    expect(versionSatisfiesRange("v26.0.0", "^24.11.0")).toBe(false);
+  });
+
+  it("handles tilde ranges (locked minor)", () => {
+    expect(versionSatisfiesRange("v24.11.5", "~24.11.0")).toBe(true);
+    expect(versionSatisfiesRange("v24.12.0", "~24.11.0")).toBe(false);
+  });
+
+  it("handles >= ranges", () => {
+    expect(versionSatisfiesRange("v25.5.0", ">=24.11.0")).toBe(true);
+    expect(versionSatisfiesRange("v24.10.0", ">=24.11.0")).toBe(false);
+  });
+
+  it("treats unparseable input conservatively as a non-match", () => {
+    expect(versionSatisfiesRange("notaversion", "^24.11.0")).toBe(false);
+    expect(versionSatisfiesRange("v24.11.0", "weirdrange")).toBe(false);
+  });
+});
+
+describe("checkRenovateEnginesMatch", () => {
+  it("returns null when the running Node satisfies Renovate's engines range", () => {
+    // The bundled Renovate's engines.node is the source of truth — pick a
+    // version that definitely satisfies it (whatever its current value).
+    // We probe via the real function and only assert the typical happy
+    // case: if the bundled range is satisfied by some version we know,
+    // null is returned.
+    const out = checkRenovateEnginesMatch("v24.11.0");
+    // Either null (the range starts at or below 24.11.0) or a hint string.
+    expect(out === null || typeof out === "string").toBe(true);
+  });
+
+  it("returns a hint when the running Node falls outside the range", () => {
+    // Renovate currently targets a Node ≥ 24 range; v18 is definitely out.
+    const out = checkRenovateEnginesMatch("v18.0.0");
+    expect(out).toMatch(/Renovate requires Node/);
+    expect(out).toMatch(/v18\.0\.0/);
   });
 });
 

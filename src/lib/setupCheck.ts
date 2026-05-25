@@ -1,5 +1,9 @@
+import { createRequire } from "node:module";
+import fs from "node:fs";
 import { run, resolveRenovateTool } from "./renovateCli.js";
 import { dedupeRuntimeWarnings, type RuntimeWarning } from "./runtimeWarnings.js";
+
+const requireFromHere = createRequire(import.meta.url);
 
 export type RenovateBinary = "renovate" | "renovate-config-validator";
 
@@ -71,6 +75,79 @@ const VERSION_TIMEOUT_MS = 10_000;
 const INSTALL_HINT =
   "Renovate ships bundled with renovate-mcp; if that fails to load, set RENOVATE_BIN / RENOVATE_CONFIG_VALIDATOR_BIN to a working binary or reinstall renovate-mcp.";
 
+interface ParsedVersion {
+  major: number;
+  minor: number;
+  patch: number;
+}
+
+function parseVersion(value: string): ParsedVersion | null {
+  const m = /^v?(\d+)\.(\d+)\.(\d+)/.exec(value);
+  if (!m) return null;
+  return { major: Number(m[1]), minor: Number(m[2]), patch: Number(m[3]) };
+}
+
+function cmp(a: ParsedVersion, b: ParsedVersion): number {
+  if (a.major !== b.major) return a.major - b.major;
+  if (a.minor !== b.minor) return a.minor - b.minor;
+  return a.patch - b.patch;
+}
+
+/**
+ * Tiny semver-range matcher tuned for the shapes Renovate's `engines.node`
+ * actually uses (currently `^24.11.0`). Recognized: `^X.Y.Z`, `~X.Y.Z`,
+ * `>=X.Y.Z`, and bare `X.Y.Z`. Anything else is treated as a non-match so we
+ * stay conservative — a stale parser must not falsely claim a match. Exported
+ * for unit tests.
+ */
+export function versionSatisfiesRange(version: string, range: string): boolean {
+  const v = parseVersion(version);
+  if (!v) return false;
+  const trimmed = range.trim();
+  if (!trimmed) return false;
+  if (trimmed.startsWith("^")) {
+    const min = parseVersion(trimmed.slice(1));
+    if (!min) return false;
+    if (cmp(v, min) < 0) return false;
+    return v.major === min.major;
+  }
+  if (trimmed.startsWith("~")) {
+    const min = parseVersion(trimmed.slice(1));
+    if (!min) return false;
+    if (cmp(v, min) < 0) return false;
+    return v.major === min.major && v.minor === min.minor;
+  }
+  if (trimmed.startsWith(">=")) {
+    const min = parseVersion(trimmed.slice(2));
+    if (!min) return false;
+    return cmp(v, min) >= 0;
+  }
+  const exact = parseVersion(trimmed);
+  if (!exact) return false;
+  return cmp(v, exact) === 0;
+}
+
+/**
+ * Returns a hint message when the running Node version is outside Renovate's
+ * declared `engines.node` range, or `null` when there's no mismatch or the
+ * range can't be resolved. Renovate's CLI will print an `Unsupported node
+ * environment` log line under the same condition; surfacing it here means the
+ * LLM sees the mismatch before any `dry_run` is attempted.
+ */
+export function checkRenovateEnginesMatch(nodeVersion: string): string | null {
+  let pkg: { engines?: { node?: string } };
+  try {
+    const pkgPath = requireFromHere.resolve("renovate/package.json");
+    pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8")) as { engines?: { node?: string } };
+  } catch {
+    return null;
+  }
+  const range = pkg.engines?.node;
+  if (!range) return null;
+  if (versionSatisfiesRange(nodeVersion, range)) return null;
+  return `Renovate requires Node \`${range}\`; you're on \`${nodeVersion}\`. Use nvm/asdf/volta to switch — Renovate will log \`Unsupported node environment\` otherwise.`;
+}
+
 async function checkBinary(tool: RenovateBinary): Promise<BinaryStatus> {
   const resolved = resolveRenovateTool(tool);
   const command = resolved.command;
@@ -128,6 +205,11 @@ export async function checkSetup(): Promise<SetupStatus> {
     hints.push(
       `renovate-config-validator not reachable at \`${renovateConfigValidator.command}\`. ${INSTALL_HINT}`,
     );
+  }
+
+  const engineMismatch = checkRenovateEnginesMatch(process.version);
+  if (engineMismatch) {
+    hints.push(engineMismatch);
   }
 
   const warnings = dedupeRuntimeWarnings([

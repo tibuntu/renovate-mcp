@@ -106,6 +106,59 @@ export function detectRuntimeWarnings(stderr: string): RuntimeWarning[] {
   return warnings;
 }
 
+/**
+ * Classify a structured Renovate report `problem` entry so the dry_run wrapper
+ * can decide whether to treat it as fatal or as a non-blocking environment
+ * notice. Currently:
+ *
+ *   - "re2"     — the RE2 native module failed to load and Renovate fell back
+ *                 to vanilla `RegExp`. Functionally OK; surfaced via the
+ *                 stderr-driven `detectRuntimeWarnings` path instead.
+ *   - "nodeEnv" — Renovate's `engines.node` range does not include the
+ *                 current process. Renovate continues running and writes a
+ *                 usable report; should not flip `ok` to false on its own.
+ *   - "fatal"   — anything else the caller decided to forward; left intact.
+ *
+ * The shape of a report problem isn't a stable Renovate API — we match
+ * defensively on `msg`/`message` and a few well-known marker fields.
+ */
+export type ReportProblemKind = "re2" | "nodeEnv" | "fatal";
+
+const NODE_ENV_PATTERN = /Unsupported node environment/i;
+const RE2_MSG_PATTERN = /\bRE2 not usable\b/;
+
+function readString(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+export function isRe2Noise(problem: unknown): boolean {
+  if (!problem || typeof problem !== "object") return false;
+  const p = problem as Record<string, unknown>;
+  const msg = `${readString(p.msg)} ${readString(p.message)}`;
+  if (RE2_MSG_PATTERN.test(msg)) return true;
+  const err = p.err;
+  if (err && typeof err === "object") {
+    const errObj = err as Record<string, unknown>;
+    const code = readString(errObj.code);
+    const errMsg = readString(errObj.message);
+    if (code === "ERR_DLOPEN_FAILED" && /re2\.node/.test(errMsg)) return true;
+  }
+  return false;
+}
+
+export function isNodeEnvProblem(problem: unknown): boolean {
+  if (!problem || typeof problem !== "object") return false;
+  const p = problem as Record<string, unknown>;
+  const msg = `${readString(p.msg)} ${readString(p.message)} ${readString(p.validationError)}`;
+  return NODE_ENV_PATTERN.test(msg);
+}
+
+export function classifyReportProblem(problem: unknown): ReportProblemKind {
+  if (isRe2Noise(problem)) return "re2";
+  if (isNodeEnvProblem(problem)) return "nodeEnv";
+  return "fatal";
+}
+
 export function dedupeRuntimeWarnings(warnings: RuntimeWarning[]): RuntimeWarning[] {
   const seen = new Set<RuntimeWarningKind>();
   const out: RuntimeWarning[] = [];

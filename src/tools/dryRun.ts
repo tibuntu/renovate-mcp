@@ -19,6 +19,7 @@ import {
   extractRenovateLogMsg,
   buildDryRunHeartbeatMessage,
 } from "../lib/dryRunProgress.js";
+import { classifyReportProblem } from "../lib/runtimeWarnings.js";
 import {
   HOST_RULES_MAX_ITEMS,
   endpointString,
@@ -71,8 +72,14 @@ const hostRuleSchema = hostRuleRecord(
  * The report shape isn't a stable Renovate API, so we walk defensively: any
  * nested `problems` array anywhere in the tree is inspected.
  */
-function collectReportErrors(report: unknown): Array<Record<string, unknown>> {
-  const out: Array<Record<string, unknown>> = [];
+interface CollectedReportProblems {
+  fatal: Array<Record<string, unknown>>;
+  environment: Array<Record<string, unknown>>;
+}
+
+function collectReportProblems(report: unknown): CollectedReportProblems {
+  const fatal: Array<Record<string, unknown>> = [];
+  const environment: Array<Record<string, unknown>> = [];
   const seen = new Set<object>();
   const visit = (node: unknown): void => {
     if (node === null || typeof node !== "object") return;
@@ -93,15 +100,24 @@ function collectReportErrors(report: unknown): Array<Record<string, unknown>> {
         const isConfigValidation = p.message === "config-validation";
         const hasValidationError =
           typeof p.validationError === "string" && p.validationError.length > 0;
-        if (isErrorLevel || isConfigValidation || hasValidationError) {
-          out.push(p);
+        if (!(isErrorLevel || isConfigValidation || hasValidationError)) continue;
+        // The RE2-fallback WARN sometimes lands here at fatal level even
+        // though Renovate kept running on JS `RegExp`. The nodeEnv mismatch
+        // similarly does not invalidate the report. Route both away from the
+        // fatal bucket so `ok` reflects whether the run actually failed.
+        const kind = classifyReportProblem(p);
+        if (kind === "re2") continue;
+        if (kind === "nodeEnv") {
+          environment.push(p);
+          continue;
         }
+        fatal.push(p);
       }
     }
     for (const value of Object.values(obj)) visit(value);
   };
   visit(report);
-  return out;
+  return { fatal, environment };
 }
 
 /**
@@ -132,13 +148,43 @@ async function detectUnresolvableLocalPresets(
   return { relPath: located.relPath, presets };
 }
 
+function countRepositories(report: unknown): number {
+  if (!report || typeof report !== "object") return 0;
+  const repos = (report as { repositories?: unknown }).repositories;
+  if (!repos || typeof repos !== "object") return 0;
+  if (Array.isArray(repos)) return repos.length;
+  return Object.keys(repos as Record<string, unknown>).length;
+}
+
+function countUpdates(report: unknown): number {
+  if (!report || typeof report !== "object") return 0;
+  const repos = (report as { repositories?: unknown }).repositories;
+  if (!repos || typeof repos !== "object") return 0;
+  let total = 0;
+  const visit = (repo: unknown): void => {
+    if (!repo || typeof repo !== "object") return;
+    const branches = (repo as { branches?: unknown }).branches;
+    if (!Array.isArray(branches)) return;
+    for (const b of branches) {
+      const upgrades = (b as { upgrades?: unknown }).upgrades;
+      if (Array.isArray(upgrades)) total += upgrades.length;
+    }
+  };
+  if (Array.isArray(repos)) {
+    for (const r of repos) visit(r);
+  } else {
+    for (const r of Object.values(repos as Record<string, unknown>)) visit(r);
+  }
+  return total;
+}
+
 export function registerDryRun(server: McpServer): void {
   server.registerTool(
     "dry_run",
     {
       title: "Dry-run Renovate",
       description:
-        "Run Renovate in dry-run mode to preview what it would do — no PRs opened, no git pushes. Returns a structured JSON report plus a top-level `ok` boolean (false when the CLI failed OR the report records a validation/error-level problem, even if the exit code was 0).\n\n**Auth — prefer env vars.** Set `RENOVATE_TOKEN` (or `GITHUB_TOKEN` / `GITLAB_TOKEN`, auto-translated to `RENOVATE_TOKEN` for the spawned Renovate CLI) on the MCP server's env via `claude_desktop_config.json` / `.mcp.json`. This matches the precedence `resolve_config` uses, so a single `GITLAB_TOKEN` in `.mcp.json` works for both tools. The `token` input is retained as an ad-hoc / testing fallback — when supplied inline it is persisted in the MCP tool transcript that the client may share, replay, or feed back into the LLM, so an advisory entry is appended to the result `warnings` array steering callers toward env-var auth. For a remote-platform run, an actionable preflight error is returned before spawning Renovate when no token can be resolved at all.\n\nDefault mode runs `--platform=local` against the filesystem at `repoPath`. If your config extends `local>…` presets, pass `platform` (`github` or `gitlab`), `endpoint` (API base URL), `token`, and `repository` to run as a real platform client that can actually fetch those presets — Renovate still runs with `--dry-run`, so no PRs are opened. If you only need `gitlab>…` / `github>…` presets resolved against a self-hosted host (not a full remote run), pass just `endpoint` (and `token` if needed) while leaving `platform` unset — both flow through to Renovate in local mode too, which is enough to redirect those preset shortcuts away from the public defaults. The tool preflight-checks for `local>` presets under `--platform=local` (in `lookup` and `full` modes) and fails fast with remediation guidance rather than spawning a Renovate run that would fail opaquely with `config-validation`. The preflight is skipped for `dryRunMode=extract` so manifest-only extraction can be attempted regardless.\n\nCredentials for private registries (e.g. `COMPOSER_AUTH` for Packagist/Satis proxies, `NPM_TOKEN` / `.npmrc` for npm, Docker registry creds, `RENOVATE_HOST_RULES` for anything else) must be set on the MCP server process itself — via the `env` key in `claude_desktop_config.json` / `.mcp.json`, not your shell, since the MCP server runs as a child of Claude and does not inherit shell env. Alternatively, encode credentials as `hostRules` in the Renovate config, or pass them per-call via the `hostRules` input on this tool (written to a mode-0600 temp file that is cleaned up after the run; token/password values — including the platform `token` input — are scrubbed from `logTail` and `problems`). Per-call `hostRules` are appended to any the repo's own config already declares. If a lookup can't auth to a registry, Renovate often reports 0 updates without a loud error; when that happens this tool surfaces detected auth failures under `problems` in the output so callers can distinguish a genuine \"no updates\" from a silent registry-auth failure.",
+        "Run Renovate in dry-run mode to preview what it would do — no PRs opened, no git pushes. Returns a structured JSON report plus a top-level `ok` boolean (false when the CLI failed OR the report records a validation/error-level problem, even if the exit code was 0). RE2 native-module fallback noise and Renovate's `Unsupported node environment` notice are filtered out of `reportErrors` — the former flows into `warnings` (still actionable, still surfaced), the latter into a separate `environmentWarnings[]` since the run still produced a usable report.\n\nEffective platform = `platform` input → `RENOVATE_PLATFORM` env → `local`. The `platformSource` field on the result echoes which step won; preflight errors and the env-overrides-default advisory both reference it so callers don't have to read the source to find where a surprising `gitlab`/`github` came from.\n\nThe full structured report ships inline by default. For large repos that is bigger than most MCP clients' response-content cap (≈75 KB on Claude Desktop) and the middle of the JSON is silently truncated. Pass `reportOutputPath` to redirect the structured report to a file (mode 0600), in which case `summary.report` collapses to `{ reportPath, repoCount, updateCount }` and `dry_run_diff` can pick it up via `{ reportPath: … }`. Pair with `summaryOnly: true` to also strip per-repo upgrade arrays from the inline payload when you only need the path + counts. `warnings`, `problems`, `reportErrors`, and `environmentWarnings` always stay inline regardless of these flags — those are the actionable bits.\n\n**Auth — prefer env vars.** Set `RENOVATE_TOKEN` (or `GITHUB_TOKEN` / `GITLAB_TOKEN`, auto-translated to `RENOVATE_TOKEN` for the spawned Renovate CLI) on the MCP server's env via `claude_desktop_config.json` / `.mcp.json`. This matches the precedence `resolve_config` uses, so a single `GITLAB_TOKEN` in `.mcp.json` works for both tools. The `token` input is retained as an ad-hoc / testing fallback — when supplied inline it is persisted in the MCP tool transcript that the client may share, replay, or feed back into the LLM, so an advisory entry is appended to the result `warnings` array steering callers toward env-var auth. For a remote-platform run, an actionable preflight error is returned before spawning Renovate when no token can be resolved at all.\n\nDefault mode runs `--platform=local` against the filesystem at `repoPath`. If your config extends `local>…` presets, pass `platform` (`github` or `gitlab`), `endpoint` (API base URL), `token`, and `repository` to run as a real platform client that can actually fetch those presets — Renovate still runs with `--dry-run`, so no PRs are opened. If you only need `gitlab>…` / `github>…` presets resolved against a self-hosted host (not a full remote run), pass just `endpoint` (and `token` if needed) while leaving `platform` unset — both flow through to Renovate in local mode too, which is enough to redirect those preset shortcuts away from the public defaults. The tool preflight-checks for `local>` presets under `--platform=local` (in `lookup` and `full` modes) and fails fast with remediation guidance rather than spawning a Renovate run that would fail opaquely with `config-validation`. The preflight is skipped for `dryRunMode=extract` so manifest-only extraction can be attempted regardless.\n\nCredentials for private registries (e.g. `COMPOSER_AUTH` for Packagist/Satis proxies, `NPM_TOKEN` / `.npmrc` for npm, Docker registry creds, `RENOVATE_HOST_RULES` for anything else) must be set on the MCP server process itself — via the `env` key in `claude_desktop_config.json` / `.mcp.json`, not your shell, since the MCP server runs as a child of Claude and does not inherit shell env. Alternatively, encode credentials as `hostRules` in the Renovate config, or pass them per-call via the `hostRules` input on this tool (written to a mode-0600 temp file that is cleaned up after the run; token/password values — including the platform `token` input — are scrubbed from `logTail` and `problems`). Per-call `hostRules` are appended to any the repo's own config already declares. If a lookup can't auth to a registry, Renovate often reports 0 updates without a loud error; when that happens this tool surfaces detected auth failures under `problems` in the output so callers can distinguish a genuine \"no updates\" from a silent registry-auth failure.",
       inputSchema: {
         repoPath: pathString(
           "Absolute path to the repository root. Required for the default `platform=local` mode. When `platform` is overridden (e.g. `gitlab` / `github`), Renovate runs against the remote `repository` instead — `repoPath` is still used as the child's working directory but its manifest files are ignored.",
@@ -179,10 +225,31 @@ export function registerDryRun(server: McpServer): void {
           .describe(
             "Optional per-invocation Renovate hostRules for private registry auth. Written to a mode-0600 temp file that is passed via the RENOVATE_CONFIG_FILE env var and deleted after the run. Token/password values are scrubbed from any log output this tool returns. Appended to (not replacing) any hostRules declared in the repo's own config.",
           ),
+        reportOutputPath: pathString(
+          "Optional absolute path to copy the structured Renovate report to (mode 0600) after the run completes. When set, `summary.report` is replaced by `{ reportPath, repoCount, updateCount }` so the inline response stays under MCP response-content caps. Use this — together with `dry_run_diff`'s `{ reportPath }` input — when the full inline report would exceed the harness truncation threshold (≈75 KB on Claude Desktop). `warnings`/`problems`/`reportErrors`/`environmentWarnings` always stay inline regardless.",
+        ).optional(),
+        summaryOnly: z
+          .boolean()
+          .optional()
+          .describe(
+            "Only meaningful in combination with `reportOutputPath`. When true, also strips per-repo `branches[]`/`packageFiles` arrays from the inline summary so the response is purely the path + counts + actionable lists. No effect when `reportOutputPath` is unset.",
+          ),
       },
     },
     async (
-      { repoPath, dryRunMode, logLevel, timeoutMs, platform, endpoint, token, repository, hostRules },
+      {
+        repoPath,
+        dryRunMode,
+        logLevel,
+        timeoutMs,
+        platform,
+        endpoint,
+        token,
+        repository,
+        hostRules,
+        reportOutputPath,
+        summaryOnly,
+      },
       extra,
     ) => {
       if (endpoint !== undefined) {
@@ -214,8 +281,20 @@ export function registerDryRun(server: McpServer): void {
         envPlatform === "local" || envPlatform === "github" || envPlatform === "gitlab"
           ? envPlatform
           : undefined;
+      const platformSource: "input" | "env" | "default" = platform
+        ? "input"
+        : envPlatformAllowed
+          ? "env"
+          : "default";
       const effectivePlatform = platform ?? envPlatformAllowed ?? "local";
       const isRemotePlatform = effectivePlatform !== "local";
+      const platformOriginTag = `(platform resolved from ${
+        platformSource === "input"
+          ? "`platform` input"
+          : platformSource === "env"
+            ? "`RENOVATE_PLATFORM` env"
+            : "default"
+      })`;
 
       // Renovate only reads `RENOVATE_TOKEN` (plus `GITHUB_COM_TOKEN`) — it
       // doesn't know about `GITLAB_TOKEN`/`GITHUB_TOKEN`. When the caller
@@ -259,7 +338,7 @@ export function registerDryRun(server: McpServer): void {
           content: [
             {
               type: "text",
-              text: `\`repository\` is required when \`platform\` is \`${effectivePlatform}\`. Pass the target repo as \`owner/repo\` (GitHub) or \`group/project\` / \`group/subgroup/project\` (GitLab — nested groups are accepted), or unset \`platform\` to run against the local filesystem at \`repoPath\`.`,
+              text: `\`repository\` is required when \`platform\` is \`${effectivePlatform}\` ${platformOriginTag}. Pass the target repo as \`owner/repo\` (GitHub) or \`group/project\` / \`group/subgroup/project\` (GitLab — nested groups are accepted), or unset \`platform\` to run against the local filesystem at \`repoPath\`.`,
             },
           ],
         };
@@ -275,7 +354,7 @@ export function registerDryRun(server: McpServer): void {
             {
               type: "text",
               text:
-                `No auth token found for \`platform=${effectivePlatform}\`. Set ${fallbackHint} in the MCP server's \`env\` ` +
+                `No auth token found for \`platform=${effectivePlatform}\` ${platformOriginTag}. Set ${fallbackHint} in the MCP server's \`env\` ` +
                 "(in `.mcp.json` / `claude_desktop_config.json` — not your shell, since the MCP server runs as a child of Claude and does not inherit shell env), " +
                 "or pass `token` as a tool input. Run `check_setup` to see which env vars the server currently sees.",
             },
@@ -410,19 +489,58 @@ export function registerDryRun(server: McpServer): void {
           // no report produced (e.g., renovate errored before writing)
         }
 
-        const reportErrors = collectReportErrors(report);
+        const { fatal: reportErrors, environment: environmentWarnings } =
+          collectReportProblems(report);
+
+        // If `reportOutputPath` was provided, write the structured report
+        // to disk and collapse the inline payload to a small descriptor so
+        // the MCP response stays under client truncation caps.
+        let reportSummary: unknown = report;
+        let savedReportPath: string | undefined;
+        if (reportOutputPath && report) {
+          try {
+            await fs.writeFile(reportOutputPath, JSON.stringify(report), {
+              mode: 0o600,
+            });
+            await fs.chmod(reportOutputPath, 0o600).catch(() => undefined);
+            savedReportPath = reportOutputPath;
+            const repoCount = countRepositories(report);
+            const updateCount = countUpdates(report);
+            reportSummary = {
+              reportPath: reportOutputPath,
+              repoCount,
+              updateCount,
+            };
+          } catch (err) {
+            return {
+              isError: true,
+              content: [
+                {
+                  type: "text",
+                  text: `Failed to write report to \`${reportOutputPath}\`: ${(err as Error).message}.`,
+                },
+              ],
+            };
+          }
+        }
 
         const summary: Record<string, unknown> = {
-          // `ok` collapses the three failure modes (spawn error, non-zero
-          // exit, in-report validation/error-level problems) into a single
-          // field so callers don't need to know which one fired. Renovate
-          // frequently writes a report with exitCode=0 while its `problems`
-          // array records a validation/config failure — judging only by
-          // exitCode hides those runs.
-          ok: result.exitCode === 0 && reportErrors.length === 0,
+          // `ok` collapses the failure modes (spawn error, non-zero exit,
+          // in-report validation/error-level problems) into a single field.
+          // Renovate frequently writes a report with exitCode=0 while its
+          // `problems` array records a validation/config failure — judging
+          // only by exitCode hides those runs. Environment-mismatch entries
+          // (RE2 fallback, `Unsupported node environment`) are filtered out
+          // of `reportErrors`: the run completed and the report is usable,
+          // they shouldn't flip `ok`.
+          ok:
+            (result.exitCode === 0 || (report !== null && environmentWarnings.length > 0))
+            && reportErrors.length === 0,
           exitCode: result.exitCode,
           hasReport: report !== null,
-          report,
+          platformSource,
+          effectivePlatform,
+          report: reportSummary,
         };
 
         const scrubbedStdout = scrubSecrets(result.stdout, secrets);
@@ -435,6 +553,24 @@ export function registerDryRun(server: McpServer): void {
 
         if (reportErrors.length > 0) {
           summary.reportErrors = reportErrors;
+        }
+
+        if (environmentWarnings.length > 0) {
+          summary.environmentWarnings = environmentWarnings;
+        }
+
+        // Advisory: if `platform` was unset and the env fallback pulled in
+        // a non-`local` value, the caller probably didn't realise their
+        // MCP-server env was redirecting the run. Surface a notice so the
+        // origin of the surprising platform is visible without reading
+        // source.
+        if (
+          platformSource === "env"
+          && effectivePlatform !== "local"
+        ) {
+          mcpWarnings.push(
+            `Running as \`${effectivePlatform}\` because \`RENOVATE_PLATFORM\` is set in the MCP server's env; pass \`platform: 'local'\` to override.`,
+          );
         }
 
         // Merge MCP-side advisory warnings (currently just the inline-secret

@@ -2,6 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   detectRuntimeWarnings,
   dedupeRuntimeWarnings,
+  classifyReportProblem,
+  isRe2Noise,
+  isNodeEnvProblem,
 } from "../../src/lib/runtimeWarnings.js";
 
 describe("detectRuntimeWarnings", () => {
@@ -109,6 +112,39 @@ describe("detectRuntimeWarnings", () => {
 
   it("ignores malformed JSON lines that don't trip the plain-text matcher", () => {
     expect(detectRuntimeWarnings("{not json")).toEqual([]);
+  });
+});
+
+describe("classifyReportProblem", () => {
+  it("classifies JSON-log RE2 fallback as re2", () => {
+    expect(isRe2Noise({ msg: "RE2 not usable, falling back to RegExp" })).toBe(true);
+    expect(classifyReportProblem({ msg: "RE2 not usable, falling back to RegExp" })).toBe("re2");
+  });
+
+  it("classifies plain-text RE2 fallback as re2", () => {
+    expect(classifyReportProblem({ message: "WARN: RE2 not usable, falling back to RegExp" })).toBe(
+      "re2",
+    );
+  });
+
+  it("classifies ERR_DLOPEN_FAILED + re2.node as re2", () => {
+    expect(
+      classifyReportProblem({
+        msg: "loader error",
+        err: { code: "ERR_DLOPEN_FAILED", message: "/path/to/re2.node was bad" },
+      }),
+    ).toBe("re2");
+  });
+
+  it("classifies the Unsupported node environment notice as nodeEnv", () => {
+    expect(isNodeEnvProblem({ msg: "Unsupported node environment detected. Please update your node version." })).toBe(true);
+    expect(classifyReportProblem({ msg: "Unsupported node environment detected." })).toBe("nodeEnv");
+  });
+
+  it("returns fatal for unrecognized problems", () => {
+    expect(classifyReportProblem({ msg: "config-validation", level: 50 })).toBe("fatal");
+    expect(classifyReportProblem(null)).toBe("fatal");
+    expect(classifyReportProblem({})).toBe("fatal");
   });
 });
 

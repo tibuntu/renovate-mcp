@@ -110,6 +110,8 @@ describe("check_setup", () => {
     expect(status.ok).toBe(false);
     expect(status.renovate.found).toBe(false);
     expect(status.renovateConfigValidator.found).toBe(false);
-    expect(status.hints.length).toBe(2);
+    // Two missing-binary hints; an engines-mismatch hint may also fire when
+    // the test host's Node is outside Renovate's declared engines range.
+    expect(status.hints.filter((h) => /not reachable/.test(h)).length).toBe(2);
   });
 });

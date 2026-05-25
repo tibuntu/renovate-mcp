@@ -951,6 +951,275 @@ process.exit(1);
   });
 });
 
+describe("dry_run report-problem classification", () => {
+  it("RE2 fallback noise is filtered out of reportErrors and ok stays true", async () => {
+    const fakeBin = path.join(repo, "re2-noise-renovate.mjs");
+    await writeFile(
+      fakeBin,
+      `#!/usr/bin/env node
+import { writeFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+const reportArg = args.find(a => a.startsWith('--report-path='));
+const report = {
+  repositories: {
+    'local': {
+      problems: [
+        { level: 40, msg: 'RE2 not usable, falling back to RegExp' },
+      ],
+      branches: [],
+      packageFiles: {},
+    },
+  },
+};
+if (reportArg) writeFileSync(reportArg.slice('--report-path='.length), JSON.stringify(report));
+process.exit(0);
+`,
+    );
+    await chmod(fakeBin, 0o755);
+    session = await startServer({ RENOVATE_BIN: fakeBin });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: { repoPath: repo },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    const body = JSON.parse(res.result!.content[0]!.text) as {
+      ok: boolean;
+      reportErrors?: unknown[];
+    };
+    expect(body.ok).toBe(true);
+    expect(body.reportErrors).toBeUndefined();
+  });
+
+  it("Unsupported node environment lands in environmentWarnings and ok stays true even with exitCode 1", async () => {
+    const fakeBin = path.join(repo, "nodeenv-renovate.mjs");
+    await writeFile(
+      fakeBin,
+      `#!/usr/bin/env node
+import { writeFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+const reportArg = args.find(a => a.startsWith('--report-path='));
+const report = {
+  repositories: {
+    'local': {
+      problems: [
+        { level: 60, msg: 'Unsupported node environment detected. Please update your node version.' },
+      ],
+      branches: [],
+      packageFiles: {},
+    },
+  },
+};
+if (reportArg) writeFileSync(reportArg.slice('--report-path='.length), JSON.stringify(report));
+process.exit(1);
+`,
+    );
+    await chmod(fakeBin, 0o755);
+    session = await startServer({ RENOVATE_BIN: fakeBin });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: { repoPath: repo },
+    });
+
+    const body = JSON.parse(res.result!.content[0]!.text) as {
+      ok: boolean;
+      reportErrors?: unknown[];
+      environmentWarnings?: unknown[];
+    };
+    expect(body.ok).toBe(true);
+    expect(body.reportErrors).toBeUndefined();
+    expect(Array.isArray(body.environmentWarnings)).toBe(true);
+    expect(body.environmentWarnings!.length).toBeGreaterThan(0);
+  });
+});
+
+describe("dry_run platform-origin metadata", () => {
+  async function fakeRenovate(dir: string, name: string): Promise<string> {
+    const file = path.join(dir, name);
+    await writeFile(
+      file,
+      `#!/usr/bin/env node
+import { writeFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+const reportArg = args.find(a => a.startsWith('--report-path='));
+if (reportArg) writeFileSync(reportArg.slice('--report-path='.length), JSON.stringify({ repositories: [] }));
+process.exit(0);
+`,
+    );
+    await chmod(file, 0o755);
+    return file;
+  }
+
+  it("tags the missing-repository error with the platform origin (env)", async () => {
+    const fakeBin = await fakeRenovate(repo, "origin-renovate.mjs");
+    session = await startServer({ RENOVATE_BIN: fakeBin, RENOVATE_PLATFORM: "gitlab" });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: { repoPath: repo },
+    });
+
+    expect(res.result?.isError).toBe(true);
+    const text = res.result!.content[0]!.text;
+    expect(text).toMatch(/`repository` is required/);
+    expect(text).toMatch(/RENOVATE_PLATFORM. env/);
+  });
+
+  it("tags the missing-token error with the platform origin (input)", async () => {
+    const fakeBin = await fakeRenovate(repo, "origin-renovate-2.mjs");
+    session = await startServer({ RENOVATE_BIN: fakeBin });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: {
+        repoPath: repo,
+        platform: "gitlab",
+        endpoint: "https://gitlab.example.com/api/v4/",
+        repository: "devops/gitops",
+      },
+    });
+
+    expect(res.result?.isError).toBe(true);
+    const text = res.result!.content[0]!.text;
+    expect(text).toMatch(/No auth token found/);
+    expect(text).toMatch(/`platform` input/);
+  });
+
+  it("emits an advisory warning when env redirects platform away from local", async () => {
+    const fakeBin = await fakeRenovate(repo, "origin-renovate-3.mjs");
+    session = await startServer({
+      RENOVATE_BIN: fakeBin,
+      RENOVATE_PLATFORM: "gitlab",
+      GITLAB_TOKEN: "glpat-env",
+    });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: { repoPath: repo, repository: "devops/gitops" },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    const body = JSON.parse(res.result!.content[0]!.text) as {
+      warnings?: string[];
+      platformSource?: string;
+      effectivePlatform?: string;
+    };
+    expect(body.platformSource).toBe("env");
+    expect(body.effectivePlatform).toBe("gitlab");
+    expect((body.warnings ?? []).some((w) => /RENOVATE_PLATFORM/.test(w) && /override/.test(w))).toBe(true);
+  });
+
+  it("no advisory when caller explicitly passes platform", async () => {
+    const fakeBin = await fakeRenovate(repo, "origin-renovate-4.mjs");
+    session = await startServer({ RENOVATE_BIN: fakeBin, RENOVATE_PLATFORM: "gitlab" });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: { repoPath: repo, platform: "local" },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    const body = JSON.parse(res.result!.content[0]!.text) as {
+      warnings?: string[];
+      platformSource?: string;
+    };
+    expect(body.platformSource).toBe("input");
+    expect((body.warnings ?? []).some((w) => /RENOVATE_PLATFORM/.test(w))).toBe(false);
+  });
+});
+
+describe("dry_run reportOutputPath", () => {
+  async function fakeWithReport(dir: string, name: string, report: unknown): Promise<string> {
+    const file = path.join(dir, name);
+    await writeFile(
+      file,
+      `#!/usr/bin/env node
+import { writeFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+const reportArg = args.find(a => a.startsWith('--report-path='));
+if (reportArg) writeFileSync(reportArg.slice('--report-path='.length), ${JSON.stringify(JSON.stringify(report))});
+process.exit(0);
+`,
+    );
+    await chmod(file, 0o755);
+    return file;
+  }
+
+  it("writes the report to the given path and collapses the inline payload", async () => {
+    const report = {
+      repositories: {
+        "owner/repo": {
+          branches: [
+            { branchName: "renovate/lodash", upgrades: [{ manager: "npm", packageFile: "package.json", depName: "lodash", newVersion: "4.18.0" }] },
+            { branchName: "renovate/axios", upgrades: [{ manager: "npm", packageFile: "package.json", depName: "axios", newVersion: "1.7.0" }] },
+          ],
+        },
+      },
+    };
+    const fakeBin = await fakeWithReport(repo, "out-renovate.mjs", report);
+    const outPath = path.join(repo, "report.json");
+    session = await startServer({ RENOVATE_BIN: fakeBin });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: { repoPath: repo, reportOutputPath: outPath },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    const body = JSON.parse(res.result!.content[0]!.text) as {
+      report: { reportPath: string; repoCount: number; updateCount: number };
+    };
+    expect(body.report.reportPath).toBe(outPath);
+    expect(body.report.repoCount).toBe(1);
+    expect(body.report.updateCount).toBe(2);
+    const onDisk = JSON.parse(await readFile(outPath, "utf8")) as { repositories: unknown };
+    expect(onDisk.repositories).toBeDefined();
+  });
+
+  it("with no inputs, the inline report is unchanged", async () => {
+    const report = { repositories: { "a/b": { branches: [] } } };
+    const fakeBin = await fakeWithReport(repo, "out2-renovate.mjs", report);
+    session = await startServer({ RENOVATE_BIN: fakeBin });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: { repoPath: repo },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    const body = JSON.parse(res.result!.content[0]!.text) as {
+      report: unknown;
+    };
+    expect((body.report as { repositories?: unknown }).repositories).toBeDefined();
+  });
+});
+
 describe("dry_run inline-secret warning", () => {
   // All four cases use the same fake binary shape as the hostRules describe:
   // emit an empty report so the handler reaches the `summary.warnings`
