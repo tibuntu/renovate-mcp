@@ -14,6 +14,10 @@
       "groupName": "dev dependencies"
     },
     {
+      "matchPackageNames": ["jsonata"],
+      "enabled": false
+    },
+    {
       "description": "Auto-merge non-major updates once required CI checks pass. Major bumps still require manual review.",
       "matchUpdateTypes": ["minor", "patch", "digest", "pin", "pinDigest", "lockFileMaintenance"],
       "automerge": true
