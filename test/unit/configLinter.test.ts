@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { lintConfig } from "../../src/lib/configLinter.js";
+import {
+  lintConfig,
+  PACKAGE_RULE_ACTION_KEYS,
+} from "../../src/lib/configLinter.js";
 
 describe("lintConfig", () => {
   it("returns no findings for a clean config", () => {
@@ -17,15 +20,17 @@ describe("lintConfig", () => {
   });
 
   describe("dead-regex-missing-slash", () => {
+    const RULE = "dead-regex-missing-slash";
+
     it("flags leading '/' with no trailing '/'", () => {
       const findings = lintConfig({
         packageRules: [
           { matchPackageNames: ["/devops\\/pipelines\\/.+"] },
         ],
-      });
+      }).filter((f) => f.ruleId === RULE);
       expect(findings).toHaveLength(1);
       expect(findings[0]).toMatchObject({
-        ruleId: "dead-regex-missing-slash",
+        ruleId: RULE,
         path: "packageRules[0].matchPackageNames[0]",
         value: "/devops\\/pipelines\\/.+",
       });
@@ -34,66 +39,63 @@ describe("lintConfig", () => {
     it("flags trailing '/' with no leading '/'", () => {
       const findings = lintConfig({
         packageRules: [{ matchDepNames: ["foo.+/"] }],
-      });
+      }).filter((f) => f.ruleId === RULE);
       expect(findings).toHaveLength(1);
-      expect(findings[0]!.ruleId).toBe("dead-regex-missing-slash");
       expect(findings[0]!.path).toBe("packageRules[0].matchDepNames[0]");
     });
 
     it("accepts a well-formed '/.../' regex", () => {
       const findings = lintConfig({
         packageRules: [{ matchSourceUrls: ["/^https:\\/\\/github\\.com\\//"] }],
-      });
+      }).filter((f) => f.ruleId === RULE);
       expect(findings).toEqual([]);
     });
 
     it("accepts negated regex '!/.../'", () => {
       const findings = lintConfig({
         packageRules: [{ matchPackageNames: ["!/^@internal\\//"] }],
-      });
+      }).filter((f) => f.ruleId === RULE);
       expect(findings).toEqual([]);
     });
 
     it("flags negated pattern with missing trailing slash '!/foo'", () => {
       const findings = lintConfig({
         packageRules: [{ matchPackageNames: ["!/foo"] }],
-      });
+      }).filter((f) => f.ruleId === RULE);
       expect(findings).toHaveLength(1);
-      expect(findings[0]!.ruleId).toBe("dead-regex-missing-slash");
     });
 
     it("does not flag a single '/' (too short to be a malformed regex)", () => {
       const findings = lintConfig({
         packageRules: [{ matchSourceUrls: ["/"] }],
-      });
+      }).filter((f) => f.ruleId === RULE);
       expect(findings).toEqual([]);
     });
   });
 
   describe("unwrapped-regex", () => {
+    const RULE = "unwrapped-regex";
+
     it("flags an unwrapped regex with '.+' quantifier", () => {
       const findings = lintConfig({
         packageRules: [{ matchPackageNames: ["foo.+"] }],
-      });
+      }).filter((f) => f.ruleId === RULE);
       expect(findings).toHaveLength(1);
-      expect(findings[0]!.ruleId).toBe("unwrapped-regex");
       expect(findings[0]!.message).toContain("/foo.+/");
     });
 
     it("flags escape sequences like \\d", () => {
       const findings = lintConfig({
         packageRules: [{ matchCurrentVersion: ["1\\.\\d+"] }],
-      });
+      }).filter((f) => f.ruleId === RULE);
       expect(findings).toHaveLength(1);
-      expect(findings[0]!.ruleId).toBe("unwrapped-regex");
     });
 
     it("flags non-capturing groups", () => {
       const findings = lintConfig({
         packageRules: [{ matchDepNames: ["(?:foo|bar)"] }],
-      });
+      }).filter((f) => f.ruleId === RULE);
       expect(findings).toHaveLength(1);
-      expect(findings[0]!.ruleId).toBe("unwrapped-regex");
     });
 
     it("does not flag benign strings that contain a '.'", () => {
@@ -103,7 +105,7 @@ describe("lintConfig", () => {
             matchPackageNames: ["lodash.merge", "@types/node", "acme.inc/lib"],
           },
         ],
-      });
+      }).filter((f) => f.ruleId === RULE);
       expect(findings).toEqual([]);
     });
 
@@ -112,12 +114,14 @@ describe("lintConfig", () => {
         packageRules: [
           { matchCurrentVersion: ["^1.0.0", ">=2.0.0", "<3.0.0", "1.2.3"] },
         ],
-      });
+      }).filter((f) => f.ruleId === RULE);
       expect(findings).toEqual([]);
     });
   });
 
   describe("matchManagers-unknown-name", () => {
+    const RULE = "matchManagers-unknown-name";
+
     it("does not flag known manager names on matchManagers", () => {
       const findings = lintConfig({
         packageRules: [
@@ -125,24 +129,24 @@ describe("lintConfig", () => {
             matchManagers: ["npm", "gomod", "docker-compose", "regex"],
           },
         ],
-      });
+      }).filter((f) => f.ruleId === RULE);
       expect(findings).toEqual([]);
     });
 
     it("does not flag the 'custom.<name>' prefix form", () => {
       const findings = lintConfig({
         packageRules: [{ matchManagers: ["custom.regex", "custom.jsonata"] }],
-      });
+      }).filter((f) => f.ruleId === RULE);
       expect(findings).toEqual([]);
     });
 
     it("flags an unknown name and suggests the closest match", () => {
       const findings = lintConfig({
         packageRules: [{ matchManagers: ["nmp"] }],
-      });
+      }).filter((f) => f.ruleId === RULE);
       expect(findings).toHaveLength(1);
       expect(findings[0]).toMatchObject({
-        ruleId: "matchManagers-unknown-name",
+        ruleId: RULE,
         path: "packageRules[0].matchManagers[0]",
         value: "nmp",
       });
@@ -152,9 +156,8 @@ describe("lintConfig", () => {
     it("flags a typo with an underscore variant", () => {
       const findings = lintConfig({
         packageRules: [{ matchManagers: ["docker_compose"] }],
-      });
+      }).filter((f) => f.ruleId === RULE);
       expect(findings).toHaveLength(1);
-      expect(findings[0]!.ruleId).toBe("matchManagers-unknown-name");
       expect(findings[0]!.message).toContain("'docker-compose'");
     });
 
@@ -166,10 +169,10 @@ describe("lintConfig", () => {
             excludeManagers: ["gommod"],
           },
         ],
-      });
+      }).filter((f) => f.ruleId === RULE);
       expect(findings).toHaveLength(1);
       expect(findings[0]).toMatchObject({
-        ruleId: "matchManagers-unknown-name",
+        ruleId: RULE,
         path: "packageRules[0].excludeManagers[0]",
         value: "gommod",
       });
@@ -179,18 +182,16 @@ describe("lintConfig", () => {
     it("omits the suggestion hint when nothing is close enough", () => {
       const findings = lintConfig({
         packageRules: [{ matchManagers: ["totally-made-up-thing"] }],
-      });
+      }).filter((f) => f.ruleId === RULE);
       expect(findings).toHaveLength(1);
-      expect(findings[0]!.ruleId).toBe("matchManagers-unknown-name");
       expect(findings[0]!.message).not.toContain("Did you mean");
     });
 
     it("handles a string value (not array) on matchManagers", () => {
       const findings = lintConfig({
         packageRules: [{ matchManagers: "npmm" }],
-      });
+      }).filter((f) => f.ruleId === RULE);
       expect(findings).toHaveLength(1);
-      expect(findings[0]!.ruleId).toBe("matchManagers-unknown-name");
       expect(findings[0]!.path).toBe("packageRules[0].matchManagers");
     });
   });
@@ -202,7 +203,7 @@ describe("lintConfig", () => {
           { matchPackageNames: ["ok"] },
           { matchPackageNames: ["ok", "/bad"] },
         ],
-      });
+      }).filter((f) => f.ruleId === "dead-regex-missing-slash");
       expect(findings).toHaveLength(1);
       expect(findings[0]!.path).toBe("packageRules[1].matchPackageNames[1]");
     });
@@ -216,7 +217,7 @@ describe("lintConfig", () => {
     it("handles a string value (not array) on a regex-aware field", () => {
       const findings = lintConfig({
         packageRules: [{ matchPackageNames: "/bad" }],
-      });
+      }).filter((f) => f.ruleId === "dead-regex-missing-slash");
       expect(findings).toHaveLength(1);
       expect(findings[0]!.path).toBe("packageRules[0].matchPackageNames");
     });
@@ -308,21 +309,21 @@ describe("lintConfig", () => {
     it("dead-regex-missing-slash is severity 'error'", () => {
       const findings = lintConfig({
         packageRules: [{ matchPackageNames: ["/devops\\/pipelines\\/.+"] }],
-      });
+      }).filter((f) => f.ruleId === "dead-regex-missing-slash");
       expect(findings[0]!.severity).toBe("error");
     });
 
     it("unwrapped-regex is severity 'warn'", () => {
       const findings = lintConfig({
         packageRules: [{ matchPackageNames: ["foo.+"] }],
-      });
+      }).filter((f) => f.ruleId === "unwrapped-regex");
       expect(findings[0]!.severity).toBe("warn");
     });
 
     it("matchManagers-unknown-name is severity 'error'", () => {
       const findings = lintConfig({
         packageRules: [{ matchManagers: ["nmp"] }],
-      });
+      }).filter((f) => f.ruleId === "matchManagers-unknown-name");
       expect(findings[0]!.severity).toBe("error");
     });
 
@@ -334,14 +335,14 @@ describe("lintConfig", () => {
     it("matchManagers-unknown-name populates suggestion when a close match exists", () => {
       const findings = lintConfig({
         packageRules: [{ matchManagers: ["nmp"] }],
-      });
+      }).filter((f) => f.ruleId === "matchManagers-unknown-name");
       expect(findings[0]!.suggestion).toBe("npm");
     });
 
     it("matchManagers-unknown-name omits suggestion when nothing is close enough", () => {
       const findings = lintConfig({
         packageRules: [{ matchManagers: ["totally-made-up-thing"] }],
-      });
+      }).filter((f) => f.ruleId === "matchManagers-unknown-name");
       expect(findings[0]!.suggestion).toBeUndefined();
     });
 
@@ -511,6 +512,152 @@ describe("lintConfig", () => {
         someUserKey: { automerge: true },
       }).filter((f) => f.ruleId === RULE);
       expect(findings).toEqual([]);
+    });
+  });
+
+  describe("PACKAGE_RULE_ACTION_KEYS allow-list", () => {
+    it("is a non-empty ReadonlySet of strings", () => {
+      expect(PACKAGE_RULE_ACTION_KEYS).toBeInstanceOf(Set);
+      expect(PACKAGE_RULE_ACTION_KEYS.size).toBeGreaterThan(0);
+    });
+
+    it("includes the canonical action keys", () => {
+      for (const key of [
+        "enabled",
+        "groupName",
+        "automerge",
+        "addLabels",
+        "labels",
+        "prPriority",
+        "schedule",
+        "allowedVersions",
+        "replacementName",
+      ]) {
+        expect(PACKAGE_RULE_ACTION_KEYS.has(key)).toBe(true);
+      }
+    });
+
+    it("excludes selectors and metadata", () => {
+      for (const key of [
+        "matchPackageNames",
+        "matchDepNames",
+        "matchUpdateTypes",
+        "matchManagers",
+        "excludePackageNames",
+        "paths",
+        "excludePaths",
+        "description",
+      ]) {
+        expect(PACKAGE_RULE_ACTION_KEYS.has(key)).toBe(false);
+      }
+    });
+  });
+
+  describe("package-rule-without-action", () => {
+    const RULE = "package-rule-without-action";
+
+    it("flags a bare-selector entry (matchPackageNames only)", () => {
+      const findings = lintConfig({
+        packageRules: [{ matchPackageNames: ["lodash"] }],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toHaveLength(1);
+      expect(findings[0]).toMatchObject({
+        ruleId: RULE,
+        severity: "warn",
+        path: "packageRules[0]",
+        value: "matchPackageNames",
+      });
+      expect(findings[0]!.message).toMatch(/enabled|groupName|automerge|addLabels/);
+      expect(findings[0]!.suggestion).toBeUndefined();
+    });
+
+    it("does not fire when selector is paired with groupName (action)", () => {
+      const findings = lintConfig({
+        packageRules: [
+          { matchPackageNames: ["lodash"], groupName: "deps" },
+        ],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toEqual([]);
+    });
+
+    it("does not fire when selector is paired with enabled:false (action)", () => {
+      const findings = lintConfig({
+        packageRules: [
+          { matchPackageNames: ["lodash"], enabled: false },
+        ],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toEqual([]);
+    });
+
+    it("fires when entry has only selectors plus description (description is metadata, not an action)", () => {
+      const findings = lintConfig({
+        packageRules: [
+          { matchPackageNames: ["lodash"], description: "just metadata" },
+        ],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toHaveLength(1);
+      expect(findings[0]!.path).toBe("packageRules[0]");
+    });
+
+    it("fires when entry has matchUpdateTypes only (matchUpdateTypes is a selector, not an action)", () => {
+      const findings = lintConfig({
+        packageRules: [
+          { matchDepNames: ["foo"], matchUpdateTypes: ["minor"] },
+        ],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toHaveLength(1);
+      expect(findings[0]!.path).toBe("packageRules[0]");
+      // value preview should mention both selector keys
+      expect(findings[0]!.value).toContain("matchDepNames");
+      expect(findings[0]!.value).toContain("matchUpdateTypes");
+    });
+
+    it("does not fire on a global-defaults entry (action only, zero selectors)", () => {
+      const findings = lintConfig({
+        packageRules: [{ groupName: "deps" }],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toEqual([]);
+    });
+
+    it("emits one finding per offending entry, leaving good entries alone", () => {
+      const findings = lintConfig({
+        packageRules: [
+          { matchPackageNames: ["a"] }, // bare selector — fires
+          { matchPackageNames: ["b"], groupName: "g" }, // OK
+          { matchDepNames: ["c"] }, // bare selector — fires
+        ],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toHaveLength(2);
+      const paths = findings.map((f) => f.path).sort();
+      expect(paths).toEqual(["packageRules[0]", "packageRules[2]"]);
+    });
+
+    it("is robust to malformed packageRules entries", () => {
+      expect(() =>
+        lintConfig({
+          packageRules: ["a string", null, 42, { matchPackageNames: ["x"] }],
+        }),
+      ).not.toThrow();
+      const findings = lintConfig({
+        packageRules: ["a string", null, 42, { matchPackageNames: ["x"] }],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toHaveLength(1);
+      expect(findings[0]!.path).toBe("packageRules[3]");
+    });
+
+    it("does not fire when packageRules is absent", () => {
+      const findings = lintConfig({ extends: ["config:recommended"] }).filter(
+        (f) => f.ruleId === RULE,
+      );
+      expect(findings).toEqual([]);
+    });
+
+    it("treats paths/excludePaths as selectors (not actions)", () => {
+      const findings = lintConfig({
+        packageRules: [{ paths: ["packages/foo/**"] }],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toHaveLength(1);
+      expect(findings[0]!.path).toBe("packageRules[0]");
     });
   });
 

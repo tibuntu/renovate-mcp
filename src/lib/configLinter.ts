@@ -8,7 +8,8 @@ export type LintRuleId =
   | "deprecated-key"
   | "automerge-without-automerge-type"
   | "empty-extends"
-  | "contradictory-disabled-with-package-rules";
+  | "contradictory-disabled-with-package-rules"
+  | "package-rule-without-action";
 
 export interface LintFinding {
   ruleId: LintRuleId;
@@ -37,6 +38,81 @@ const DEPRECATED_KEY_LOOKUP: ReadonlyMap<string, string> = new Map(
   DEPRECATED_KEYS.map((e) => [e.oldKey, e.newKey]),
 );
 
+// Hand-maintained snapshot of keys that count as "actions" on a packageRules entry
+// (i.e. keys whose presence means the rule actually *does* something to the matched
+// deps). Source of truth: `node_modules/renovate/dist/config/options/index.js` —
+// entries whose `parents` array includes `"packageRules"`, plus the broader set of
+// inheritable config options Renovate allows inside a packageRules entry
+// (groupName, automerge, labels, schedule, …). Reconciled against renovate@43.150.0.
+// Bumping the `renovate` devDep should prompt a manual re-check. We deliberately do
+// NOT generate this list at build time: per CLAUDE.md, the linter must stay
+// independent of the runtime `renovate` import, so this stays a curated snapshot
+// — analogous to the other allow-lists under `src/data/`.
+//
+// Explicitly NOT in this set (kept here as documentation):
+//   - `description` (metadata)
+//   - every `match*` / `exclude*` key (selectors)
+//   - `paths` / `excludePaths` (path-scope selectors)
+//   - `matchJsonata`, `matchNewValue`, `matchCurrentAge` etc. (selectors)
+//   - `changelogUrl`, `sourceDirectory`, `sourceUrl` (metadata/locator overrides —
+//     treated as actions below since they actively override resolved fields)
+export const PACKAGE_RULE_ACTION_KEYS: ReadonlySet<string> = new Set([
+  "addLabels",
+  "allowedVersions",
+  "assignees",
+  "automerge",
+  "automergeSchedule",
+  "automergeStrategy",
+  "automergeType",
+  "branchPrefix",
+  "branchTopic",
+  "changelogUrl",
+  "commitMessageAction",
+  "commitMessageExtra",
+  "commitMessagePrefix",
+  "commitMessageSuffix",
+  "commitMessageTopic",
+  "dependencyDashboardApproval",
+  "draftPR",
+  "enabled",
+  "extends",
+  "fetchChangeLogs",
+  "followTag",
+  "groupName",
+  "groupSlug",
+  "ignoreDeps",
+  "ignoreUnstable",
+  "labels",
+  "minimumReleaseAge",
+  "overrideDatasource",
+  "overrideDepName",
+  "overridePackageName",
+  "pinDigests",
+  "postUpdateOptions",
+  "prBodyDefinitions",
+  "prBodyTemplate",
+  "prCreation",
+  "prPriority",
+  "rangeStrategy",
+  "recreateWhen",
+  "registryUrls",
+  "replacementName",
+  "replacementNameTemplate",
+  "replacementVersion",
+  "replacementVersionTemplate",
+  "reviewers",
+  "schedule",
+  "semanticCommitScope",
+  "semanticCommitType",
+  "separateMajorMinor",
+  "separateMinorPatch",
+  "separateMultipleMajor",
+  "separateMultipleMinor",
+  "sourceDirectory",
+  "sourceUrl",
+  "versioning",
+]);
+
 const DEPRECATED_KEY_CONTAINERS = ["packageRules", "hostRules", "customManagers"] as const;
 
 export function lintConfig(config: unknown): LintFinding[] {
@@ -45,7 +121,52 @@ export function lintConfig(config: unknown): LintFinding[] {
   checkDeprecatedKeys(config, findings);
   checkAutomergeWithoutType(config, findings);
   checkContradictoryDisabled(config, findings);
+  checkPackageRuleWithoutAction(config, findings);
   return findings;
+}
+
+function isSelectorKey(key: string): boolean {
+  if (PACKAGE_RULE_ACTION_KEYS.has(key)) return false;
+  return (
+    key.startsWith("match") ||
+    key.startsWith("exclude") ||
+    key === "paths" ||
+    key === "excludePaths"
+  );
+}
+
+function checkPackageRuleWithoutAction(
+  config: unknown,
+  findings: LintFinding[],
+): void {
+  if (!isPlainObject(config)) return;
+  if (!Array.isArray(config.packageRules)) return;
+
+  config.packageRules.forEach((entry, i) => {
+    if (!isPlainObject(entry)) return;
+    const keys = Object.keys(entry);
+    const selectors: string[] = [];
+    let actionCount = 0;
+    for (const key of keys) {
+      if (PACKAGE_RULE_ACTION_KEYS.has(key)) {
+        actionCount += 1;
+      } else if (isSelectorKey(key)) {
+        selectors.push(key);
+      }
+    }
+    if (selectors.length >= 1 && actionCount === 0) {
+      findings.push({
+        ruleId: "package-rule-without-action",
+        severity: "warn",
+        path: `packageRules[${i}]`,
+        value: selectors.join(", "),
+        message:
+          `packageRules[${i}] has selector(s) (${selectors.join(", ")}) but no action keys, so Renovate will match deps and do nothing with them. ` +
+          "Add at least one action key (e.g. `enabled`, `groupName`, `automerge`, `addLabels`, `prPriority`, `schedule`, `allowedVersions`, …) " +
+          "or remove the entry if it isn't needed. Note: `description` is metadata, and `matchUpdateTypes` / `paths` are selectors — none of them count as actions.",
+      });
+    }
+  });
 }
 
 function checkContradictoryDisabled(

@@ -191,7 +191,12 @@ describe("lint_config end-to-end", () => {
       name: "lint_config",
       arguments: {
         configContent: {
-          packageRules: [{ matchPackageNames: ["/devops\\/pipelines\\/.+"] }],
+          packageRules: [
+            {
+              matchPackageNames: ["/devops\\/pipelines\\/.+"],
+              groupName: "deps", // anchors an action so package-rule-without-action stays silent
+            },
+          ],
         },
       },
     });
@@ -214,7 +219,10 @@ describe("lint_config end-to-end", () => {
         configContent: {
           extends: ["config:recommended"],
           packageRules: [
-            { matchPackageNames: ["lodash", "/^@acme\\//"] },
+            {
+              matchPackageNames: ["lodash", "/^@acme\\//"],
+              groupName: "deps",
+            },
           ],
         },
       },
