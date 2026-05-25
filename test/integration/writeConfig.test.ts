@@ -340,6 +340,82 @@ describe("write_config", () => {
     expect(written).not.toContain("// preset comment");
   });
 
+  it("refuses to round-trip a JSON5-only renovate.json5 and leaves no temp file", async () => {
+    const validator = await makeFakeValidator(repo, "fake-pass.mjs", 0);
+    session = await startServer({ RENOVATE_CONFIG_VALIDATOR_BIN: validator });
+
+    const existing = "{ extends: ['config:recommended'], }\n"; // JSON5-only syntax
+    const targetPath = path.join(repo, "renovate.json5");
+    await writeFile(targetPath, existing);
+
+    const before = await readFile(targetPath, "utf8");
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "write_config",
+      arguments: {
+        repoPath: repo,
+        config: { extends: ["config:recommended"], automerge: false },
+        filename: "renovate.json5",
+      },
+    });
+
+    expect(res.result?.isError).toBe(true);
+    const payload = JSON.parse(res.result!.content[0]!.text);
+    expect(payload.wrote).toBe(false);
+    expect(payload.reason).toBe("json5-not-jsonc-compatible");
+    expect(payload.hint).toContain("force=true");
+
+    // The file on disk is byte-identical to what we wrote before the call.
+    expect(await readFile(targetPath, "utf8")).toBe(before);
+
+    // No temp file leaked — refusal short-circuits BEFORE any disk write
+    // (ADR-0002 invariant + 04-02 contract).
+    const files = await readdir(repo);
+    expect(
+      files.filter((f) => f.startsWith("renovate.json5.renovate-mcp-tmp-")),
+    ).toHaveLength(0);
+  });
+
+  it("force=true with confirmForce overwrites the JSON5-only file with a fresh JSON rendering", async () => {
+    const validator = await makeFakeValidator(repo, "fake-pass.mjs", 0);
+    session = await startServer({ RENOVATE_CONFIG_VALIDATOR_BIN: validator });
+
+    const existing = "{ extends: ['config:recommended'], }\n";
+    const targetPath = path.join(repo, "renovate.json5");
+    await writeFile(targetPath, existing);
+
+    const newConfig = {
+      extends: ["config:base"],
+      schedule: ["before 9am on Monday"],
+    };
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "write_config",
+      arguments: {
+        repoPath: repo,
+        config: newConfig,
+        filename: "renovate.json5",
+        force: true,
+        confirmForce: "YES_OVERRIDE_VALIDATION",
+      },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    const payload = JSON.parse(res.result!.content[0]!.text);
+    expect(payload.wrote).toBe(true);
+
+    // ADR-0002: force=true is a destructive rewrite via JSON.stringify.
+    // Unquoted keys / trailing commas are gone.
+    const written = await readFile(targetPath, "utf8");
+    expect(written).toBe(JSON.stringify(newConfig, null, 2) + "\n");
+  });
+
   it("rejects force=true without confirmForce", async () => {
     const validator = await makeFakeValidator(repo, "fake-fail.mjs", 1);
     session = await startServer({ RENOVATE_CONFIG_VALIDATOR_BIN: validator });

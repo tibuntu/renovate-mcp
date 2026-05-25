@@ -274,6 +274,7 @@ describe("serializeConfig — round-trip path", () => {
     expect(result.refuse).toBe(true);
     expect(result.reason).toBe("json5-not-jsonc-compatible");
     expect(result.hint).toContain("force=true");
+    expect(result.hint).toContain("YES_OVERRIDE_VALIDATION");
   });
 
   it("preserves CRLF line endings when the existing file uses them", () => {
@@ -301,5 +302,137 @@ describe("serializeConfig — round-trip path", () => {
     for (const idx of lfPositions) {
       expect(result.bytes[idx - 1]).toBe("\r");
     }
+  });
+});
+
+describe("serializeConfig — json5 + refusal-reason dispatch", () => {
+  it("round-trips a .json5 file that uses only JSONC-subset syntax (comments + trailing commas)", () => {
+    const existing = [
+      "{",
+      "  // automerge minor updates",
+      '  "automerge": true,',
+      '  "packageRules": [',
+      '    { "matchUpdateTypes": ["minor"] },',
+      "  ],",
+      "}",
+      "",
+    ].join("\n");
+
+    const result = serializeConfig({
+      targetPath: "/tmp/renovate.json5",
+      nextConfig: {
+        automerge: false,
+        packageRules: [{ matchUpdateTypes: ["minor"] }],
+      },
+      existing,
+    });
+
+    if ("refuse" in result) {
+      throw new Error(`unexpected refusal: ${result.reason}`);
+    }
+    expect(result.mode).toBe("round-trip");
+    // Comment preserved.
+    expect(result.bytes).toContain("// automerge minor updates");
+    // Trailing comma after the packageRules entry preserved.
+    expect(result.bytes).toMatch(/\}\s*,\s*\n\s*\]/);
+    // The edit landed: automerge flipped to false.
+    expect(result.bytes).toContain('"automerge": false');
+    expect(result.bytes).not.toMatch(/"automerge"\s*:\s*true/);
+  });
+
+  it("preserves trailing commas on .json target with JSONC content (parseTree uses allowTrailingComma regardless of extension)", () => {
+    const existing = [
+      "{",
+      "  // automerge minor updates",
+      '  "automerge": true,',
+      '  "packageRules": [',
+      '    { "matchUpdateTypes": ["minor"] },',
+      "  ],",
+      "}",
+      "",
+    ].join("\n");
+
+    const result = serializeConfig({
+      targetPath: "/tmp/renovate.json",
+      nextConfig: {
+        automerge: false,
+        packageRules: [{ matchUpdateTypes: ["minor"] }],
+      },
+      existing,
+    });
+
+    if ("refuse" in result) {
+      throw new Error(`unexpected refusal: ${result.reason}`);
+    }
+    expect(result.mode).toBe("round-trip");
+    expect(result.bytes).toMatch(/\}\s*,\s*\n\s*\]/);
+    expect(result.bytes).toContain("// automerge minor updates");
+  });
+
+  it("refuses a .json5 file that uses JSON5-only syntax with reason='json5-not-jsonc-compatible'", () => {
+    const existing = "{ extends: ['config:recommended'], automerge: true, }";
+
+    const result = serializeConfig({
+      targetPath: "/tmp/renovate.json5",
+      nextConfig: { extends: ["config:recommended"], automerge: false },
+      existing,
+    });
+
+    expect(result).toMatchObject({
+      refuse: true,
+      reason: "json5-not-jsonc-compatible",
+    });
+    if (!("refuse" in result)) return;
+    expect(result.hint).toContain("force=true");
+    expect(result.hint).toContain("YES_OVERRIDE_VALIDATION");
+  });
+
+  it("refuses a corrupted .json file with the generic 'existing-file-unparseable' reason (not the .json5 reason)", () => {
+    const existing = '{ "extends": [';
+
+    const result = serializeConfig({
+      targetPath: "/tmp/renovate.json",
+      nextConfig: { extends: ["config:recommended"] },
+      existing,
+    });
+
+    expect(result).toMatchObject({
+      refuse: true,
+      reason: "existing-file-unparseable",
+    });
+    if (!("refuse" in result)) return;
+    // Must NOT be the json5-specific reason.
+    expect(result.reason).not.toBe("json5-not-jsonc-compatible");
+    expect(result.hint).toContain("renovate.json");
+    expect(result.hint).toContain("force=true");
+  });
+
+  it("refuses a .renovaterc (no extension) file with the generic reason — dispatch is exact-extension, not suffix-match", () => {
+    const existing = "{ extends: ['config:recommended'] }"; // JSON5-only syntax in a non-.json5 file
+
+    const result = serializeConfig({
+      targetPath: "/tmp/.renovaterc",
+      nextConfig: { extends: ["config:recommended"] },
+      existing,
+    });
+
+    expect(result).toMatchObject({
+      refuse: true,
+      reason: "existing-file-unparseable",
+    });
+  });
+
+  it("uses the fresh-write path for a .json5 target with no existing content (no extension-specific behavior)", () => {
+    const nextConfig = { extends: ["config:recommended"] };
+    const result = serializeConfig({
+      targetPath: "/tmp/renovate.json5",
+      nextConfig,
+      existing: undefined,
+    });
+
+    expect(result).toEqual({
+      mode: "fresh-write",
+      bytes: JSON.stringify(nextConfig, null, 2) + "\n",
+    });
   });
 });

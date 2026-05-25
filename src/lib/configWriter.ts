@@ -12,16 +12,31 @@
  * when the target file does not yet exist).
  */
 
+import path from "node:path";
 import {
   parseTree,
   modify,
   applyEdits,
+  getNodeValue,
   ParseErrorCode,
   type Node,
   type ParseError,
   type JSONPath,
   type Edit,
 } from "jsonc-parser";
+
+/**
+ * The refusal-reason dispatch (plan 04-03) is driven purely by the file
+ * extension on the target path. `.json5` is the only extension that signals
+ * "the user may be writing JSON5-only syntax", so it gets a more specific
+ * refusal pointing at the JSONC-subset workaround. Every other extension
+ * (`.json`, `.renovaterc`, `.renovaterc.json`, etc.) is conceptually JSONC,
+ * so a parse failure there is treated as "the file is corrupted or
+ * otherwise unparseable."
+ */
+function isJson5Target(targetPath: string): boolean {
+  return path.extname(targetPath) === ".json5";
+}
 
 export type SerializeArgs = {
   /**
@@ -53,10 +68,19 @@ export type SerializeRefusal = {
 
 export type SerializeResult = SerializeOk | SerializeRefusal;
 
-const REFUSAL_HINT =
-  "This file appears to use JSON5-only syntax that jsonc-parser cannot edit safely. " +
-  "Pass force=true to overwrite with a fresh JSON rendering, or rewrite the file as " +
-  "JSONC (comments + trailing commas are supported).";
+const JSON5_REFUSAL_HINT =
+  "This .json5 file uses JSON5-only syntax (unquoted keys, single-quoted strings, hex literals, etc.) " +
+  "that jsonc-parser cannot edit safely. Pass force=true with confirmForce='YES_OVERRIDE_VALIDATION' " +
+  "to overwrite with a fresh JSON rendering, or rewrite the file as JSONC (comments + trailing commas " +
+  "are supported and will be preserved).";
+
+function genericRefusalHint(targetPath: string): string {
+  return (
+    `The existing file at ${targetPath} could not be parsed as JSON or JSONC. It may be corrupted. ` +
+    "Pass force=true with confirmForce='YES_OVERRIDE_VALIDATION' to overwrite with a fresh JSON " +
+    "rendering, or fix the file by hand and retry."
+  );
+}
 
 // Parse errors of these codes are non-fatal in JSONC: `allowTrailingComma`
 // makes the parser still emit `InvalidCommentToken` / `TrailingCommaExpected`-
@@ -185,10 +209,6 @@ export function serializeConfig(args: SerializeArgs): SerializeResult {
     };
   }
 
-  // Reference targetPath so it is not flagged as unused; plan 04-03 will use
-  // it to dispatch on `.json5` extension.
-  void args.targetPath;
-
   const existing = args.existing;
   const parseErrors: ParseError[] = [];
   const root = parseTree(existing, parseErrors, { allowTrailingComma: true });
@@ -202,22 +222,33 @@ export function serializeConfig(args: SerializeArgs): SerializeResult {
   );
 
   if (!root || root.type !== "object" || fatalErrors.length > 0) {
+    if (isJson5Target(args.targetPath)) {
+      return {
+        refuse: true,
+        reason: "json5-not-jsonc-compatible",
+        hint: JSON5_REFUSAL_HINT,
+      };
+    }
     return {
       refuse: true,
-      reason: "json5-not-jsonc-compatible",
-      hint: REFUSAL_HINT,
+      reason: "existing-file-unparseable",
+      hint: genericRefusalHint(args.targetPath),
     };
   }
 
   // Build the in-memory "existing object" view by walking the root's keys.
   // We need the object form (not just the Node) for the diff walk.
+  //
+  // Use jsonc-parser's `getNodeValue` instead of slicing the source text and
+  // calling `JSON.parse` — the slice can contain JSONC-only constructs
+  // (trailing commas, comments) that strict `JSON.parse` rejects but the
+  // parseTree walk already accepted. `getNodeValue` builds the JS value
+  // directly from the node tree and is JSONC-aware by construction.
   const existingObj: Record<string, unknown> = {};
   for (const key of nodeObjectKeys(root)) {
     const child = nodeChildValue(root, key);
     if (!child) continue;
-    // getNodeValue would also work; we mirror it inline to avoid an extra
-    // import and to keep this function self-contained.
-    existingObj[key] = JSON.parse(existing.slice(child.offset, child.offset + child.length));
+    existingObj[key] = getNodeValue(child);
   }
 
   const planned = planEdits(root, args.nextConfig, [], existingObj);
