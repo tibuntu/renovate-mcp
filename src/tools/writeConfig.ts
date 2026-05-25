@@ -6,6 +6,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { run, resolveRenovateTool, formatMissingBinaryError } from "../lib/renovateCli.js";
 import type { RuntimeWarning } from "../lib/runtimeWarnings.js";
 import { configRecord, filenameString, pathString } from "../lib/inputLimits.js";
+import { serializeConfig } from "../lib/configWriter.js";
 
 // Resolve symlinks in `p`, walking up to the nearest existing ancestor when
 // tail components don't exist yet (e.g. a new subdir we're about to mkdir).
@@ -90,7 +91,48 @@ export function registerWriteConfig(server: McpServer): void {
         };
       }
 
-      const payload = JSON.stringify(config, null, 2) + "\n";
+      // Read the existing file (if present) so the writer can produce a
+      // round-trip-preserving edit. On `force: true` we deliberately SKIP
+      // this read — per ADR-0002 the force path is a clean rewrite via
+      // JSON.stringify, and the user has accepted that comments/key-order
+      // will be lost.
+      let existing: string | undefined = undefined;
+      if (!force) {
+        try {
+          existing = await fs.readFile(target, "utf8");
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+        }
+      }
+
+      const writeResult = serializeConfig({
+        targetPath: target,
+        nextConfig: config,
+        existing,
+      });
+
+      if ("refuse" in writeResult) {
+        // Refusal short-circuits BEFORE any temp file is written (ADR-0002).
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(
+                {
+                  wrote: false,
+                  reason: writeResult.reason,
+                  hint: writeResult.hint,
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      }
+
+      const payload = writeResult.bytes;
       // Randomize the suffix so two concurrent writes don't collide, and use
       // `flag: "wx"` (O_CREAT|O_EXCL) so a pre-existing symlink at the temp
       // path is refused with EEXIST instead of silently followed (issue #129).

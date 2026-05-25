@@ -263,6 +263,83 @@ describe("write_config", () => {
     expect(written).toMatchObject({ extends: ["config:recommended"] });
   });
 
+  it("preserves comments end-to-end when overwriting an existing renovate.json (round-trip)", async () => {
+    const validator = await makeFakeValidator(repo, "fake-pass.mjs", 0);
+    session = await startServer({ RENOVATE_CONFIG_VALIDATOR_BIN: validator });
+
+    // Seed the repo with a JSONC file that contains a comment.
+    const existing =
+      "// preset comment\n" +
+      '{ "extends": ["config:recommended"] }\n';
+    await writeFile(path.join(repo, "renovate.json"), existing);
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "write_config",
+      arguments: {
+        repoPath: repo,
+        config: {
+          extends: ["config:recommended"],
+          schedule: ["before 9am on Monday"],
+        },
+      },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    const payload = JSON.parse(res.result!.content[0]!.text);
+    expect(payload.wrote).toBe(true);
+
+    const written = await readFile(path.join(repo, "renovate.json"), "utf8");
+    // The top-of-file comment survives the round-trip edit.
+    expect(written).toContain("// preset comment");
+    // The new schedule key landed on disk.
+    expect(written).toContain('"schedule"');
+    expect(written).toContain("before 9am on Monday");
+  });
+
+  it("force=true bypasses the round-trip path and overwrites with the fresh JSON rendering", async () => {
+    // Validator deliberately fails — force=true skips the gate, AND skips the
+    // round-trip path so the resulting bytes match JSON.stringify exactly
+    // (no comments preserved).
+    const validator = await makeFakeValidator(repo, "fake-fail.mjs", 1);
+    session = await startServer({ RENOVATE_CONFIG_VALIDATOR_BIN: validator });
+
+    const existing =
+      "// preset comment\n" +
+      '{ "extends": ["config:recommended"] }\n';
+    await writeFile(path.join(repo, "renovate.json"), existing);
+
+    const newConfig = {
+      extends: ["config:base"],
+      schedule: ["before 9am on Monday"],
+    };
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "write_config",
+      arguments: {
+        repoPath: repo,
+        config: newConfig,
+        force: true,
+        confirmForce: "YES_OVERRIDE_VALIDATION",
+      },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    const payload = JSON.parse(res.result!.content[0]!.text);
+    expect(payload.wrote).toBe(true);
+
+    const written = await readFile(path.join(repo, "renovate.json"), "utf8");
+    // ADR-0002 contract: force=true produces the byte-identical fresh
+    // rendering — the comment is gone.
+    expect(written).toBe(JSON.stringify(newConfig, null, 2) + "\n");
+    expect(written).not.toContain("// preset comment");
+  });
+
   it("rejects force=true without confirmForce", async () => {
     const validator = await makeFakeValidator(repo, "fake-fail.mjs", 1);
     session = await startServer({ RENOVATE_CONFIG_VALIDATOR_BIN: validator });
