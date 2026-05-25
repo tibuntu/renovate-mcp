@@ -1,0 +1,67 @@
+name: Nightly (real Renovate)
+
+# Drift signal: every night we install `renovate@latest` on top of `npm ci`
+# (which pins to the version in package.json) and re-run the full test
+# suite. Failures notify the maintainer by email and do NOT gate per-PR CI
+# — ci.yml continues to be the required check, using the pinned Renovate.
+# When a nightly run fails, that's the cue to investigate upstream changes
+# before the next devDep bump rolls them into a PR.
+
+on:
+  schedule:
+    # 04:17 UTC — deliberately off the busy 00:00 / 12:00 windows on
+    # GitHub-hosted runners.
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+# Least-privilege: same as ci.yml. Nothing here writes back to the repo.
+permissions:
+  contents: read
+
+# Serialize nightly runs against themselves. A slow run must not be killed
+# by the next cron tick (`cancel-in-progress: false`), and two runs must
+# never interleave.
+concurrency:
+  group: nightly-real-renovate
+  cancel-in-progress: false
+
+jobs:
+  nightly:
+    # Ubuntu-only on purpose. ci.yml already covers macOS on the pinned
+    # version for every PR; doubling cost here for marginal additional
+    # information from the latest-Renovate carve-out is not justified.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # Override the pinned `renovate` with whatever npm currently resolves
+      # `renovate@latest` to. `--no-save` is REQUIRED: we want a transient
+      # override for this single run and never want package.json mutated on
+      # disk during CI.
+      - name: Install latest Renovate
+        run: npm install --no-save renovate@latest
+
+      - name: Print resolved Renovate version
+        run: npx renovate --version || node -e "console.log(require('renovate/package.json').version)"
+
+      - name: Verify generated snapshots match installed renovate version
+        run: npm run check:snapshot-versions
+
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm run test:coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-nightly
+          path: coverage/
+          if-no-files-found: ignore

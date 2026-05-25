@@ -1,13 +1,14 @@
 name: CI
 
-# NOTE: This workflow deliberately does NOT install the `renovate` CLI.
-# The `validate_config` and `dry_run` tools shell out to Renovate (see
-# src/lib/renovateCli.ts) and therefore are NOT exercised end-to-end here.
-# Integration tests for those paths use fake binaries via
-# RENOVATE_BIN / RENOVATE_CONFIG_VALIDATOR_BIN instead (see
-# test/helpers/mcpSession.ts). Rationale and the broader design decision
-# live in CLAUDE.md ("Integration tests use stdio + fake binaries").
-# If you add a job that does install Renovate, update CLAUDE.md too.
+# This workflow runs on every PR and push to `main`. `renovate` is a
+# runtime dependency in package.json, so `npm ci` installs the pinned
+# version here — but integration tests still point at fake binaries via
+# RENOVATE_BIN / RENOVATE_CONFIG_VALIDATOR_BIN for determinism (see
+# test/helpers/mcpSession.ts). The real Renovate CLI is exercised
+# end-to-end by the nightly workflow at
+# `.github/workflows/nightly-real-renovate.yml`, which installs
+# `renovate@latest` on top of `npm ci` and re-runs the suite as an
+# upstream-drift signal (not a PR gate).
 
 on:
   push:
