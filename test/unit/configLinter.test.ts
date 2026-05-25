@@ -661,6 +661,139 @@ describe("lintConfig", () => {
     });
   });
 
+  describe("invalid-schedule", () => {
+    const RULE = "invalid-schedule";
+
+    // Every value in Renovate's `schedule.preset.js` — these MUST all be
+    // accepted as valid (regression coverage). Snapshotted inline so the test
+    // is independent of the `renovate` install.
+    const RENOVATE_PRESET_SCHEDULES = [
+      "* 0-3 * * *",
+      "* 0-3 * * 1",
+      "* 0-3 1 * *",
+      "* 0-4,22-23 * * 1-5",
+      "* * * * 0,6",
+      "* 8-17 * * 1-5",
+      "* * 1 */3 *",
+      "* * * * 1-5",
+      "* * 1 */12 *",
+    ];
+
+    it("does not fire on plausibly-later-text 'every monday at lunchtime'", () => {
+      const findings = lintConfig({
+        schedule: "every monday at lunchtime",
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toEqual([]);
+    });
+
+    it("flags an obvious garbage string", () => {
+      const findings = lintConfig({ schedule: "potato" }).filter(
+        (f) => f.ruleId === RULE,
+      );
+      expect(findings).toHaveLength(1);
+      expect(findings[0]).toMatchObject({
+        ruleId: RULE,
+        severity: "error",
+        path: "schedule",
+        value: "potato",
+      });
+      expect(findings[0]!.suggestion).toBeUndefined();
+    });
+
+    it("flags only the offending entry in a mixed array", () => {
+      const findings = lintConfig({
+        schedule: ["before 5am", "asdfqwer"],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toHaveLength(1);
+      expect(findings[0]!.path).toBe("schedule[1]");
+      expect(findings[0]!.value).toBe("asdfqwer");
+    });
+
+    it("flags a schedule inside packageRules[]", () => {
+      const findings = lintConfig({
+        packageRules: [
+          { matchPackageNames: ["lodash"], schedule: "qwerty" },
+        ],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toHaveLength(1);
+      expect(findings[0]!.path).toBe("packageRules[0].schedule");
+    });
+
+    it("does not fire on 'at any time'", () => {
+      const findings = lintConfig({ schedule: "at any time" }).filter(
+        (f) => f.ruleId === RULE,
+      );
+      expect(findings).toEqual([]);
+    });
+
+    it("does not fire on empty string", () => {
+      const findings = lintConfig({ schedule: "" }).filter(
+        (f) => f.ruleId === RULE,
+      );
+      expect(findings).toEqual([]);
+    });
+
+    it("does not fire on 'every weekend'", () => {
+      const findings = lintConfig({ schedule: "every weekend" }).filter(
+        (f) => f.ruleId === RULE,
+      );
+      expect(findings).toEqual([]);
+    });
+
+    it("does not fire on 'before 5am every weekday'", () => {
+      const findings = lintConfig({
+        schedule: "before 5am every weekday",
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toEqual([]);
+    });
+
+    it("does not fire on 'every month' (literal mapping)", () => {
+      const findings = lintConfig({ schedule: "every month" }).filter(
+        (f) => f.ruleId === RULE,
+      );
+      expect(findings).toEqual([]);
+    });
+
+    it("does not fire on 'monthly' (literal mapping)", () => {
+      const findings = lintConfig({ schedule: "monthly" }).filter(
+        (f) => f.ruleId === RULE,
+      );
+      expect(findings).toEqual([]);
+    });
+
+    it.each(RENOVATE_PRESET_SCHEDULES)(
+      "accepts the Renovate preset schedule %j",
+      (value) => {
+        const findings = lintConfig({ schedule: value }).filter(
+          (f) => f.ruleId === RULE,
+        );
+        expect(findings).toEqual([]);
+      },
+    );
+
+    it("flags cron with a non-'*' minutes field (Renovate itself rejects this)", () => {
+      const findings = lintConfig({ schedule: "5 0-3 * * *" }).filter(
+        (f) => f.ruleId === RULE,
+      );
+      expect(findings).toHaveLength(1);
+      expect(findings[0]!.value).toBe("5 0-3 * * *");
+    });
+
+    it("is robust to non-string schedule values", () => {
+      expect(
+        lintConfig({ schedule: 42 }).filter((f) => f.ruleId === RULE),
+      ).toEqual([]);
+      expect(
+        lintConfig({ schedule: { foo: "bar" } }).filter(
+          (f) => f.ruleId === RULE,
+        ),
+      ).toEqual([]);
+      expect(
+        lintConfig({ schedule: null }).filter((f) => f.ruleId === RULE),
+      ).toEqual([]);
+    });
+  });
+
   describe("contradictory-disabled-with-package-rules", () => {
     const RULE = "contradictory-disabled-with-package-rules";
 

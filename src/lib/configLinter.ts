@@ -9,7 +9,8 @@ export type LintRuleId =
   | "automerge-without-automerge-type"
   | "empty-extends"
   | "contradictory-disabled-with-package-rules"
-  | "package-rule-without-action";
+  | "package-rule-without-action"
+  | "invalid-schedule";
 
 export interface LintFinding {
   ruleId: LintRuleId;
@@ -114,6 +115,134 @@ export const PACKAGE_RULE_ACTION_KEYS: ReadonlySet<string> = new Set([
 ]);
 
 const DEPRECATED_KEY_CONTAINERS = ["packageRules", "hostRules", "customManagers"] as const;
+
+// Schedule-validation heuristic. Behavioral source of truth:
+//   `node_modules/renovate/dist/workers/repository/update/branch/schedule.js`
+// Renovate parses `schedule` strings via `@breejs/later` (a small natural-language
+// DSL) with a cron fallback via `croner`. Cron parsing in Renovate REQUIRES the
+// minutes field to be exactly `*` — non-`*` minutes are explicitly rejected
+// (per the `hasValidSchedule` checks in that file). When parsing fails Renovate
+// treats it as "at any time" and logs a warning, which is the silent footgun
+// this rule catches.
+//
+// This is a hand-maintained snapshot — same pattern as PACKAGE_RULE_ACTION_KEYS
+// above. We deliberately do NOT import `renovate` or `@breejs/later` at runtime
+// (CLAUDE.md invariant), so the anchor-token list is curated from later's
+// grammar (https://github.com/breejs/later/blob/master/src/parse/text.js) with
+// a deliberate bias toward false negatives over false positives: a non-later
+// string that happens to contain one of these anchor tokens gets a free pass,
+// but every plausible later-text input will contain at least one of them.
+
+// Special-cased sentinels meaning "no schedule". Renovate treats these as
+// always-on.
+const SCHEDULE_ANY_TIME: ReadonlySet<string> = new Set(["", "at any time"]);
+
+// Literal phrases Renovate explicitly maps in its `scheduleMappings` table
+// (see `schedule.js`). Always accepted regardless of anchor-token matching.
+const SCHEDULE_MAPPING_LITERALS: ReadonlySet<string> = new Set([
+  "every month",
+  "monthly",
+]);
+
+// Lowercase tokens. Presence of at least one (whole-word, case-insensitive)
+// makes a non-cron string plausibly-later-text. Curated from later's grammar.
+const LATER_TEXT_ANCHOR_TOKENS: ReadonlySet<string> = new Set([
+  // Time anchors
+  "am",
+  "pm",
+  "noon",
+  "midnight",
+  "before",
+  "after",
+  "between",
+  // Frequency
+  "every",
+  "on",
+  "at",
+  // Day names
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+  "mon",
+  "tue",
+  "tues",
+  "wed",
+  "thu",
+  "thur",
+  "thurs",
+  "fri",
+  "sat",
+  "sun",
+  // Month names (full)
+  "january",
+  "february",
+  "march",
+  "april",
+  "may",
+  "june",
+  "july",
+  "august",
+  "september",
+  "october",
+  "november",
+  "december",
+  // Month abbreviations
+  "jan",
+  "feb",
+  "mar",
+  "apr",
+  "jun",
+  "jul",
+  "aug",
+  "sep",
+  "sept",
+  "oct",
+  "nov",
+  "dec",
+  // Period words
+  "day",
+  "days",
+  "week",
+  "weeks",
+  "weekday",
+  "weekdays",
+  "weekend",
+  "weekends",
+  "month",
+  "months",
+  "year",
+  "years",
+  "hour",
+  "hours",
+  "minute",
+  "minutes",
+  "morning",
+  "evening",
+  "night",
+]);
+
+// Cron-shape: 5 or 6 whitespace-separated fields, every char in `[0-9*/,\-]`,
+// FIRST field is exactly `*` (Renovate explicitly rejects non-`*` minutes).
+// 6-field form covers cron variants with a leading seconds field, which
+// `croner` accepts.
+const SCHEDULE_CRON_SHAPE = /^\*\s+([0-9*/,\-]+\s+){3,4}[0-9*/,\-]+$/;
+
+function isPlausiblySchedule(value: string): boolean {
+  if (SCHEDULE_ANY_TIME.has(value)) return true;
+  const lower = value.toLowerCase();
+  if (SCHEDULE_MAPPING_LITERALS.has(lower)) return true;
+  if (SCHEDULE_CRON_SHAPE.test(value)) return true;
+  // Anchor-token check: split on any run of non-letter chars, look for any
+  // recognized later-grammar token.
+  for (const token of lower.split(/[^a-z]+/)) {
+    if (token && LATER_TEXT_ANCHOR_TOKENS.has(token)) return true;
+  }
+  return false;
+}
 
 export function lintConfig(config: unknown): LintFinding[] {
   const findings: LintFinding[] = [];
@@ -295,6 +424,16 @@ function walk(node: unknown, pathStr: string, findings: LintFinding[]): void {
           message:
             "`extends: []` is empty. Renovate will inherit no presets here, which is almost always a paste error. Either populate the array (e.g. `[\"config:recommended\"]`) or remove the key entirely.",
         });
+      } else if (key === "schedule") {
+        if (typeof value === "string") {
+          checkSchedule(value, childPath, findings);
+        } else if (Array.isArray(value)) {
+          value.forEach((entry, i) => {
+            if (typeof entry === "string") {
+              checkSchedule(entry, `${childPath}[${i}]`, findings);
+            }
+          });
+        }
       } else if (MANAGER_FIELDS.has(key)) {
         if (Array.isArray(value)) {
           value.forEach((entry, i) => {
@@ -346,6 +485,24 @@ function checkPattern(raw: string, path: string, findings: LintFinding[]): void 
       message: `Value contains regex metacharacters but is not wrapped in '/…/'. Renovate will treat it as an exact-match string. Wrap it as '/${stripped}/' (or '!/${stripped}/' to negate) if a regex match was intended.`,
     });
   }
+}
+
+function checkSchedule(value: string, path: string, findings: LintFinding[]): void {
+  if (isPlausiblySchedule(value)) return;
+  findings.push({
+    ruleId: "invalid-schedule",
+    severity: "error",
+    path,
+    value,
+    message:
+      `'${value}' is not a recognizable Renovate schedule. Schedules must be either ` +
+      "later-text (e.g. `\"before 5am every weekday\"`, `\"every weekend\"`) or cron with " +
+      "a `*` minutes field (e.g. `\"* 0-3 * * *\"`); Renovate explicitly rejects cron with " +
+      "a non-`*` minutes field. Renovate silently falls back to \"at any time\" when " +
+      "parsing fails, so this footgun goes undetected at runtime. Check " +
+      "https://docs.renovatebot.com/configuration-options/#schedule or use a `schedule:*` " +
+      "preset such as `schedule:earlyMondays`.",
+  });
 }
 
 function checkManager(raw: string, path: string, findings: LintFinding[]): void {
