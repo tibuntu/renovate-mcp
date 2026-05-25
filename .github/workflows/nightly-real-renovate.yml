@@ -51,8 +51,14 @@ jobs:
       - name: Print resolved Renovate version
         run: npx renovate --version || node -e "console.log(require('renovate/package.json').version)"
 
-      - name: Verify generated snapshots match installed renovate version
-        run: npm run check:snapshot-versions
+      # NOTE: `check:snapshot-versions` is intentionally NOT run here. That
+      # check compares the snapshots' embedded RENOVATE_VERSION against the
+      # installed renovate's version — in this workflow we install
+      # `renovate@latest`, so the check would fail (loudly) every night
+      # there has been any Renovate release since our pin, drowning out the
+      # signal we actually care about (do the integration tests still pass).
+      # Per-PR CI keeps running `check:snapshot-versions` against the pinned
+      # version.
 
       - run: npm run typecheck
       - run: npm run build
