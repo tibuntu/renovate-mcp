@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.1](https://github.com/tibuntu/renovate-mcp/compare/v0.12.0...v0.12.1) (2026-05-25)
+
+
+### Bug Fixes
+
+* **lint:** recognize postUpgradeTasks and 16 other packageRules action keys ([4687fc0](https://github.com/tibuntu/renovate-mcp/commit/4687fc0a16859e435e2682404fdff75cdafa30ef))
+
 ## [0.12.0](https://github.com/tibuntu/renovate-mcp/compare/v0.11.0...v0.12.0) (2026-05-25)
 
 
