@@ -5,7 +5,8 @@ export type LintRuleId =
   | "dead-regex-missing-slash"
   | "unwrapped-regex"
   | "matchManagers-unknown-name"
-  | "deprecated-key";
+  | "deprecated-key"
+  | "automerge-without-automerge-type";
 
 export interface LintFinding {
   ruleId: LintRuleId;
@@ -40,7 +41,38 @@ export function lintConfig(config: unknown): LintFinding[] {
   const findings: LintFinding[] = [];
   walk(config, "", findings);
   checkDeprecatedKeys(config, findings);
+  checkAutomergeWithoutType(config, findings);
   return findings;
+}
+
+function makeAutomergeFinding(path: string): LintFinding {
+  return {
+    ruleId: "automerge-without-automerge-type",
+    severity: "warn",
+    path,
+    value: "true",
+    message:
+      "`automerge: true` is set without `automergeType`. Renovate defaults to `pr` automerge here; set `automergeType` explicitly to `\"pr\"`, `\"branch\"`, or `\"platform\"` to avoid surprises when the default changes.",
+    suggestion: 'automergeType: "pr"',
+  };
+}
+
+function checkAutomergeWithoutType(config: unknown, findings: LintFinding[]): void {
+  if (!isPlainObject(config)) return;
+
+  if (config.automerge === true && !("automergeType" in config)) {
+    findings.push(makeAutomergeFinding("automerge"));
+  }
+
+  const pkgRules = config.packageRules;
+  if (Array.isArray(pkgRules)) {
+    pkgRules.forEach((entry, i) => {
+      if (!isPlainObject(entry)) return;
+      if (entry.automerge === true && !("automergeType" in entry)) {
+        findings.push(makeAutomergeFinding(`packageRules[${i}].automerge`));
+      }
+    });
+  }
 }
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {

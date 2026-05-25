@@ -350,4 +350,89 @@ describe("lintConfig", () => {
       expect(findings[0]!.suggestion).toBe("dependencyDashboard");
     });
   });
+
+  describe("automerge-without-automerge-type", () => {
+    const RULE = "automerge-without-automerge-type";
+
+    it("flags root automerge:true without automergeType", () => {
+      const findings = lintConfig({ automerge: true }).filter(
+        (f) => f.ruleId === RULE,
+      );
+      expect(findings).toHaveLength(1);
+      expect(findings[0]).toMatchObject({
+        ruleId: RULE,
+        severity: "warn",
+        path: "automerge",
+        value: "true",
+        suggestion: 'automergeType: "pr"',
+      });
+    });
+
+    it("does not flag root automerge:true when automergeType is set", () => {
+      const findings = lintConfig({
+        automerge: true,
+        automergeType: "pr",
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toEqual([]);
+    });
+
+    it("flags packageRules[N].automerge:true without automergeType", () => {
+      const findings = lintConfig({
+        packageRules: [
+          { matchPackageNames: ["lodash"], automerge: true },
+        ],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toHaveLength(1);
+      expect(findings[0]).toMatchObject({
+        ruleId: RULE,
+        severity: "warn",
+        path: "packageRules[0].automerge",
+      });
+    });
+
+    it("does not flag a packageRules entry where automergeType is set", () => {
+      const findings = lintConfig({
+        packageRules: [
+          { automerge: true, automergeType: "branch" },
+          { automerge: true, automergeType: "pr" },
+        ],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toEqual([]);
+    });
+
+    it("emits findings for both root and packageRules in the same pass", () => {
+      const findings = lintConfig({
+        automerge: true,
+        packageRules: [
+          { matchPackageNames: ["a"] },
+          { matchPackageNames: ["b"], automerge: true, automergeType: "pr" },
+          { matchPackageNames: ["c"], automerge: true },
+        ],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toHaveLength(2);
+      const paths = findings.map((f) => f.path).sort();
+      expect(paths).toEqual(["automerge", "packageRules[2].automerge"]);
+    });
+
+    it("does not flag automerge:false", () => {
+      const findings = lintConfig({ automerge: false }).filter(
+        (f) => f.ruleId === RULE,
+      );
+      expect(findings).toEqual([]);
+    });
+
+    it("does not flag automerge:true inside customManagers[]", () => {
+      const findings = lintConfig({
+        customManagers: [{ automerge: true }],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toEqual([]);
+    });
+
+    it("does not flag automerge:true inside an arbitrary user key", () => {
+      const findings = lintConfig({
+        someUserKey: { automerge: true },
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toEqual([]);
+    });
+  });
 });
