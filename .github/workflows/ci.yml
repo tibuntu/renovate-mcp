@@ -68,6 +68,9 @@ jobs:
           npm install --package-lock-only --no-audit --no-fund
           git diff --exit-code package-lock.json
 
+      - name: Verify generated snapshots match installed renovate version
+        run: npm run check:snapshot-versions
+
       - run: npm run typecheck
       - run: npm run build
       - run: npm run test:coverage
