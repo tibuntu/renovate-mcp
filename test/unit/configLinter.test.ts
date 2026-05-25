@@ -532,6 +532,27 @@ describe("lintConfig", () => {
         "schedule",
         "allowedVersions",
         "replacementName",
+        // Added after a real false positive: a packageRule whose only action
+        // was `postUpgradeTasks` got flagged as "no action keys". These keys
+        // are all valid in packageRules per Renovate's option metadata and
+        // ARE meaningful actions, so they must not be treated as selectors.
+        "postUpgradeTasks",
+        "rebaseWhen",
+        "rebaseLabel",
+        "lockFileMaintenance",
+        "bumpVersion",
+        "additionalBranchPrefix",
+        "milestone",
+        "prTitle",
+        "vulnerabilityAlerts",
+        "platformAutomerge",
+        "prBodyColumns",
+        "prBodyNotes",
+        "dependencyDashboardLabels",
+        "stopUpdatingLabel",
+        "keepUpdatedLabel",
+        "reviewersFromCodeOwners",
+        "assigneesFromCodeOwners",
       ]) {
         expect(PACKAGE_RULE_ACTION_KEYS.has(key)).toBe(true);
       }
@@ -584,6 +605,22 @@ describe("lintConfig", () => {
       const findings = lintConfig({
         packageRules: [
           { matchPackageNames: ["lodash"], enabled: false },
+        ],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toEqual([]);
+    });
+
+    it("does not fire when selector is paired with postUpgradeTasks (regression: was a false positive)", () => {
+      const findings = lintConfig({
+        packageRules: [
+          {
+            matchPackageNames: ["renovate"],
+            postUpgradeTasks: {
+              commands: ["npm ci"],
+              fileFilters: ["src/data/*.ts"],
+              executionMode: "branch",
+            },
+          },
         ],
       }).filter((f) => f.ruleId === RULE);
       expect(findings).toEqual([]);
