@@ -25,6 +25,7 @@
     "generate:presets": "node scripts/generate-presets.mjs",
     "generate:managers": "node scripts/generate-managers.mjs",
     "generate:migrations": "node scripts/generate-migrations.mjs",
+    "check:snapshot-versions": "node scripts/check-snapshot-versions.mjs",
     "prepack": "npm run build && node -e \"if (!require('fs').readFileSync('dist/index.js','utf8').startsWith('#!')) { console.error('dist/index.js missing shebang'); process.exit(1); }\" && chmod +x dist/index.js"
   },
   "keywords": [
