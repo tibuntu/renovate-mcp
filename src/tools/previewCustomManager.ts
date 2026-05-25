@@ -12,6 +12,7 @@ const managerSchema = z
     fileMatch: z.array(z.string()).min(1),
     matchStrings: z.array(z.string()).min(1),
     matchStringsStrategy: z.string().optional(),
+    fileFormat: z.enum(["json", "yaml", "toml"]).optional(),
     depNameTemplate: z.string().optional(),
     packageNameTemplate: z.string().optional(),
     currentValueTemplate: z.string().optional(),
@@ -29,14 +30,15 @@ export function registerPreviewCustomManager(server: McpServer): void {
   server.registerTool(
     "preview_custom_manager",
     {
-      title: "Preview a Renovate custom manager (regex)",
+      title: "Preview a Renovate custom manager (regex or jsonata)",
       description: [
-        "Preview a Renovate `customManagers` entry against a local repo — fast, offline, no `renovate` invocation. Designed for iterating on a regex: shows which files match `fileMatch`, which lines match each `matchStrings` regex (with named capture groups), and what dep info the template fields produce.",
+        "Preview a Renovate `customManagers` entry against a local repo — fast, offline, no `renovate` invocation. Designed for iterating on a regex or JSONata customManager: shows which files match `fileMatch`, what each `matchStrings` entry extracts, and what dep info the template fields produce.",
         "",
         "Limitations vs. a real Renovate run:",
-        "  - Only `customType: \"regex\"` is supported.",
+        "  - Supports `customType: \"regex\"` and `customType: \"jsonata\"` (the latter requires `fileFormat` to be \"json\", \"yaml\", or \"toml\").",
+        "  - For `customType: \"jsonata\"`: each `matchStrings` entry is a JSONata expression that may return EITHER an array of objects OR a single object (the single object is auto-wrapped to a one-element array, mirroring Renovate's own schema). Object keys map to dep fields (`depName`, `currentValue`, `datasource`, etc.).",
+        "  - Template substitution stringifies non-string primitive values (e.g. numeric `currentValue: 1.2` becomes the string \"1.2\"); null/undefined and nested objects/arrays are dropped from the substitution bag. Same `{{groupName}}` template gap as regex — full Handlebars helpers are not implemented.",
         "  - `matchStringsStrategy` other than `any` (the default) is not implemented; a warning is emitted.",
-        "  - Template substitution handles only `{{groupName}}` references, not full Handlebars helpers.",
         "  - `.gitignore` (and `.git/info/exclude`, plus nested `.gitignore`s) is honored like `git` does. `node_modules/` and `.git/` are always skipped as a safety net, even without a `.gitignore`.",
         "",
         "Run the `dry_run` tool afterwards for full-fidelity confirmation.",
@@ -100,13 +102,24 @@ export function registerPreviewCustomManager(server: McpServer): void {
       matchTimeoutMs,
       maxFileBytes,
     }) => {
-      if (manager.customType !== "regex") {
+      if (manager.customType !== "regex" && manager.customType !== "jsonata") {
         return {
           isError: true,
           content: [
             {
               type: "text",
-              text: `preview_custom_manager only supports customType=\"regex\" (got \"${manager.customType}\"). For other custom manager types, use dry_run.`,
+              text: `preview_custom_manager only supports customType=\"regex\" or customType=\"jsonata\" (got \"${manager.customType}\"). For other custom manager types, use dry_run.`,
+            },
+          ],
+        };
+      }
+      if (manager.customType === "jsonata" && !manager.fileFormat) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text: 'customType="jsonata" requires "fileFormat" to be one of "json", "yaml", or "toml".',
             },
           ],
         };

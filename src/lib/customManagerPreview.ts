@@ -8,6 +8,8 @@ export interface CustomManager {
   fileMatch: string[];
   matchStrings: string[];
   matchStringsStrategy?: string;
+  // Required when customType === "jsonata"; undefined for the regex path.
+  fileFormat?: StructuredFileFormat;
   // Template fields — Renovate has a fixed list. Unknown keys are ignored.
   depNameTemplate?: string;
   packageNameTemplate?: string;
@@ -119,6 +121,10 @@ export async function previewCustomManager(
   manager: CustomManager,
   options: PreviewOptions = {},
 ): Promise<PreviewResult> {
+  if (manager.customType === "jsonata") {
+    return previewJsonataManager(repoPath, manager, options);
+  }
+
   const warnings: string[] = [];
   const maxFilesWalked = options.maxFilesWalked ?? DEFAULT_MAX_FILES_WALKED;
   const maxFilesMatched = options.maxFilesMatched ?? DEFAULT_MAX_FILES_MATCHED;
@@ -211,6 +217,235 @@ export async function previewCustomManager(
   }
 
   return { filesWalked, filesMatched, hits, extractedDeps, warnings };
+}
+
+/**
+ * JSONata customType branch. Mirrors the regex path's walker + fileMatch +
+ * caps; differs only in what runs per matched file: structured-format parse
+ * via `parseStructured()`, then per-expression JSONata evaluation in the
+ * worker via `runEvaluateJsonataInWorker()`. Output-shape normalization
+ * mirrors Renovate's `QueryResultZod` (see `normalizeJsonataResult`).
+ */
+async function previewJsonataManager(
+  repoPath: string,
+  manager: CustomManager,
+  options: PreviewOptions,
+): Promise<PreviewResult> {
+  const warnings: string[] = [];
+  const maxFilesWalked = options.maxFilesWalked ?? DEFAULT_MAX_FILES_WALKED;
+  const maxFilesMatched = options.maxFilesMatched ?? DEFAULT_MAX_FILES_MATCHED;
+  const matchTimeoutMs = options.matchTimeoutMs ?? DEFAULT_MATCH_TIMEOUT_MS;
+  const maxFileBytes = options.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
+
+  // Defense-in-depth: the tool layer (`src/tools/previewCustomManager.ts`)
+  // catches missing fileFormat with a cleaner error message earlier. This
+  // branch handles direct callers of the lib who skipped that guard.
+  const fileFormat = manager.fileFormat;
+  if (fileFormat !== "json" && fileFormat !== "yaml" && fileFormat !== "toml") {
+    warnings.push(
+      `customType=jsonata requires a fileFormat of 'json', 'yaml', or 'toml' (got ${
+        fileFormat === undefined ? "undefined" : `'${String(fileFormat)}'`
+      })`,
+    );
+    return { filesWalked: 0, filesMatched: [], hits: [], extractedDeps: [], warnings };
+  }
+
+  // The fileMatch regexes still apply on the path level. matchStrings are
+  // JSONata expressions — DO NOT validateRegex them; their compile errors
+  // surface from the worker.
+  for (const src of manager.fileMatch) validateRegex(src);
+
+  const allPaths: string[] = [];
+  for await (const rel of walk(repoPath)) {
+    if (allPaths.length >= maxFilesWalked) {
+      warnings.push(
+        `Stopped walking the repo after ${maxFilesWalked} files; remaining files were never tested against fileMatch. Add ignores (or a .gitignore) to prune irrelevant directories, or raise maxFilesWalked.`,
+      );
+      break;
+    }
+    allPaths.push(rel);
+  }
+  const filesWalked = allPaths.length;
+
+  const matchedSet = new Set<string>();
+  for (let i = 0; i < manager.fileMatch.length; i++) {
+    const source = manager.fileMatch[i]!;
+    const res = await runTestInWorker(source, "", allPaths, matchTimeoutMs);
+    if (res.timedOut) {
+      warnings.push(
+        `fileMatch[${i}] /${source}/ exceeded ${matchTimeoutMs}ms and was aborted; no paths were matched against this pattern. Simplify the regex (e.g. avoid nested quantifiers like (a+)+) or raise matchTimeoutMs.`,
+      );
+      continue;
+    }
+    for (const p of res.paths) matchedSet.add(p);
+  }
+  const allFilesMatched = allPaths.filter((p) => matchedSet.has(p));
+  const filesMatched = allFilesMatched.slice(0, maxFilesMatched);
+  if (allFilesMatched.length > maxFilesMatched) {
+    warnings.push(
+      `fileMatch matched ${allFilesMatched.length} files; capped result set at maxFilesMatched=${maxFilesMatched}. Narrow fileMatch to target the intended paths, or raise maxFilesMatched.`,
+    );
+  }
+
+  const extractedDeps: ExtractedDep[] = [];
+
+  for (const rel of filesMatched) {
+    const abs = path.join(repoPath, rel);
+    let stat;
+    try {
+      stat = await fs.stat(abs);
+    } catch (err) {
+      warnings.push(`Could not stat ${rel}: ${(err as Error).message}`);
+      continue;
+    }
+    if (stat.size > maxFileBytes) {
+      warnings.push(
+        `${rel}: skipped, ${stat.size} bytes exceeds maxFileBytes=${maxFileBytes}. Tighten fileMatch to exclude it, or raise maxFileBytes.`,
+      );
+      continue;
+    }
+    let content: string;
+    try {
+      content = await fs.readFile(abs, "utf8");
+    } catch (err) {
+      warnings.push(`Could not read ${rel}: ${(err as Error).message}`);
+      continue;
+    }
+
+    const parsed = await parseStructured(content, fileFormat);
+    if (!parsed.ok) {
+      warnings.push(
+        `${rel}: failed to parse as ${fileFormat}: ${parsed.error}. No deps extracted from this file.`,
+      );
+      continue;
+    }
+
+    for (let i = 0; i < manager.matchStrings.length; i++) {
+      const expression = manager.matchStrings[i]!;
+      const res = await runEvaluateJsonataInWorker(
+        expression,
+        parsed.value,
+        matchTimeoutMs,
+      );
+      if (res.timedOut) {
+        warnings.push(
+          `${rel}: matchStrings[${i}] JSONata expression exceeded ${matchTimeoutMs}ms and was aborted; any deps from this expression were skipped. Simplify the expression (avoid cartesian joins over large arrays) or raise matchTimeoutMs.`,
+        );
+        continue;
+      }
+      if (!res.ok) {
+        warnings.push(
+          `${rel}: matchStrings[${i}] JSONata compile/evaluation error: ${res.error}. No deps extracted from this expression.`,
+        );
+        continue;
+      }
+      const normalized = normalizeJsonataResult(res.result);
+      if (normalized.kind === "empty") continue;
+      if (normalized.kind === "shape-error") {
+        warnings.push(
+          `${rel}: matchStrings[${i}] JSONata expression must return an array of objects or a single object (got ${normalized.actualShape}). Adjust the expression to project a list shape like \`packages.{ "depName": name, "currentValue": version }\`. No deps extracted from this expression.`,
+        );
+        continue;
+      }
+      for (const obj of normalized.objects) {
+        extractedDeps.push(buildJsonataDep(rel, obj, manager));
+      }
+    }
+  }
+
+  // JSONata path has no per-line concept; `hits` stays empty by design.
+  // The regex `hits` shape (line, match string, named groups) doesn't map to
+  // structured data, so we don't synthesize fake hits.
+  return { filesWalked, filesMatched, hits: [], extractedDeps, warnings };
+}
+
+/**
+ * Output-shape normalization for JSONata results. Mirrors Renovate's
+ * `QueryResultZod` (`node_modules/renovate/dist/modules/manager/custom/jsonata/schema.js`):
+ *   z.union([z.array(DepObject), DepObject]).transform(
+ *     input => Array.isArray(input) ? input : [input],
+ *   )
+ * That is: a bare object result is SILENTLY wrapped to a one-element array.
+ * Without this wrap, a single-dep JSONata expression like
+ *   `{ "depName": name, "currentValue": version }` against an object input
+ * would extract zero deps from us and one from Renovate — a parity bug.
+ * null / undefined / empty array are silent (Renovate logs a debug-only
+ * "no matches" message; we mirror by not surfacing a warning).
+ */
+function normalizeJsonataResult(
+  result: unknown,
+):
+  | { kind: "empty" }
+  | { kind: "deps"; objects: Record<string, unknown>[] }
+  | { kind: "shape-error"; actualShape: string } {
+  if (result === null || result === undefined) return { kind: "empty" };
+  if (Array.isArray(result)) {
+    if (result.length === 0) return { kind: "empty" };
+    for (const entry of result) {
+      if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+        return { kind: "shape-error", actualShape: "array of non-object" };
+      }
+    }
+    return { kind: "deps", objects: result as Record<string, unknown>[] };
+  }
+  if (typeof result === "object") {
+    // Bare-object wrap — parity with Renovate's QueryResultZod transform.
+    return { kind: "deps", objects: [result as Record<string, unknown>] };
+  }
+  return { kind: "shape-error", actualShape: `typeof === '${typeof result}'` };
+}
+
+/**
+ * `applyTemplate` requires `Record<string, string>` to keep its return type
+ * honest (no `[object Object]` leaking into substitutions and no `undefined`
+ * stringification). JSONata results can carry arbitrary value types — numbers,
+ * booleans, nested objects, arrays, null. We normalize before substitution:
+ *   - string → kept as-is
+ *   - number / boolean → coerced via `String(v)` (numeric `currentValue: 1.2`
+ *     becomes `"1.2"`, load-bearing for users who project versions as numbers)
+ *   - null / undefined → skipped (entry absent from the groups bag)
+ *   - object / array → skipped (no `[object Object]` leakage)
+ * The same rules apply to direct field reads (e.g. `result.depName`).
+ */
+function stringifyGroups(obj: Record<string, unknown>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v === null || v === undefined) continue;
+    const t = typeof v;
+    if (t === "string") out[k] = v as string;
+    else if (t === "number" || t === "boolean") out[k] = String(v);
+    // Objects and arrays: skip — no [object Object] in templates.
+  }
+  return out;
+}
+
+function buildJsonataDep(
+  file: string,
+  obj: Record<string, unknown>,
+  manager: CustomManager,
+): ExtractedDep {
+  // `line: 1` — parsed structured data has no source-line context, so we
+  // anchor all JSONata-extracted deps at the top of the file.
+  const dep: Record<string, unknown> = { file, line: 1 };
+  const groups = stringifyGroups(obj);
+  // Direct read from the result object: fields named the same as dep keys
+  // populate the dep, after stringification. Mirrors Renovate's
+  // `createDependency` reading from `validMatchFields`.
+  for (const [, depKey] of TEMPLATE_FIELD_MAP) {
+    if (depKey in groups) {
+      dep[depKey] = groups[depKey];
+    }
+  }
+  // Template fields still override matching object keys via the existing
+  // {{groupName}} substitution. Full Handlebars stays out of scope (same gap
+  // as the regex path).
+  for (const [tmplKey, depKey] of TEMPLATE_FIELD_MAP) {
+    const tmpl = manager[tmplKey];
+    if (typeof tmpl === "string") {
+      dep[depKey] = applyTemplate(tmpl, groups);
+    }
+  }
+  return dep as unknown as ExtractedDep;
 }
 
 type Strategy = "any" | "combination" | "recursive";

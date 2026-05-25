@@ -148,7 +148,27 @@ describe("preview_custom_manager end-to-end", () => {
     });
   });
 
-  it("rejects non-regex customType with isError", async () => {
+  it("rejects unsupported customType (not regex or jsonata) with isError", async () => {
+    session = await startServer();
+    const res = await session.request<{
+      isError?: boolean;
+      content: Array<{ type: string; text: string }>;
+    }>("tools/call", {
+      name: "preview_custom_manager",
+      arguments: {
+        repoPath: repo,
+        manager: {
+          customType: "yaml",
+          fileMatch: ["x"],
+          matchStrings: ["x"],
+        },
+      },
+    });
+    expect(res.result?.isError).toBe(true);
+    expect(res.result?.content[0]?.text).toMatch(/customType="regex" or customType="jsonata"/);
+  });
+
+  it("rejects customType=jsonata without fileFormat with isError", async () => {
     session = await startServer();
     const res = await session.request<{
       isError?: boolean;
@@ -165,7 +185,7 @@ describe("preview_custom_manager end-to-end", () => {
       },
     });
     expect(res.result?.isError).toBe(true);
-    expect(res.result?.content[0]?.text).toMatch(/customType="regex"/);
+    expect(res.result?.content[0]?.text).toMatch(/requires "fileFormat"/);
   });
 });
 
