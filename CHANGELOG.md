@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/tibuntu/renovate-mcp/compare/v0.13.0...v0.14.0) (2026-05-28)
+
+
+### Features
+
+* **renovate:** auto-sync jsonata pin on renovate package bumps ([8b78980](https://github.com/tibuntu/renovate-mcp/commit/8b7898036a41b3da02f079588c8751bd00919b41))
+
 ## [0.13.0](https://github.com/tibuntu/renovate-mcp/compare/v0.12.1...v0.13.0) (2026-05-25)
 
 
