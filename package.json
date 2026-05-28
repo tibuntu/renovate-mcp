@@ -25,6 +25,7 @@
     "generate:presets": "node scripts/generate-presets.mjs",
     "generate:managers": "node scripts/generate-managers.mjs",
     "generate:migrations": "node scripts/generate-migrations.mjs",
+    "sync:jsonata-pin": "node scripts/sync-jsonata-pin.mjs",
     "check:snapshot-versions": "node scripts/check-snapshot-versions.mjs",
     "prepack": "npm run build && node -e \"if (!require('fs').readFileSync('dist/index.js','utf8').startsWith('#!')) { console.error('dist/index.js missing shebang'); process.exit(1); }\" && chmod +x dist/index.js"
   },
@@ -61,7 +62,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "ignore": "^7.0.5",
     "json5": "^2.2.3",
-    "jsonata": "2.2.1",
+    "jsonata": "2.1.0",
     "jsonc-parser": "^3.3.1",
     "renovate": "^43.139.5",
     "smol-toml": "^1.6.1",
