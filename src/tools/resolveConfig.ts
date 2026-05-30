@@ -4,9 +4,10 @@ import { locateConfig } from "../lib/configLocations.js";
 import { resolveConfig } from "../lib/presetResolver.js";
 import { configRecord, endpointString, pathString } from "../lib/inputLimits.js";
 
-const MERGE_QUALITY = "preview" as const;
-const MERGE_DISCLAIMER =
-  "Preset expansion uses a simplified merge (arrays concat, objects merge, scalars overwrite). Run dry_run for authoritative output — hostRules, regexManagers, and some boolean flags merge with rule-specific semantics that are not modeled here.";
+const FAITHFUL_DISCLAIMER =
+  "Presets are merged with Renovate's own mergeChildConfig (run in a worker thread), so array/object merge semantics are faithful. Handlebars expressions other than positional {{argN}} are still left verbatim, and resolve_config does not run datasource lookups — run dry_run for full config resolution.";
+const PREVIEW_DISCLAIMER =
+  "The faithful merge worker was unavailable, so this used a simplified in-process merge (arrays concat, objects merge, scalars overwrite) — see warnings. Run dry_run for authoritative output.";
 
 export function registerResolveConfig(server: McpServer): void {
   server.registerTool(
@@ -14,7 +15,7 @@ export function registerResolveConfig(server: McpServer): void {
     {
       title: "Resolve Renovate config (expand presets)",
       description:
-        "Expand every preset referenced by `extends` and return the fully resolved config. Built-in presets resolve offline against the committed catalogue. Pass `externalPresets: true` to fetch `github>` and `gitlab>` presets over HTTPS (with optional `RENOVATE_TOKEN` — or `GITHUB_TOKEN` / `GITLAB_TOKEN` as platform-specific fallbacks — for private repos). For GitHub Enterprise or self-hosted GitLab, pass `endpoint` (API base URL, e.g. `https://ghe.example.com/api/v3` or `https://gitlab.example.com/api/v4`); pass `platform` in addition to route `local>` presets through the same endpoint. `bitbucket>`, `gitea>`, and npm presets are structurally unsupported and remain in `presetsUnresolved` regardless. Endpoint and platform are **tool inputs only** — env vars like `RENOVATE_ENDPOINT` are not read, since the MCP server runs under Claude rather than in your shell. Pass either `repoPath` (reads the repo's config) or `configContent` (an inline config object). The response includes `mergeQuality: \"preview\"` plus a `disclaimer` and a `warnings` array — preset merging here is a close approximation of Renovate's rules rather than bit-identical, and Handlebars expressions other than `{{argN}}` are left verbatim; run `dry_run` for authoritative output.",
+        "Expand every preset referenced by `extends` and return the fully resolved config. Built-in presets resolve offline against the committed catalogue. Pass `externalPresets: true` to fetch `github>` and `gitlab>` presets over HTTPS (with optional `RENOVATE_TOKEN` — or `GITHUB_TOKEN` / `GITLAB_TOKEN` as platform-specific fallbacks — for private repos). For GitHub Enterprise or self-hosted GitLab, pass `endpoint` (API base URL, e.g. `https://ghe.example.com/api/v3` or `https://gitlab.example.com/api/v4`); pass `platform` in addition to route `local>` presets through the same endpoint. `bitbucket>`, `gitea>`, and npm presets are structurally unsupported and remain in `presetsUnresolved` regardless. Endpoint and platform are **tool inputs only** — env vars like `RENOVATE_ENDPOINT` are not read, since the MCP server runs under Claude rather than in your shell. Pass either `repoPath` (reads the repo's config) or `configContent` (an inline config object). The response includes `mergeQuality` (`\"faithful\"` — presets are merged with Renovate's own mergeChildConfig in a worker thread; `\"preview\"` only if that worker was unavailable and a simplified in-process merge was used) plus a `disclaimer` and a `warnings` array. Handlebars expressions other than `{{argN}}` are left verbatim; run `dry_run` for full config resolution.",
       inputSchema: {
         repoPath: pathString(
           "Absolute path to the repository root. The tool will locate the repo's renovate config automatically.",
@@ -70,12 +71,17 @@ export function registerResolveConfig(server: McpServer): void {
         sourcePath = located.relPath;
       }
 
-      const { resolved, presetsResolved, presetsUnresolved, warnings } =
-        await resolveConfig(source, {
-          fetchExternal: externalPresets ?? false,
-          endpoint,
-          platform,
-        });
+      const {
+        resolved,
+        presetsResolved,
+        presetsUnresolved,
+        warnings,
+        mergeQuality,
+      } = await resolveConfig(source, {
+        fetchExternal: externalPresets ?? false,
+        endpoint,
+        platform,
+      });
 
       return {
         content: [
@@ -85,8 +91,11 @@ export function registerResolveConfig(server: McpServer): void {
               {
                 ...(sourcePath ? { path: sourcePath } : {}),
                 resolved,
-                mergeQuality: MERGE_QUALITY,
-                disclaimer: MERGE_DISCLAIMER,
+                mergeQuality,
+                disclaimer:
+                  mergeQuality === "faithful"
+                    ? FAITHFUL_DISCLAIMER
+                    : PREVIEW_DISCLAIMER,
                 presetsResolved,
                 presetsUnresolved,
                 warnings,

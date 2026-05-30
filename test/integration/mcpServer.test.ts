@@ -422,9 +422,9 @@ describe("resolve_config end-to-end", () => {
     expect(parsed.resolved).not.toHaveProperty("extends");
     expect(parsed.presetsResolved).toContain("default:automergeAll");
     expect(parsed.presetsUnresolved).toEqual([]);
-    // Every response must carry the preview-quality marker so callers don't
-    // treat `resolved` as bit-identical to Renovate's own output.
-    expect(parsed.mergeQuality).toBe("preview");
+    // Faithful merge runs Renovate's own mergeChildConfig in a worker thread;
+    // mergeQuality only degrades to "preview" if that worker is unavailable.
+    expect(parsed.mergeQuality).toBe("faithful");
     expect(parsed.disclaimer).toMatch(/dry_run/);
     expect(parsed.warnings).toEqual([]);
   });
@@ -480,7 +480,7 @@ describe("explain_config end-to-end", () => {
       ],
     });
     expect(parsed.presetsResolved).toContain("default:automergeAll");
-    expect(parsed.mergeQuality).toBe("preview");
+    expect(parsed.mergeQuality).toBe("faithful");
   });
 
   it("rejects calls that pass neither repoPath nor configContent", async () => {

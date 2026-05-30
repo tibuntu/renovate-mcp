@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { explainConfig, OWN_SOURCE } from "../../src/lib/configExplainer.js";
 import { resolveConfig } from "../../src/lib/presetResolver.js";
 
@@ -10,6 +10,11 @@ import { resolveConfig } from "../../src/lib/presetResolver.js";
  */
 
 describe("explainConfig", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
   it("returns the input unchanged with a <own> source when there are no extends", async () => {
     const { explanation, presetsResolved, presetsUnresolved } = await explainConfig({
       schedule: ["before 6am"],
@@ -68,17 +73,55 @@ describe("explainConfig", () => {
     ]);
   });
 
-  it("concatenates array contributions and lists every contributor in setBy", async () => {
+  it("overwrites non-mergeable arrays (assignees) but keeps the contribution history", async () => {
+    // `assignees` is NOT a mergeable Renovate option, so the own value wins
+    // outright — faithful merge overwrites rather than concatenating. setBy
+    // still lists both contributors in order, the last writer winning.
     const { explanation } = await explainConfig({
       extends: ["default:assignee(alice)"],
       assignees: ["bob"],
     });
     expect(explanation.assignees).toEqual({
-      value: ["alice", "bob"],
+      value: ["bob"],
       setBy: [
         { source: "default:assignee(alice)", via: [], value: ["alice"] },
         { source: OWN_SOURCE, via: [], value: ["bob"] },
       ],
+    });
+  });
+
+  it("attributes each contributor's slice for a mergeable array (addLabels)", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ addLabels: ["from-preset"] }), {
+        status: 200,
+      }),
+    );
+    const { explanation } = await explainConfig(
+      { extends: ["github>acme/cfg"], addLabels: ["from-own"] },
+      { fetchExternal: true },
+    );
+    // addLabels IS mergeable → concatenated; each contributor records its slice.
+    expect(explanation.addLabels).toEqual({
+      value: ["from-preset", "from-own"],
+      setBy: [
+        { source: "github>acme/cfg", via: [], value: ["from-preset"] },
+        { source: OWN_SOURCE, via: [], value: ["from-own"] },
+      ],
+    });
+  });
+
+  it("does not credit a preset that re-asserts an already-set value", async () => {
+    // Both default:automergeAll and the own config set automerge:true. Under
+    // diff-based attribution only the first writer is credited — the second
+    // changed nothing. This is the one intentional behavior change vs the old
+    // parallel-merge attribution.
+    const { explanation } = await explainConfig({
+      extends: ["default:automergeAll"],
+      automerge: true,
+    });
+    expect(explanation.automerge).toEqual({
+      value: true,
+      setBy: [{ source: "default:automergeAll", via: [], value: true }],
     });
   });
 
@@ -203,5 +246,28 @@ describe("explainConfig", () => {
         },
       ],
     });
+  });
+
+  it("falls back to the approximate annotated merge (mergeQuality: preview) when the worker is unavailable", async () => {
+    vi.stubEnv(
+      "RENOVATE_MCP_MERGE_WORKER_ENTRY",
+      "/nonexistent/renovate-mcp-merge-worker.js",
+    );
+    const { explanation, mergeQuality, warnings } = await explainConfig({
+      extends: ["default:assignee(alice)"],
+      assignees: ["bob"],
+    });
+    expect(mergeQuality).toBe("preview");
+    // Approximate annotated merge concatenates arrays (pre-faithful behavior).
+    expect(explanation.assignees).toEqual({
+      value: ["alice", "bob"],
+      setBy: [
+        { source: "default:assignee(alice)", via: [], value: ["alice"] },
+        { source: OWN_SOURCE, via: [], value: ["bob"] },
+      ],
+    });
+    expect(
+      warnings.some((w) => /merge worker unavailable/i.test(w.message)),
+    ).toBe(true);
   });
 });

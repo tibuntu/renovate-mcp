@@ -70,7 +70,7 @@ Expand every `extends` preset offline. Opt in to fetching `github>` / `gitlab>` 
 
 Built-in presets expand against a committed snapshot of Renovate's catalogue (`src/data/presets.generated.ts`). External `github>` / `gitlab>` fetching is opt-in, uses each platform's contents API with a 10 s timeout, and caches results per call. The `endpoint` input swaps in a custom API base for GHE / self-hosted GitLab; `platform` additionally rewrites `local>` presets to be fetched against that endpoint. `bitbucket>`, `gitea>`, and npm presets still land in `presetsUnresolved` with a reason.
 
-Merging is a close approximation of Renovate's own `mergeChildConfig` — arrays concat, objects recursively merge, scalars overwrite — **not** a bit-identical port. Rule-specific semantics for `hostRules`, `regexManagers` / `customManagers`, and certain boolean flags aren't modeled. Every response carries `mergeQuality: "preview"` plus a human-readable `disclaimer` so callers can't miss the limitation; run `dry_run` for authoritative output.
+Merging uses Renovate's own `mergeChildConfig`, run in a worker thread so the main process never imports `renovate` — mergeable arrays (`packageRules`, `hostRules`, `addLabels`, …) concatenate, non-mergeable arrays (`assignees`, `labels`, `schedule`, …) overwrite, objects recurse, `constraints` object-merges, and `force` applies last. Responses carry `mergeQuality: "faithful"` plus a `disclaimer`. A config that pulls in ≥2 sources spawns the worker, so the first such call pays a one-time cold start (~1-3 s); configs that don't actually merge skip it. If the worker is unavailable the tool falls back to a simplified in-process merge (arrays concat, objects merge, scalars overwrite), appends a warning, and reports `mergeQuality: "preview"`. `resolve_config` still doesn't run datasource lookups — run `dry_run` for full config resolution.
 
 Template substitution implements only positional `{{argN}}` placeholders. Under-argument cases (`{{arg2}}` referenced when only one arg was passed) substitute an empty string; non-positional tokens (`{{packageRules}}`, Handlebars helpers like `{{#if …}}`) pass through verbatim and are flagged in `warnings`.
 
@@ -78,11 +78,11 @@ See also: [Security & secrets — Endpoint validation](security.md#endpoint-vali
 
 ## `explain_config`
 
-Inverse of `resolve_config`: walk the same preset tree but annotate every leaf field with the chain of presets that touched it. Each leaf is `{ value, setBy }` where `setBy` lists every contribution in merge order — last entry wins for scalars; for arrays each entry adds its own slice.
+Inverse of `resolve_config`: walk the same preset tree but annotate every leaf field with the chain of presets that touched it. Each leaf is `{ value, setBy }` where `setBy` lists every contribution in merge order — last entry wins for scalars and overwritten (non-mergeable) arrays; for mergeable arrays each entry adds its own slice.
 
-Same offline-by-default behaviour and same `externalPresets` / `endpoint` / `platform` opt-ins as `resolve_config`. Reuses the same expansion machinery (`parsePreset`, `loadPresetBody`, `applyArgs`, `recordTemplateWarnings`) so the two can't drift — if `resolve_config` resolves a preset, `explain_config` does too. Each contribution is pinned with a source name (literal `extends` entry, or `<own>` for the user's input config) and a `via` chain naming every parent preset traversed to reach it.
+Same offline-by-default behaviour and same `externalPresets` / `endpoint` / `platform` opt-ins as `resolve_config`. Both tools share one expansion-and-merge core (`collectMergeSteps` plus the same worker-isolated faithful merge), so their resolved values are identical by construction. `explain_config` reconstructs provenance by diffing the merge's per-step snapshots: each contribution is pinned with a source name (literal `extends` entry, or `<own>` for the user's input config) and a `via` chain naming every parent preset traversed to reach it.
 
-`merge_quality: "preview"` carries the same disclaimer as `resolve_config` — Renovate's rule-specific semantics for `hostRules`, `regexManagers`, and certain boolean flags aren't modelled.
+`mergeQuality` is `"faithful"`, matching `resolve_config` (same worker-isolated merge, same `"preview"` fallback). One attribution nuance: a preset that re-asserts an already-set value is **not** listed as a separate contributor — attribution credits whoever *changed* the value.
 
 ## `preview_custom_manager`
 
