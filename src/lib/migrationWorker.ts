@@ -27,7 +27,18 @@ type WorkerResponse =
 // fresh worker today, so this budget covers the cold path.
 const DEFAULT_TIMEOUT_MS = 30_000;
 
-const WORKER_ENTRY = new URL("./migrationWorkerImpl.js", import.meta.url);
+/**
+ * Worker entry, resolved per call. Overridable via
+ * `RENOVATE_MCP_MIGRATION_WORKER_ENTRY` so a test can point it at a fixture. In
+ * production, `import.meta.url` resolves to `dist/lib/migrationWorker.js`, so
+ * the sibling `.js` is correct.
+ */
+function workerEntry(): string | URL {
+  return (
+    process.env.RENOVATE_MCP_MIGRATION_WORKER_ENTRY ??
+    new URL("./migrationWorkerImpl.js", import.meta.url)
+  );
+}
 
 export class MigrationTimeoutError extends Error {
   readonly timeoutMs: number;
@@ -43,22 +54,43 @@ export async function runMigration(
   options: { timeoutMs?: number } = {},
 ): Promise<MigrationResult> {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const worker = new Worker(WORKER_ENTRY, { workerData: { config } });
+  const worker = new Worker(workerEntry(), {
+    workerData: { config },
+    // Isolate the worker's stdio: importing renovate pulls in its logger, which
+    // can emit notes before init. The MCP server speaks JSON-RPC over stdout, so
+    // nothing from the worker may leak onto the parent's stdout. Both streams are
+    // captured (and never read) instead of piped to the parent.
+    stdout: true,
+    stderr: true,
+  });
 
   let timer: NodeJS.Timeout | undefined;
   try {
     const response = await new Promise<WorkerResponse | "timeout">(
       (resolve, reject) => {
-        timer = setTimeout(() => resolve("timeout"), timeoutMs);
-        worker.once("message", (msg: WorkerResponse) => resolve(msg));
-        worker.once("error", (err) => reject(err));
-        worker.once("exit", (code) => {
-          if (code !== 0 && code !== 1) {
+        // First event wins; an unexpected exit (worker crashed/exited before
+        // posting) rejects immediately rather than leaving the promise pending
+        // until the timeout.
+        let settled = false;
+        const settle = (fn: () => void) => {
+          if (settled) return;
+          settled = true;
+          fn();
+        };
+        timer = setTimeout(() => settle(() => resolve("timeout")), timeoutMs);
+        worker.once("message", (msg: WorkerResponse) =>
+          settle(() => resolve(msg)),
+        );
+        worker.once("error", (err) => settle(() => reject(err)));
+        worker.once("exit", (code) =>
+          settle(() =>
             reject(
-              new Error(`Migration worker exited unexpectedly with code ${code}`),
-            );
-          }
-        });
+              new Error(
+                `Migration worker exited (code ${code}) before returning a result`,
+              ),
+            ),
+          ),
+        );
       },
     );
 
