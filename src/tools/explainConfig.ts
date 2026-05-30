@@ -4,9 +4,10 @@ import { locateConfig } from "../lib/configLocations.js";
 import { explainConfig } from "../lib/configExplainer.js";
 import { configRecord, endpointString, pathString } from "../lib/inputLimits.js";
 
-const MERGE_QUALITY = "preview" as const;
-const MERGE_DISCLAIMER =
-  "Same simplified merge as resolve_config (arrays concat, objects merge, scalars overwrite). Renovate's rule-specific semantics for hostRules, regexManagers, and some boolean flags are not modelled — explanations of those keys are only as accurate as the merge.";
+const FAITHFUL_DISCLAIMER =
+  "Provenance is reconstructed from Renovate's own mergeChildConfig (run in a worker thread), so leaf values match resolve_config exactly. A preset that re-asserts an already-set value is not listed as a separate contributor — attribution credits whoever changed the value. Handlebars other than {{argN}} is left verbatim; run dry_run for full config resolution.";
+const PREVIEW_DISCLAIMER =
+  "The faithful merge worker was unavailable, so this used a simplified in-process merge (arrays concat, objects merge, scalars overwrite) — see warnings. Run dry_run for authoritative output.";
 
 export function registerExplainConfig(server: McpServer): void {
   server.registerTool(
@@ -14,7 +15,7 @@ export function registerExplainConfig(server: McpServer): void {
     {
       title: "Explain which preset set each field",
       description:
-        "Inverse of resolve_config: walk the same preset tree, but annotate every leaf field with the chain of presets that touched it. Each leaf in `explanation` carries `{ value, setBy }` where `setBy` lists every contribution in merge order — last entry wins for scalars; for arrays each entry adds its own slice. The `<own>` source means the value came from the user's input config (siblings of `extends`); other sources are preset references as written in `extends`. Use this to trace surprises like \"why is `prCreation` set to 'not-pending'?\". Pure analysis: same offline-by-default behaviour as resolve_config, plus the same `externalPresets` / `endpoint` / `platform` opt-ins. Pass `repoPath` (reads the repo's config) or `configContent` (an inline config). For full-fidelity output, run dry_run instead.",
+        "Inverse of resolve_config: walk the same preset tree, but annotate every leaf field with the chain of presets that touched it. Each leaf in `explanation` carries `{ value, setBy }` where `setBy` lists every contribution in merge order — last entry wins for scalars and overwritten (non-mergeable) arrays; for mergeable arrays each entry adds its own slice. The `<own>` source means the value came from the user's input config (siblings of `extends`); other sources are preset references as written in `extends`. Use this to trace surprises like \"why is `prCreation` set to 'not-pending'?\". Pure analysis: same offline-by-default behaviour as resolve_config, plus the same `externalPresets` / `endpoint` / `platform` opt-ins. Pass `repoPath` (reads the repo's config) or `configContent` (an inline config). For full-fidelity output, run dry_run instead.",
       inputSchema: {
         repoPath: pathString(
           "Absolute path to the repository root. The tool will locate the repo's renovate config automatically.",
@@ -70,12 +71,17 @@ export function registerExplainConfig(server: McpServer): void {
         sourcePath = located.relPath;
       }
 
-      const { explanation, presetsResolved, presetsUnresolved, warnings } =
-        await explainConfig(source, {
-          fetchExternal: externalPresets ?? false,
-          endpoint,
-          platform,
-        });
+      const {
+        explanation,
+        presetsResolved,
+        presetsUnresolved,
+        warnings,
+        mergeQuality,
+      } = await explainConfig(source, {
+        fetchExternal: externalPresets ?? false,
+        endpoint,
+        platform,
+      });
 
       return {
         content: [
@@ -85,8 +91,11 @@ export function registerExplainConfig(server: McpServer): void {
               {
                 ...(sourcePath ? { path: sourcePath } : {}),
                 explanation,
-                mergeQuality: MERGE_QUALITY,
-                disclaimer: MERGE_DISCLAIMER,
+                mergeQuality,
+                disclaimer:
+                  mergeQuality === "faithful"
+                    ? FAITHFUL_DISCLAIMER
+                    : PREVIEW_DISCLAIMER,
                 presetsResolved,
                 presetsUnresolved,
                 warnings,

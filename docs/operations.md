@@ -19,6 +19,12 @@ Previously a single `maxFilesScanned` conflated the two, leaving the user unable
 
 **`.gitignore` honoring.** The walk honors `.gitignore` (including nested `.gitignore`s and `.git/info/exclude`), so generated/vendored directories like `dist/`, `.next/`, `target/`, `__pycache__/` don't crowd out real hits against the `maxFilesWalked` cap. `node_modules/` and `.git/` are always skipped as a safety net even when no `.gitignore` is present.
 
+## `resolve_config` / `explain_config` merge worker
+
+Preset *expansion* is in-process and instant, but the *merge* of expanded presets runs Renovate's real `mergeChildConfig` inside a `worker_threads` worker (so the main process never imports `renovate`). A config that merges fewer than two sources — no `extends`, or a single preset with no own keys — skips the worker entirely. When the worker does run, the first call pays a one-time cold start (~1-3 s) loading Renovate's module graph and manager registry via `getOptions()`; the worker is terminated after each call.
+
+**Timeout / fallback.** The worker has a 30 s wall-clock budget (`MergeTimeoutError`). On timeout — or any worker failure, including a missing or corrupt bundled `renovate` — both tools **fall back** to a simplified in-process merge (arrays concat, objects merge, scalars overwrite), append a `warnings` entry naming the cause, and report `mergeQuality: "preview"` instead of `"faithful"`. A merge-worker problem never hard-fails the call.
+
 ## `check_setup` bundled-binary fast path
 
 Each Renovate CLI binary is `node node_modules/renovate/dist/<cli>.js`, and a cold `--version` spawn loads Renovate's full ESM graph (~2 s per binary). Two of those at every MCP session start used to dominate cold-start latency and could blow past clients' `initialize` timeout.

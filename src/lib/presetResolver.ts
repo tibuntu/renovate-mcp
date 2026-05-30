@@ -1,5 +1,6 @@
 import { PRESETS } from "../data/presets.generated.js";
 import { fetchExternalPreset, type FetchResult } from "./externalPresetFetcher.js";
+import { runMerge } from "./mergeWorker.js";
 
 export interface UnresolvedPreset {
   preset: string;
@@ -11,8 +12,41 @@ export interface PresetWarning {
   message: string;
 }
 
+/**
+ * `"faithful"` when the resolved config came from Renovate's real
+ * `mergeChildConfig` (the worker path); `"preview"` when the worker was
+ * unavailable and we fell back to the in-process approximate merge.
+ */
+export type MergeQuality = "faithful" | "preview";
+
 export interface ResolveResult {
   resolved: Record<string, unknown>;
+  presetsResolved: string[];
+  presetsUnresolved: UnresolvedPreset[];
+  warnings: PresetWarning[];
+  mergeQuality: MergeQuality;
+}
+
+/**
+ * Sentinel used as the `label`/`source` of contributions that come from the
+ * user's own input config (the keys that are siblings of `extends`, not from
+ * any preset). Angle brackets cannot appear in a real preset reference, so this
+ * never collides with one. Re-exported from `configExplainer.ts` for callers
+ * that historically imported it from there.
+ */
+export const OWN_SOURCE = "<own>";
+
+export interface MergeStep {
+  /** Preset entry exactly as written in `extends`, or OWN_SOURCE for own keys. */
+  label: string;
+  /** Parent preset chain that brought this config in, outermost first. */
+  via: string[];
+  /** Extends-stripped, args-substituted body contributed by `label`. */
+  config: Record<string, unknown>;
+}
+
+export interface CollectResult {
+  steps: MergeStep[];
   presetsResolved: string[];
   presetsUnresolved: UnresolvedPreset[];
   warnings: PresetWarning[];
@@ -63,7 +97,9 @@ export type SourceClassification =
  * - `github`, `gitlab`: fetchable over HTTPS.
  * - `local`: structurally unsupported — requires platform/repo context the
  *   tool does not have.
- * - `bitbucket`, `gitea`, `npm`: not yet implemented.
+ * - `bitbucket`, `gitea`, `npm`: unsupported by resolve_config — the reason
+ *   points users at `dry_run` (the Renovate CLI resolves these) rather than at
+ *   a tracking issue.
  */
 export function classifyExternalSource(source: string): SourceClassification {
   switch (source) {
@@ -80,13 +116,13 @@ export function classifyExternalSource(source: string): SourceClassification {
     case "gitea":
       return {
         fetchable: false,
-        reason: `${source}> presets are not yet supported. Track progress in issue #10.`,
+        reason: `${source}> presets are not supported by resolve_config. Run dry_run (with platform + endpoint) for full external-preset resolution via the Renovate CLI, or host the preset on GitHub or GitLab.`,
       };
     case "npm":
       return {
         fetchable: false,
         reason:
-          "npm-hosted presets are not yet supported. Host the preset on GitHub or GitLab, or track progress in issue #10.",
+          "npm-hosted presets are not supported by resolve_config. Run dry_run for full-fidelity resolution via the Renovate CLI, or host the preset on GitHub or GitLab.",
       };
     default:
       return {
@@ -138,9 +174,61 @@ export async function resolveConfig(
   config: Record<string, unknown>,
   options: ResolveOptions = {},
 ): Promise<ResolveResult> {
+  const { steps, presetsResolved, presetsUnresolved, warnings } =
+    await collectMergeSteps(config, options);
+  const configs = steps.map((s) => s.config);
+
+  try {
+    const { merged } = await runMerge(configs);
+    return {
+      resolved: merged,
+      presetsResolved,
+      presetsUnresolved,
+      warnings,
+      mergeQuality: "faithful",
+    };
+  } catch (err) {
+    // Graceful degradation: the faithful merge worker is unavailable (e.g.
+    // renovate not installed, or a pathological cold-load timeout). Fall back
+    // to the in-process approximate merge so a previously-offline-instant tool
+    // never hard-fails — and signal the reduced fidelity via mergeQuality.
+    const resolved = configs.reduce<Record<string, unknown>>(
+      (acc, c) => mergeConfig(acc, c),
+      {},
+    );
+    warnings.push({
+      preset: "<merge>",
+      message: `Faithful merge worker unavailable (${
+        err instanceof Error ? err.message : String(err)
+      }); fell back to approximate merge. Run dry_run for authoritative output.`,
+    });
+    return {
+      resolved,
+      presetsResolved,
+      presetsUnresolved,
+      warnings,
+      mergeQuality: "preview",
+    };
+  }
+}
+
+/**
+ * Flatten a config's preset tree into the ordered sequence of leaf configs that
+ * resolve_config / explain_config fold. DFS order, own-keys-last-per-node, so a
+ * left-fold of `steps.map(s => s.config)` reproduces the nested merge — every
+ * key type in Renovate's `mergeChildConfig` is left-associative, so flattening
+ * is equivalent to the nested fold. Shared by both tools so they can never drift
+ * on *which* configs merge in *what* order. This collects only; it does not
+ * merge (the worker-isolated faithful merge runs separately, see `mergeWorker`).
+ */
+export async function collectMergeSteps(
+  config: Record<string, unknown>,
+  options: ResolveOptions = {},
+): Promise<CollectResult> {
   const presetsResolved: string[] = [];
   const presetsUnresolved: UnresolvedPreset[] = [];
   const warnings: PresetWarning[] = [];
+  const steps: MergeStep[] = [];
   const stack: string[] = [];
   const ctx: ExpandContext = {
     fetchExternal: options.fetchExternal ?? false,
@@ -150,75 +238,96 @@ export async function resolveConfig(
     cache: new Map(),
   };
 
-  const resolved = await expand(
+  await collectSteps(
     config,
+    null,
+    [],
+    steps,
     presetsResolved,
     presetsUnresolved,
     warnings,
     stack,
     ctx,
   );
-  return { resolved, presetsResolved, presetsUnresolved, warnings };
+  return { steps, presetsResolved, presetsUnresolved, warnings };
 }
 
-async function expand(
+async function collectSteps(
   input: Record<string, unknown>,
+  ownerName: string | null,
+  viaChain: string[],
+  steps: MergeStep[],
   resolvedList: string[],
   unresolvedList: UnresolvedPreset[],
   warningsList: PresetWarning[],
   stack: string[],
   ctx: ExpandContext,
-): Promise<Record<string, unknown>> {
+): Promise<void> {
   const rawExtends = input.extends;
-  if (!Array.isArray(rawExtends) || rawExtends.length === 0) {
-    const { extends: _drop, ...rest } = input;
-    return rest;
+  if (Array.isArray(rawExtends) && rawExtends.length > 0) {
+    // Children of `input` are reached by going through `ownerName` (if any).
+    // The user's root has no name; for it `viaChain` and `childVia` are equal.
+    const childVia = ownerName === null ? viaChain : [...viaChain, ownerName];
+
+    for (const entry of rawExtends) {
+      if (typeof entry !== "string") {
+        unresolvedList.push({
+          preset: String(entry),
+          reason: "Preset entry must be a string.",
+        });
+        continue;
+      }
+
+      const parsed = parsePreset(entry);
+      if (stack.includes(parsed.key)) {
+        unresolvedList.push({
+          preset: entry,
+          reason: `Cycle detected: ${[...stack, parsed.key].join(" → ")}`,
+        });
+        continue;
+      }
+
+      const body = await loadPresetBody(parsed, ctx, unresolvedList);
+      if (!body) continue;
+
+      const { value, missingArgs, unknownTemplates } = applyArgs(
+        body,
+        parsed.args,
+      );
+      recordTemplateWarnings(
+        entry,
+        parsed.args.length,
+        missingArgs,
+        unknownTemplates,
+        warningsList,
+      );
+      stack.push(parsed.key);
+      await collectSteps(
+        value as Record<string, unknown>,
+        entry,
+        childVia,
+        steps,
+        resolvedList,
+        unresolvedList,
+        warningsList,
+        stack,
+        ctx,
+      );
+      stack.pop();
+      resolvedList.push(entry);
+    }
   }
 
-  let accumulated: Record<string, unknown> = {};
-
-  for (const entry of rawExtends) {
-    if (typeof entry !== "string") {
-      unresolvedList.push({
-        preset: String(entry),
-        reason: "Preset entry must be a string.",
-      });
-      continue;
-    }
-
-    const parsed = parsePreset(entry);
-
-    if (stack.includes(parsed.key)) {
-      unresolvedList.push({
-        preset: entry,
-        reason: `Cycle detected: ${[...stack, parsed.key].join(" → ")}`,
-      });
-      continue;
-    }
-
-    const body = await loadPresetBody(parsed, ctx, unresolvedList);
-    if (!body) continue;
-
-    const { value, missingArgs, unknownTemplates } = applyArgs(body, parsed.args);
-    recordTemplateWarnings(entry, parsed.args.length, missingArgs, unknownTemplates, warningsList);
-    const substituted = value as Record<string, unknown>;
-    stack.push(parsed.key);
-    const subResolved = await expand(
-      substituted,
-      resolvedList,
-      unresolvedList,
-      warningsList,
-      stack,
-      ctx,
-    );
-    stack.pop();
-
-    accumulated = mergeConfig(accumulated, subResolved);
-    resolvedList.push(entry);
-  }
-
+  // Own keys (siblings of `extends`) merge last for this node. Skip empty
+  // own-key sets so a single-preset config stays a single step (no worker).
   const { extends: _drop, ...ownKeys } = input;
-  return mergeConfig(accumulated, ownKeys);
+  if (Object.keys(ownKeys).length > 0) {
+    steps.push({
+      label: ownerName ?? OWN_SOURCE,
+      via: [...viaChain],
+      config: ownKeys,
+    });
+  }
 }
 
 export function recordTemplateWarnings(

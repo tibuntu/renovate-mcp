@@ -281,8 +281,8 @@ describe("structurally-unsupported sources: identical reason across flag values"
   // must not change the reason the user sees.
   const cases: Array<{ preset: string; matcher: RegExp }> = [
     { preset: "local>acme/cfg", matcher: /need a platform context/i },
-    { preset: "bitbucket>acme/cfg", matcher: /not yet supported/i },
-    { preset: "gitea>acme/cfg", matcher: /not yet supported/i },
+    { preset: "bitbucket>acme/cfg", matcher: /not supported by resolve_config/i },
+    { preset: "gitea>acme/cfg", matcher: /not supported by resolve_config/i },
     { preset: "some-npm-preset", matcher: /npm-hosted/i },
   ];
 
@@ -510,5 +510,90 @@ describe("argument substitution warnings", () => {
     expect(warnings).toHaveLength(1);
     expect(warnings[0]?.preset).toBe("github>acme/inner");
     expect(warnings[0]?.message).toMatch(/\{\{arg3\}\}/);
+  });
+});
+
+describe("resolveConfig faithful merge (Renovate's mergeChildConfig)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it("overwrites non-mergeable arrays (assignees) instead of concatenating", async () => {
+    // default:assignee sets `assignees: ["{{arg0}}"]`. `assignees` is NOT a
+    // mergeable option in Renovate, so the user's own value wins outright —
+    // the old hand-rolled merge would have produced ["alice", "bob"].
+    const { resolved, mergeQuality } = await resolveConfig({
+      extends: ["default:assignee(alice)"],
+      assignees: ["bob"],
+    });
+    expect(resolved).toMatchObject({ assignees: ["bob"] });
+    expect(mergeQuality).toBe("faithful");
+  });
+
+  it("flattens nested presets faithfully: mergeable arrays concat in order, non-mergeable arrays overwrite", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = typeof input === "string" ? input : (input as URL).toString();
+      if (url.includes("/acme/inner/")) {
+        return new Response(
+          JSON.stringify({
+            packageRules: [{ matchPackageNames: ["A"] }],
+            assignees: ["inner"],
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.includes("/acme/outer/")) {
+        return new Response(
+          JSON.stringify({
+            extends: ["github>acme/inner"],
+            packageRules: [{ matchPackageNames: ["B"] }],
+            assignees: ["outer"],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response("", { status: 404, statusText: "Not Found" });
+    });
+
+    const { resolved } = await resolveConfig(
+      {
+        extends: ["github>acme/outer"],
+        packageRules: [{ matchPackageNames: ["C"] }],
+        assignees: ["root"],
+      },
+      { fetchExternal: true },
+    );
+
+    // packageRules is mergeable → concatenated innermost → outermost → own,
+    // proving the flattened left-fold reproduces the nested merge order.
+    expect(resolved.packageRules).toEqual([
+      { matchPackageNames: ["A"] },
+      { matchPackageNames: ["B"] },
+      { matchPackageNames: ["C"] },
+    ]);
+    // assignees is non-mergeable → own wins outright (flatten + overwrite).
+    expect(resolved.assignees).toEqual(["root"]);
+  });
+
+  it("falls back to the approximate in-process merge (mergeQuality: preview) when the worker is unavailable", async () => {
+    // Point the worker entry at a path that can't load → runMerge rejects →
+    // resolveConfig degrades gracefully instead of hard-failing.
+    vi.stubEnv(
+      "RENOVATE_MCP_MERGE_WORKER_ENTRY",
+      "/nonexistent/renovate-mcp-merge-worker.js",
+    );
+    const { resolved, mergeQuality, warnings } = await resolveConfig({
+      extends: ["default:assignee(alice)"],
+      assignees: ["bob"],
+    });
+    expect(mergeQuality).toBe("preview");
+    // The approximate merge concatenates all arrays (pre-faithful behavior), so
+    // assignees is ["alice","bob"] — distinct from the faithful overwrite,
+    // proving the fallback path actually ran.
+    expect(resolved.assignees).toEqual(["alice", "bob"]);
+    expect(
+      warnings.some((w) => /merge worker unavailable/i.test(w.message)),
+    ).toBe(true);
   });
 });

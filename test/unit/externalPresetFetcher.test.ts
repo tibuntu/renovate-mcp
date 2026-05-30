@@ -664,13 +664,15 @@ describe("fetchExternalPreset — unsupported sources", () => {
   it("returns a clear error for bitbucket", async () => {
     const result = await fetchExternalPreset(parsePreset("bitbucket>acme/cfg"));
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toMatch(/not yet supported/i);
+    if (!result.ok)
+      expect(result.reason).toMatch(/not supported by resolve_config/i);
   });
 
   it("returns a clear error for gitea", async () => {
     const result = await fetchExternalPreset(parsePreset("gitea>acme/cfg"));
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toMatch(/not yet supported/i);
+    if (!result.ok)
+      expect(result.reason).toMatch(/not supported by resolve_config/i);
   });
 
   it("returns a clear error for local", async () => {
@@ -682,6 +684,7 @@ describe("fetchExternalPreset — unsupported sources", () => {
   it("returns a clear error for npm", async () => {
     const result = await fetchExternalPreset(parsePreset("some-npm-preset"));
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toMatch(/not yet supported/i);
+    if (!result.ok)
+      expect(result.reason).toMatch(/not supported by resolve_config/i);
   });
 });
