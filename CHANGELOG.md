@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.0.0](https://github.com/tibuntu/renovate-mcp/compare/v0.13.0...v1.0.0) (2026-05-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* **resolve:** resolve_config and explain_config output is now Renovate-faithful: non-mergeable arrays (assignees, labels, schedule) overwrite instead of concatenating, and mergeQuality is faithful rather than preview. explain_config no longer lists a preset that merely re-asserts an already-set value as a separate contributor.
+
+### Features
+
+* **resolve:** faithful worker-isolated config merge for resolve_config and explain_config ([551a57a](https://github.com/tibuntu/renovate-mcp/commit/551a57a68bdb474b21587275ec1521ac6e082905))
+
+
+### Bug Fixes
+
+* **migrate:** isolate worker stdio and reject on unexpected exit (parity with merge worker) ([9c2d189](https://github.com/tibuntu/renovate-mcp/commit/9c2d1898e4aba33d0072030705427c7409b183f6))
+
 ## [0.13.0](https://github.com/tibuntu/renovate-mcp/compare/v0.12.1...v0.13.0) (2026-05-25)
 
 
