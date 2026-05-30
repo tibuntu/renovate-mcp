@@ -3,7 +3,7 @@ import { parentPort, workerData } from "node:worker_threads";
 /**
  * Worker entry point for the faithful config merge used by `resolve_config` and
  * `explain_config`. Imports Renovate's real `mergeChildConfig` inside the worker
- * thread — see `docs/adrs/0004-worker-isolated-faithful-config-merge.md`. Kept
+ * thread. Kept
  * deliberately narrow: no logger, no shared state, single request/response.
  *
  * `mergeWorker.ts` is the only caller; do not import this from anywhere in the

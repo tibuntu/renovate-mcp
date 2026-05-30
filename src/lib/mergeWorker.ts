@@ -9,8 +9,7 @@ import { Worker } from "node:worker_threads";
  * cold start.
  *
  * Same worker-isolation invariant as `migrate_config`: the main process never
- * imports `renovate`. See
- * `docs/adrs/0004-worker-isolated-faithful-config-merge.md`.
+ * imports `renovate`.
  *
  * Sequences of length <= 1 are folded in-process (nothing to merge), so the
  * common no-extends / single-preset cases never spawn a worker.
