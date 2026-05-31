@@ -29,6 +29,7 @@
       "description": "On every renovate dependency bump: (1) mark the commit `fix` (not config:recommended's `chore` default for it) so release-please cuts a release that ships the freshly regenerated snapshots; (2) sync the jsonata pin to Renovate's own pin and regenerate the committed snapshots under src/data/ so they stay in lockstep with the installed Renovate version. The postUpgradeTasks require the operator's RENOVATE_ALLOWED_POST_UPGRADE_COMMANDS to permit `npm ci`, `npm install`, `npm run sync:jsonata-pin`, and the three `npm run generate:*` commands.",
       "matchPackageNames": ["renovate"],
       "semanticCommitType": "fix",
+      "schedule": ["after 1am and before 9am on sunday"],
       "postUpgradeTasks": {
         "commands": [
           "npm ci",
