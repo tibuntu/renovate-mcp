@@ -10,6 +10,11 @@
   "semanticCommitType": "fix",
   "packageRules": [
     {
+      "description": "claude-code-action releases very frequently; propose its updates at most once per week to reduce PR churn.",
+      "matchPackageNames": ["anthropics/claude-code-action"],
+      "schedule": ["* * * * 0"]
+    },
+    {
       "description": "Group all devDependency updates into a single PR to minimise tooling churn.",
       "matchDepTypes": ["devDependencies"],
       "groupName": "dev dependencies"
