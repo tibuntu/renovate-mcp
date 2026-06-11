@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.3](https://github.com/tibuntu/renovate-mcp/compare/v1.0.2...v1.0.3) (2026-06-11)
+
+
+### Bug Fixes
+
+* **preview:** start match timeout clock on worker online, not construction ([85b73c5](https://github.com/tibuntu/renovate-mcp/commit/85b73c59193c01f69d970cca0163169e2c94e537))
+
 ## [1.0.2](https://github.com/tibuntu/renovate-mcp/compare/v1.0.1...v1.0.2) (2026-06-07)
 
 
