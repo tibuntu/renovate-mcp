@@ -794,7 +794,18 @@ async function runWorker(
   let timer: NodeJS.Timeout | undefined;
   try {
     return await new Promise<WorkerResponse | "timeout">((resolve, reject) => {
-      timer = setTimeout(() => resolve("timeout"), timeoutMs);
+      // Start the timeout clock when the worker thread comes online, NOT when
+      // the Worker is constructed. `matchTimeoutMs` is a budget for *user work*
+      // (the regex run / JSONata eval) — charging Node's worker_threads spin-up
+      // and module compilation against it makes a trivial pattern spuriously
+      // "time out" on a cold/slow runner (e.g. a fast fileMatch regex tripping
+      // the budget purely from bootstrap latency). A pathological expression is
+      // still killed `timeoutMs` after the thread is live, so the kill-on-budget
+      // safety posture (ADR-0003) is unchanged. If the worker never comes online
+      // it surfaces via the 'error'/'exit' handlers below.
+      worker.once("online", () => {
+        timer = setTimeout(() => resolve("timeout"), timeoutMs);
+      });
       worker.once("message", (msg: WorkerResponse) => resolve(msg));
       worker.once("error", (err) => reject(err));
       worker.once("exit", (code) => {
