@@ -19,6 +19,7 @@ const PLATFORM_ENV_KEYS = [
   "RENOVATE_TOKEN",
   "GITHUB_TOKEN",
   "GITLAB_TOKEN",
+  "GITHUB_COM_TOKEN",
 ] as const;
 
 afterEach(() => {
@@ -29,7 +30,12 @@ function emptyPlatformContext(): PlatformContext {
   return {
     renovatePlatform: null,
     renovateEndpoint: null,
-    tokensPresent: { RENOVATE_TOKEN: false, GITHUB_TOKEN: false, GITLAB_TOKEN: false },
+    tokensPresent: {
+      RENOVATE_TOKEN: false,
+      GITHUB_TOKEN: false,
+      GITLAB_TOKEN: false,
+      GITHUB_COM_TOKEN: false,
+    },
     effectiveDryRunPlatform: "local",
     notes: [],
   };
@@ -361,6 +367,7 @@ describe("inspectPlatformContext", () => {
       RENOVATE_TOKEN: false,
       GITHUB_TOKEN: false,
       GITLAB_TOKEN: false,
+      GITHUB_COM_TOKEN: false,
     });
     expect(ctx.effectiveDryRunPlatform).toBe("local");
     expect(ctx.notes).toEqual([]);
@@ -376,6 +383,7 @@ describe("inspectPlatformContext", () => {
       RENOVATE_TOKEN: true,
       GITHUB_TOKEN: false,
       GITLAB_TOKEN: true,
+      GITHUB_COM_TOKEN: false,
     });
     const serialized = JSON.stringify(ctx);
     expect(serialized).not.toContain("shh-secret-1");
@@ -535,7 +543,12 @@ describe("describeSetup platform context block", () => {
       platformContext: {
         renovatePlatform: "gitlab",
         renovateEndpoint: "https://gitlab.example.com/",
-        tokensPresent: { RENOVATE_TOKEN: false, GITHUB_TOKEN: false, GITLAB_TOKEN: true },
+        tokensPresent: {
+          RENOVATE_TOKEN: false,
+          GITHUB_TOKEN: false,
+          GITLAB_TOKEN: true,
+          GITHUB_COM_TOKEN: false,
+        },
         effectiveDryRunPlatform: "gitlab",
         notes: ["RENOVATE_ENDPOINT looks like a UI URL"],
       },

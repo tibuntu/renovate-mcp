@@ -71,6 +71,7 @@ Renovate ships bundled — the `renovate` package is a runtime dependency, so `v
 - `RENOVATE_BIN` / `RENOVATE_CONFIG_VALIDATOR_BIN` — override the bundled binaries. When set, the override always wins.
 - `RENOVATE_MCP_REQUIRE_CLI=false` — suppress the startup "partial availability" notice when you only intend to use the offline tools.
 - Platform + token env vars — see [`docs/platform-setup.md`](docs/platform-setup.md) for the per-platform matrix.
+- `GITHUB_COM_TOKEN` — authenticates github.com *datasource* lookups (release notes, `github-tags` / `github-releases` / `github-actions`). Distinct from the platform token and never auto-derived from it; set it when github.com-hosted deps are resolved under the default `dry_run` `platform: local`. See [`docs/security.md`](docs/security.md#github_com_token--a-separate-role).
 
 > Heads up: MCP servers do **not** inherit your shell env. Set every env var via the `env` key in `.mcp.json` / `claude_desktop_config.json`. See [`docs/security.md`](docs/security.md#where-env-vars-must-live).
 
