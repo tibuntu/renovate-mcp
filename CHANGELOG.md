@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.1.0](https://github.com/tibuntu/renovate-mcp/compare/v1.0.4...v1.1.0) (2026-06-20)
+
+
+### Features
+
+* **check_setup:** warn about github.com datasource token gap on local dry-runs ([2e02aa4](https://github.com/tibuntu/renovate-mcp/commit/2e02aa4b89764859a2dff028586884797b89bd04))
+* **resolve_config_diff:** add offline structural diff of two resolved configs ([22b6664](https://github.com/tibuntu/renovate-mcp/commit/22b6664550e21c9b22a7b2423332ece0516c5b88))
+
+
+### Bug Fixes
+
+* **deps:** update dependency renovate to v43.233.3 ([ff7f84a](https://github.com/tibuntu/renovate-mcp/commit/ff7f84a765be5fbcbb9a665c6804c150b36eb4e9))
+
 ## [1.0.4](https://github.com/tibuntu/renovate-mcp/compare/v1.0.3...v1.0.4) (2026-06-14)
 
 
