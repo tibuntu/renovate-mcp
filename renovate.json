@@ -2,12 +2,12 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "description": "Real Renovate config for renovate-mcp, also kept as a showcase. Edit with this repo's preview_custom_manager (iterate on regex managers) and lint_config (catch Renovate-specific footguns), then dry_run before committing.",
   "extends": [
-    "config:recommended",
+    "github>tibuntu/renovate-presets",
+    "github>tibuntu/renovate-presets:automerge",
+    "github>tibuntu/renovate-presets:groupDevDependencies",
+    "github>tibuntu/renovate-presets:semanticCommitType(*, fix)",
     "helpers:pinGitHubActionDigests"
   ],
-  "prFooter": "",
-  "semanticCommits": "enabled",
-  "semanticCommitType": "fix",
   "packageRules": [
     {
       "description": "claude-code-action releases very frequently; propose its updates at most once per week to reduce PR churn.",
@@ -15,20 +15,9 @@
       "schedule": ["* * * * 0"]
     },
     {
-      "description": "Group all devDependency updates into a single PR to minimise tooling churn.",
-      "matchDepTypes": ["devDependencies"],
-      "groupName": "dev dependencies"
-    },
-    {
       "description": "jsonata is pinned to whatever Renovate itself pins. Don't open standalone PRs for it; the renovate-bump postUpgradeTask below syncs the pin.",
       "matchPackageNames": ["jsonata"],
       "enabled": false
-    },
-    {
-      "description": "Auto-merge non-major updates once required CI checks pass. Major bumps still require manual review.",
-      "matchUpdateTypes": ["minor", "patch", "digest", "pin", "pinDigest", "lockFileMaintenance"],
-      "automerge": true,
-      "automergeType": "pr"
     },
     {
       "description": "On every renovate dependency bump: (1) mark the commit `fix` (not config:recommended's `chore` default for it) so release-please cuts a release that ships the freshly regenerated snapshots; (2) sync the jsonata pin to Renovate's own pin and regenerate the committed snapshots under src/data/ so they stay in lockstep with the installed Renovate version. The postUpgradeTasks require the operator's RENOVATE_ALLOWED_POST_UPGRADE_COMMANDS to permit `npm ci`, `npm install`, `npm run sync:jsonata-pin`, and the three `npm run generate:*` commands.",
