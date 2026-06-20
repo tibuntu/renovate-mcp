@@ -14,6 +14,7 @@ Detailed reference for every tool and resource exposed by `renovate-mcp`. The [R
 - [`lint_config`](#lint_config)
 - [`dry_run`](#dry_run)
 - [`dry_run_diff`](#dry_run_diff)
+- [`resolve_config_diff`](#resolve_config_diff)
 - [`migrate_config`](#migrate_config)
 - [`write_config`](#write_config)
 
@@ -154,6 +155,21 @@ Each side accepts either the inline report (raw `{ repositories }` or a full `dr
 Updates are keyed by `(manager, packageFile, depName)` so a version bump on the same dep shows up once under `changed` rather than twice as `removed + added`. Compared per identity: `newValue`, `newVersion`, `updateType`, `branchName`, `groupName`, `schedule`.
 
 Useful when iterating on a config to see exactly what each tweak did.
+
+## `resolve_config_diff`
+
+Offline structural diff between two **fully-resolved** configs — the `before` and `after` of a config refactor. The resolve-level counterpart to [`dry_run_diff`](#dry_run_diff): where `dry_run_diff` shows how the *proposed PRs* change, this shows how the *effective settings* change. It answers "does the new config produce the same Renovate behaviour as the old one, modulo the intended changes?" without running Renovate — so it stays useful even when datasource lookups would fail (in a sandboxed/offline environment `dry_run` reports zero updates and `dry_run_diff` collapses to a vacuous 0-vs-0).
+
+Each side accepts `repoPath` (locates the repo's config via the same discovery order as [`read_config`](#read_config)) **or** `configContent` (an inline config object). If both are provided for a side, `configContent` takes precedence (consistent with [`resolve_config`](#resolve_config)). Both sides are expanded with [`resolve_config`](#resolve_config)'s preset expansion + faithful worker-thread merge before being compared.
+
+The shared `externalPresets` / `endpoint` / `platform` knobs mirror [`resolve_config`](#resolve_config) and apply to **both** sides — a refactor is diffed under one resolution context. Default is fully offline (no network I/O).
+
+**Diff semantics (top-level keys only):**
+
+- **Non-array keys** → deep-compared; a difference is reported in `fieldChanges` as `{ key, before, after }` carrying the full values. A nested array inside an object is part of that object's value and surfaces as a whole-field change.
+- **Array-valued keys** (`packageRules`, `customManagers`, `matchManagers`, `addLabels`, …) → order-insensitive **set diff**. Members are JSON-normalized (recursive key-sort), so a reordered array reads as no change and reordered keys within a member compare equal. Members only in `before` are `removed`, only in `after` are `added`; there is **no pairing**, so a slightly-tweaked rule shows as one `removed` + one `added`. Because it is a *set* diff, duplicate members (entries with the same normalized form) collapse to one — if an array carries intentional duplicate entries, the diff may undercount changes to them.
+
+Returns `summary` (`fieldsChanged`, `arraysChanged`, `arrayItemsAdded`, `arrayItemsRemoved`), `fieldChanges`, `arrayChanges` (keyed by config key), a human-readable `text` rendering, and a `resolution` block carrying each side's `mergeQuality`, `presetsUnresolved`, and `warnings`. When either side fell back to the approximate `"preview"` merge or has unresolved presets, the `text` is prefixed with a one-line advisory so the diff is never read as authoritative when it isn't.
 
 ## `migrate_config`
 
