@@ -17,6 +17,12 @@ This is the single most common setup mistake. If `dry_run` returns 0 updates sil
 
 For `dry_run`, the platform-specific var is auto-translated to `RENOVATE_TOKEN` for the spawned Renovate CLI (Renovate itself only reads that one var). `resolve_config` follows the same precedence.
 
+### `GITHUB_COM_TOKEN` — a separate role
+
+`GITHUB_COM_TOKEN` authenticates Renovate's **github.com datasource** lookups (release notes, `github-tags` / `github-releases` / `github-actions`) — distinct from the **platform** token above, which authenticates "where Renovate runs" (reading the repo, opening PRs). It is **never auto-derived** from `GITHUB_TOKEN` / `RENOVATE_TOKEN`: the platform token may be a GitHub Enterprise, GitLab, or otherwise-scoped credential, and silently forwarding it to an external host (github.com) is a credential-leak path we refuse to take.
+
+This matters most under the **default `dry_run` `platform: local`** (and on GHE/GitLab platforms): the platform token is *not* applied to github.com datasource requests, so those lookups run anonymously (low rate limit, possible `skipReason`) unless you set `GITHUB_COM_TOKEN`. When `platform: "github"` is used against github.com, Renovate registers the platform token as the github.com host rule automatically, so `GITHUB_COM_TOKEN` is redundant there. `check_setup` surfaces this gap as a hint when a github.com-origin repo would be dry-run as `local` without `GITHUB_COM_TOKEN`. `GITHUB_COM_TOKEN` (and any other env var) is forwarded verbatim to the spawned Renovate CLI — set it in the MCP server's `env`. A read-only PAT is sufficient.
+
 See [Platform setup](platform-setup.md) for the full env-var matrix per platform.
 
 ## Inline secrets in the transcript

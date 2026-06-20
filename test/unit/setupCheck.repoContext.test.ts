@@ -9,6 +9,7 @@ const ENV_KEYS = [
   "RENOVATE_TOKEN",
   "GITHUB_TOKEN",
   "GITLAB_TOKEN",
+  "GITHUB_COM_TOKEN",
   "RENOVATE_PLATFORM",
   "RENOVATE_ENDPOINT",
 ] as const;
@@ -66,11 +67,71 @@ describe("checkSetup repoContext", () => {
     expect(status.hints.some((h) => h.includes("GITHUB_TOKEN"))).toBe(true);
   });
 
-  it("does not hint about GITHUB_TOKEN when one is set", async () => {
+  it("does not hint about the github-actions skip when GITHUB_TOKEN is set", async () => {
     process.env.GITHUB_TOKEN = "ghp_dummy";
     const dir = makeRepo({ originUrl: "git@github.com:foo/bar.git" });
     const status = await checkSetup({ repoPath: dir, probe: fakeProbe() });
-    expect(status.hints.some((h) => h.includes("GITHUB_TOKEN"))).toBe(false);
+    expect(status.hints.some((h) => h.includes("github-token-required"))).toBe(false);
+  });
+
+  it("hints GITHUB_COM_TOKEN for a github.com repo when only a platform token is set", async () => {
+    process.env.GITHUB_TOKEN = "ghp_dummy";
+    const dir = makeRepo({ originUrl: "git@github.com:foo/bar.git" });
+    const status = await checkSetup({ repoPath: dir, probe: fakeProbe() });
+    const hint = status.hints.find((h) => h.includes("GITHUB_COM_TOKEN"));
+    expect(hint).toBeDefined();
+    expect(hint).toContain('platform: "github"');
+    expect(hint).toContain("datasource");
+  });
+
+  it("hints GITHUB_COM_TOKEN when only RENOVATE_TOKEN is set (no GITHUB_TOKEN)", async () => {
+    process.env.RENOVATE_TOKEN = "renovate_dummy";
+    const dir = makeRepo({ originUrl: "git@github.com:foo/bar.git" });
+    const status = await checkSetup({ repoPath: dir, probe: fakeProbe() });
+    const hint = status.hints.find((h) => h.includes("GITHUB_COM_TOKEN"));
+    expect(hint).toBeDefined();
+    expect(hint).toContain("datasource");
+  });
+
+  it("does not hint GITHUB_COM_TOKEN when it is already set", async () => {
+    process.env.GITHUB_TOKEN = "ghp_dummy";
+    process.env.GITHUB_COM_TOKEN = "ghp_datasource";
+    const dir = makeRepo({ originUrl: "git@github.com:foo/bar.git" });
+    const status = await checkSetup({ repoPath: dir, probe: fakeProbe() });
+    expect(status.hints.some((h) => h.includes("GITHUB_COM_TOKEN"))).toBe(false);
+  });
+
+  it("hints the anonymous github.com variant when no token at all is set", async () => {
+    const dir = makeRepo({ originUrl: "git@github.com:foo/bar.git" });
+    const status = await checkSetup({ repoPath: dir, probe: fakeProbe() });
+    const hint = status.hints.find((h) => h.includes("GITHUB_COM_TOKEN"));
+    expect(hint).toBeDefined();
+    expect(hint).toContain("anonymously");
+  });
+
+  it("does not hint GITHUB_COM_TOKEN when RENOVATE_PLATFORM=github is set", async () => {
+    process.env.GITHUB_TOKEN = "ghp_dummy";
+    process.env.RENOVATE_PLATFORM = "github";
+    const dir = makeRepo({ originUrl: "git@github.com:foo/bar.git" });
+    const status = await checkSetup({ repoPath: dir, probe: fakeProbe() });
+    expect(status.platformContext.effectiveDryRunPlatform).toBe("github");
+    expect(status.hints.some((h) => h.includes("GITHUB_COM_TOKEN"))).toBe(false);
+  });
+
+  it("does not hint GITHUB_COM_TOKEN for a self-hosted (GHE) origin", async () => {
+    process.env.GITHUB_TOKEN = "ghp_dummy";
+    const dir = makeRepo({ originUrl: "git@github.example.com:foo/bar.git" });
+    const status = await checkSetup({ repoPath: dir, probe: fakeProbe() });
+    expect(status.hints.some((h) => h.includes("GITHUB_COM_TOKEN"))).toBe(false);
+  });
+
+  it("reports GITHUB_COM_TOKEN presence in platformContext.tokensPresent", async () => {
+    const dir = makeRepo({ originUrl: "git@github.com:foo/bar.git" });
+    const without = await checkSetup({ repoPath: dir, probe: fakeProbe() });
+    expect(without.platformContext.tokensPresent.GITHUB_COM_TOKEN).toBe(false);
+    process.env.GITHUB_COM_TOKEN = "ghp_datasource";
+    const withTok = await checkSetup({ repoPath: dir, probe: fakeProbe() });
+    expect(withTok.platformContext.tokensPresent.GITHUB_COM_TOKEN).toBe(true);
   });
 
   it("classifies gitlab.com origin and hints missing GITLAB_TOKEN", async () => {

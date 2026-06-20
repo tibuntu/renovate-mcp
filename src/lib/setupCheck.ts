@@ -52,6 +52,8 @@ export interface PlatformContext {
     RENOVATE_TOKEN: boolean;
     GITHUB_TOKEN: boolean;
     GITLAB_TOKEN: boolean;
+    /** github.com *datasource* token (release notes, github-tags/-releases/-actions). Distinct from the platform token; never auto-derived from the others. */
+    GITHUB_COM_TOKEN: boolean;
   };
   /**
    * What `dry_run` would pick for `--platform=` when its `platform` input is
@@ -486,6 +488,31 @@ function appendRepoHints(
     }
   }
 
+  // github.com *datasource* token gap. `dry_run` defaults to `platform: local`
+  // and never reads git origin, so for a github.com-origin repo the platform
+  // token (GITHUB_TOKEN/RENOVATE_TOKEN) is NOT applied to github.com datasource
+  // lookups under the default local run — Renovate reads GITHUB_COM_TOKEN for
+  // that, and it is never auto-derived. The origin-derived `effectivePlatform`
+  // can read "github" while the actual dry_run platform is "local"; this hint
+  // reconciles that divergence for the case that trips users up.
+  if (
+    platformContext.effectiveDryRunPlatform === "local"
+    && ctx.remote?.host === "github.com"
+    && !platformContext.tokensPresent.GITHUB_COM_TOKEN
+  ) {
+    const hasPlatformToken =
+      platformContext.tokensPresent.GITHUB_TOKEN || platformContext.tokensPresent.RENOVATE_TOKEN;
+    if (hasPlatformToken) {
+      hints.push(
+        "This repo's origin is github.com, but `dry_run` defaults to `platform: local` and does not read git origin. The `GITHUB_TOKEN` / `RENOVATE_TOKEN` you've set is used for Renovate's *platform* role only — and that role is active only when you run `platform: \"github\"`. Under the default local run it is NOT applied to github.com *datasource* lookups (release notes, `github-tags` / `github-releases` / `github-actions`) at all. Either (a) set `GITHUB_COM_TOKEN` (the same read-only PAT works) so those lookups are authenticated, or (b) call `dry_run` with `platform: \"github\"`, `repository: \"<owner>/<repo>\"`, and the token, which covers both roles. (Moot if your config already has a github.com `hostRules` entry.)",
+      );
+    } else {
+      hints.push(
+        "This repo's origin is github.com. Under the default `dry_run` `platform: local`, github.com *datasource* lookups (release notes, `github-tags` / `github-releases` / `github-actions`) run anonymously — expect a low rate limit and possible `skipReason`. Set `GITHUB_COM_TOKEN` (a read-only PAT is enough) in the MCP server's env to authenticate them.",
+      );
+    }
+  }
+
   if (
     ctx.remote?.classified === "self-hosted"
     && !ctx.configEndpoint
@@ -537,6 +564,7 @@ export function inspectPlatformContext(env: NodeJS.ProcessEnv): PlatformContext 
     RENOVATE_TOKEN: Boolean(env.RENOVATE_TOKEN),
     GITHUB_TOKEN: Boolean(env.GITHUB_TOKEN),
     GITLAB_TOKEN: Boolean(env.GITLAB_TOKEN),
+    GITHUB_COM_TOKEN: Boolean(env.GITHUB_COM_TOKEN),
   };
 
   const allowedPlatform = DRY_RUN_PLATFORMS.find((p) => p === renovatePlatformRaw);

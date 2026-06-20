@@ -47,6 +47,7 @@ Pass an absolute `repoPath` to add a `repoContext` block. Three signals are comb
 **Hint synthesis.** Examples of the hints the cross-reference can emit:
 
 - Origin is `github.com` and no `GITHUB_TOKEN` / `RENOVATE_TOKEN` is set → "your github-actions deps will be skipped at `dry_run` time."
+- Origin is `github.com` and the default `dry_run` `platform: local` would be used without `GITHUB_COM_TOKEN` → flags that the platform token (even when set) is **not** applied to github.com *datasource* lookups under a local run, and points at the two remedies (set `GITHUB_COM_TOKEN`, or run `platform: "github"`). This reconciles the otherwise-confusing split between `repoContext.effectivePlatform` (origin-derived, can read `github`) and `platformContext.effectiveDryRunPlatform` (what `dry_run` actually defaults to: `local`). See [Security — `GITHUB_COM_TOKEN`](security.md#github_com_token--a-separate-role).
 - Origin is `gitlab.example.com` (self-hosted) and no `endpoint` is configured → "set `endpoint` in renovate.json or `RENOVATE_ENDPOINT` in the MCP server's env."
 - Origin and `config.endpoint` point at different hosts → recorded under `inconsistencies` (Renovate will use the config endpoint).
 - Endpoint probe failed → "If you're behind a VPN/proxy, `dry_run` will fail with the same network error."
