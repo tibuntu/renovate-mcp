@@ -7,6 +7,7 @@ Detailed reference for every tool and resource exposed by `renovate-mcp`. The [R
 - [`check_setup`](#check_setup)
 - [`get_version`](#get_version)
 - [`read_config`](#read_config)
+- [`suggest_presets`](#suggest_presets)
 - [`resolve_config`](#resolve_config)
 - [`explain_config`](#explain_config)
 - [`preview_custom_manager`](#preview_custom_manager)
@@ -65,6 +66,36 @@ Report the renovate-mcp server version and whether it's a released build (runnin
 ## `read_config`
 
 Locate and parse a repo's Renovate config (`renovate.json`, `renovate.json5`, `.renovaterc*`, `package.json#renovate`, …) in priority order, mirroring Renovate's own discovery logic.
+
+## `suggest_presets`
+
+Search Renovate presets by natural-language intent. Offline, native — no `renovate` invocation, no CLI, no network. Bridges the gap between browsing the `renovate://presets` resource family (which addresses presets by a known name/namespace) and authoring a config: here you describe *what you want* and get ranked candidates plus, when useful, a draft.
+
+**Inputs:**
+
+- `query` (required) — the intent, in natural language (e.g. `"automerge patch and minor updates and group my dev dependencies"`).
+- `presetsPath` (optional) — absolute path to a local presets repo to index alongside the built-in catalogue. Flat `*.json` / `*.json5` files, one preset per file; name = filename without extension, namespace = `"local"`, description = top-level `description` → first `packageRules[].description` → `null`. Subdirectories are not recursed. Parsed with JSON5 (so `{{argN}}`-parameterized presets index fine); a malformed file becomes a warning, never a crash.
+- `namespace` (optional) — restrict matches to one namespace (`config`, `group`, `schedule`, … or `local`).
+- `limit` (optional, default 10) — max matches returned per corpus.
+- `minScore` (optional, default 0.12) — drop matches scoring below this 0..1 threshold.
+- `includeBody` (optional, default false) — inline each matched preset's full body. When false, fetch [`renovate://preset/{name}`](#renovatepresetname) for a body.
+- `includeDraft` (optional, default true) — emit the draft skeleton (see below). Set false for discovery-only results.
+- `maxFilesIndexed` / `maxPresetsIndexed` (optional, defaults 2000 / 500) — safety caps on the local-repo scan.
+
+**Scoring model.** Lexical, deterministic, dependency-free. Each preset's name, namespace, description, and serialized body are matched as text against the query's tokens (camelCase-aware, so `automergeMinor` matches the token `automerge`). Field weighting favors name > namespace > description > body, and a load-time IDF-style rarity weight downweights ubiquitous tokens (e.g. `group` appears in hundreds of presets) so a preset sharing a rare, specific term outranks one that only shares a common one. A name-overlap confidence boost lifts presets whose name contains several query terms. Scores are normalized to `0..1`; ties break by name. This is a recall aid, not a stemmed IR engine.
+
+**Result shape:**
+
+- `builtIn` / `local` — ranked arrays of `{ name, namespace, description, score, matchedOn, file?, body? }`. `matchedOn` lists which fields a query token hit. `file` is present only for local presets.
+- `bestScore` + `coverage` (`strong` | `partial` | `weak`) — how well the single best existing preset covers the intent.
+- `draft` (present when `includeDraft` is true **and** coverage is not strong **or** ≥2 facets were recognized) — `{ config, unvalidated: true, hint, facets, notes }`. `config` is a **pasteable** Renovate config assembled from recognized intent; `facets` lists which curated intents fired; `notes` carries per-facet caveats (or, when nothing was recognized, an explanation). A single strongly-covered facet emits no draft — the top match already says it.
+- `warnings` — local-indexing issues (parse failures, caps hit).
+
+**The draft is never validated inside this tool** — that would require the Renovate CLI and break the tool's offline purity (the same honesty as `preview_custom_manager` telling you to run `dry_run` after). Pass `draft.config` (not the whole `draft` object — its `unvalidated`/`hint`/`facets`/`notes` keys are metadata, not valid Renovate config) to [`validate_config`](#validate_config), then [`lint_config`](#lint_config), before adopting it.
+
+**Facet taxonomy.** The draft is assembled from a small, hand-maintained set of common-intent facets (automerge by update type, group dev dependencies, group non-major, group monorepo, schedule, pin digests, semantic commits, disable/separate major, lockfile maintenance, labels). This is a deliberately bounded maintenance surface — recognized intents map to current Renovate primitives that change rarely, and any stale recommendation is caught downstream by `validate_config` / `lint_config`. Unrecognized intents yield an empty `config` with an explanatory note.
+
+See also: [Operational notes — `suggest_presets` caps](operations.md#suggest_presets-caps) and the [`renovate://presets`](#renovatepresets) resource family for browsing by name.
 
 ## `resolve_config`
 

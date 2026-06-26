@@ -19,6 +19,15 @@ Previously a single `maxFilesScanned` conflated the two, leaving the user unable
 
 **`.gitignore` honoring.** The walk honors `.gitignore` (including nested `.gitignore`s and `.git/info/exclude`), so generated/vendored directories like `dist/`, `.next/`, `target/`, `__pycache__/` don't crowd out real hits against the `maxFilesWalked` cap. `node_modules/` and `.git/` are always skipped as a safety net even when no `.gitignore` is present.
 
+## `suggest_presets` caps
+
+`suggest_presets` is pure in-process CPU work with no spawn, no network, and no untrusted regex execution, so it needs no worker or timeout — but it does index a user-supplied local directory and emit bounded output.
+
+- **Built-in corpus.** The committed catalogue (`src/data/presets.generated.ts`) is built into a searchable corpus once per process and memoized; subsequent calls reuse it.
+- **Local-repo scan.** `maxFilesIndexed` (default 2000) bounds how many preset files are scanned in `presetsPath`; `maxPresetsIndexed` (default 500) bounds how many are actually indexed. The scan is flat (no subdirectory recursion) and only `*.json` / `*.json5` files are considered. Hitting either cap appends a `warnings` entry; a file that fails to read or parse becomes a warning and is skipped rather than aborting the call.
+- **Result size.** `limit` (default 10) caps matches returned per corpus (`builtIn` and `local` separately); `minScore` (default 0.12) trims the weak tail. `includeBody` is **false** by default, so matched preset bodies are not inlined unless asked — fetch `renovate://preset/{name}` for a body instead. `query` is capped at 2048 bytes by the input schema.
+- **Draft.** Assembled in-process from the curated facet taxonomy and returned unvalidated; the tool never spawns the validator. Emitted only when coverage is not strong or ≥2 facets are recognized, and suppressible with `includeDraft: false`.
+
 ## `resolve_config` / `explain_config` merge worker
 
 Preset *expansion* is in-process and instant, but the *merge* of expanded presets runs Renovate's real `mergeChildConfig` inside a `worker_threads` worker (so the main process never imports `renovate`). A config that merges fewer than two sources — no `extends`, or a single preset with no own keys — skips the worker entirely. When the worker does run, the first call pays a one-time cold start (~1-3 s) loading Renovate's module graph and manager registry via `getOptions()`; the worker is terminated after each call.

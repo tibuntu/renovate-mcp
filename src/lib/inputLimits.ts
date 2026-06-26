@@ -11,6 +11,7 @@ export const TOKEN_MAX_BYTES = 1024;
 export const ENDPOINT_MAX_BYTES = 2048;
 export const REPOSITORY_MAX_BYTES = 256;
 export const FILENAME_MAX_BYTES = 512;
+export const QUERY_MAX_BYTES = 2048;
 export const CONFIG_JSON_MAX_BYTES = 1_000_000;
 export const REPORT_JSON_MAX_BYTES = 10_000_000;
 export const HOST_RULES_MAX_ITEMS = 256;
@@ -30,6 +31,9 @@ export const repositoryString = (description: string) =>
 
 export const filenameString = (description: string) =>
   z.string().max(FILENAME_MAX_BYTES).describe(description);
+
+export const queryString = (description: string) =>
+  z.string().min(1).max(QUERY_MAX_BYTES).describe(description);
 
 const refineJsonSize =
   (limit: number) =>
