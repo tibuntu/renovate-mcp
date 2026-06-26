@@ -9,6 +9,7 @@ import {
   HOST_RULES_MAX_ITEMS,
   HOST_RULE_JSON_MAX_BYTES,
   PATH_MAX_BYTES,
+  QUERY_MAX_BYTES,
   REPORT_JSON_MAX_BYTES,
   REPOSITORY_MAX_BYTES,
   TOKEN_MAX_BYTES,
@@ -17,6 +18,7 @@ import {
   filenameString,
   hostRuleRecord,
   pathString,
+  queryString,
   repositoryString,
   reportRecord,
   tokenString,
@@ -29,6 +31,7 @@ import { registerLintConfig } from "../../src/tools/lintConfig.js";
 import { registerPreviewCustomManager } from "../../src/tools/previewCustomManager.js";
 import { registerReadConfig } from "../../src/tools/readConfig.js";
 import { registerResolveConfig } from "../../src/tools/resolveConfig.js";
+import { registerSuggestPresets } from "../../src/tools/suggestPresets.js";
 import { registerValidateConfig } from "../../src/tools/validateConfig.js";
 import { registerWriteConfig } from "../../src/tools/writeConfig.js";
 
@@ -85,6 +88,11 @@ describe("inputLimits helpers", () => {
       filenameString("f").safeParse(oversizedString(FILENAME_MAX_BYTES)).success,
     ).toBe(false);
     expect(filenameString("f").safeParse("x".repeat(FILENAME_MAX_BYTES)).success).toBe(true);
+  });
+
+  it("queryString rejects strings over QUERY_MAX_BYTES", () => {
+    expect(queryString("q").safeParse(oversizedString(QUERY_MAX_BYTES)).success).toBe(false);
+    expect(queryString("q").safeParse("x".repeat(QUERY_MAX_BYTES)).success).toBe(true);
   });
 
   it("configRecord rejects records whose JSON size exceeds CONFIG_JSON_MAX_BYTES", () => {
@@ -163,6 +171,21 @@ describe("tool input schemas — DoS caps", () => {
     expect(
       tool.inputSchema.safeParse({ configContent: fatRecord(CONFIG_JSON_MAX_BYTES + 1) }).success,
     ).toBe(false);
+  });
+
+  it("suggest_presets: rejects oversized query and presetsPath", () => {
+    const tool = captureTool(registerSuggestPresets);
+    expect(
+      tool.inputSchema.safeParse({ query: oversizedString(QUERY_MAX_BYTES) }).success,
+    ).toBe(false);
+    expect(
+      tool.inputSchema.safeParse({
+        query: "automerge minor",
+        presetsPath: oversizedString(PATH_MAX_BYTES),
+      }).success,
+    ).toBe(false);
+    // empty query is rejected (queryString has min length 1)
+    expect(tool.inputSchema.safeParse({ query: "" }).success).toBe(false);
   });
 
   it("preview_custom_manager: rejects oversized repoPath", () => {

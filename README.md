@@ -31,6 +31,7 @@ Restart your client and try the prompt: *"List the namespaces available under `r
 ## What you can do
 
 - **Read and explain configs** — locate the active `renovate.json*`, expand every `extends` preset offline, and trace which preset set each field.
+- **Discover presets from intent** — describe what you want ("automerge patches, group dev deps") and get ranked built-in (and your own local-repo) presets, plus a draft config skeleton when nothing fits.
 - **Preview custom managers** before running Renovate — regex and JSONata, with file/line hits and extracted dep info.
 - **Validate and lint** — schema validation plus a semantic lint pass for Renovate-specific footguns (unwrapped regexes, unknown manager names, deprecated keys).
 - **Dry-run** against a local checkout or a remote GitHub/GitLab — see exactly which PRs Renovate would open.
@@ -38,13 +39,14 @@ Restart your client and try the prompt: *"List the namespaces available under `r
 
 ## Tools & resources
 
-Thirteen tools and three resource templates. Each tool name below links to its full reference in [`docs/tools.md`](docs/tools.md).
+Fourteen tools and three resource templates. Each tool name below links to its full reference in [`docs/tools.md`](docs/tools.md).
 
 | Tool | Purpose |
 | --- | --- |
 | [`check_setup`](docs/tools.md#check_setup) | Report Renovate CLI + validator availability, versions, install hints, and a `platformContext` block for env diagnosis. Also runs at startup. Pass an optional `repoPath` to add a `repoContext` block diagnosing the repo's git origin, config endpoint/platform, endpoint reachability, and token coverage. |
 | [`get_version`](docs/tools.md#get_version) | Report the renovate-mcp server version and whether it's a released or local/dev build. |
 | [`read_config`](docs/tools.md#read_config) | Locate and parse a repo's Renovate config in Renovate's own discovery order. |
+| [`suggest_presets`](docs/tools.md#suggest_presets) | Search built-in (and optional local-repo) presets by natural-language intent; ranks matches and sketches an unvalidated draft config skeleton for multi-facet or weakly-covered intents. Offline. |
 | [`resolve_config`](docs/tools.md#resolve_config) | Expand every `extends` preset offline. Opt in to fetching `github>` / `gitlab>` presets over HTTPS. |
 | [`explain_config`](docs/tools.md#explain_config) | Inverse of `resolve_config`: annotate every leaf field with the chain of presets that set it. |
 | [`resolve_config_diff`](docs/tools.md#resolve_config_diff) | Offline structural diff of two fully-resolved configs — changed fields plus an order-insensitive set diff of array keys (`packageRules`, `customManagers`, …). The refactor-friendly counterpart to `dry_run_diff`. |
@@ -64,7 +66,7 @@ Thirteen tools and three resource templates. Each tool name below links to its f
 - **Linux or macOS.** Windows is not supported — `package.json` declares `"os": ["darwin", "linux"]`, so `npm i` surfaces an `EBADPLATFORM` warning on Windows and the server exits with a clear stderr message at startup. Use WSL2 or a Linux/macOS host instead.
 - **Node.js ≥ 24** (aligns with Renovate's own engine requirement).
 
-Renovate ships bundled — the `renovate` package is a runtime dependency, so `validate_config`, `dry_run`, and `write_config` work out of the box with no separate install. The offline tools (`read_config`, `resolve_config`, `explain_config`, `resolve_config_diff`, `preview_custom_manager`, `lint_config`) never spawn Renovate at all.
+Renovate ships bundled — the `renovate` package is a runtime dependency, so `validate_config`, `dry_run`, and `write_config` work out of the box with no separate install. The offline tools (`read_config`, `suggest_presets`, `resolve_config`, `explain_config`, `resolve_config_diff`, `preview_custom_manager`, `lint_config`) never spawn Renovate at all.
 
 **Optional env vars:**
 
@@ -125,11 +127,12 @@ Once the server is wired up, try prompts like these. Written for Claude but work
 - "Resolve my config and list anything that landed in `presetsUnresolved`, with the reason for each."
 - "Why is my `prCreation` set to `not-pending`? Use `explain_config` to trace which preset set it."
 
-**Browsing presets**
+**Discovering & browsing presets**
 
+- "I want to automerge patch and minor updates and group my dev dependencies — suggest presets for that, search my `../renovate-presets` repo too, and draft a config I can validate."
 - "List the presets in the `config` namespace." (uses the `renovate://presets/config` sub-resource — cheaper than pulling the whole index)
 - "What does `config:recommended` actually enable? Show me its expanded JSON."
-- "Find a built-in preset that pins GitHub Actions digests."
+- "Find a built-in preset that pins GitHub Actions digests." (or use `suggest_presets` with that intent)
 
 **Self-hosted GitLab / GitHub Enterprise** (env set per [Platform setup](#platform-setup))
 

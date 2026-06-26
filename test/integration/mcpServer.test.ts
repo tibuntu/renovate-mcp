@@ -11,7 +11,7 @@ afterEach(async () => {
 });
 
 describe("MCP server stdio handshake", () => {
-  it("lists all thirteen tools with expected names", async () => {
+  it("lists all fourteen tools with expected names", async () => {
     session = await startServer();
     const res = await session.request<{ tools: Array<{ name: string }> }>("tools/list");
     const names = (res.result?.tools ?? []).map((t) => t.name).sort();
@@ -27,6 +27,7 @@ describe("MCP server stdio handshake", () => {
       "read_config",
       "resolve_config",
       "resolve_config_diff",
+      "suggest_presets",
       "validate_config",
       "write_config",
     ]);
@@ -583,5 +584,77 @@ describe("dry_run_diff end-to-end", () => {
     const parsed = JSON.parse(res.result!.content[0]!.text);
     expect(parsed.summary.changed).toBe(1);
     expect(parsed.changed[0].changes[0].field).toBe("newVersion");
+  });
+});
+
+describe("suggest_presets end-to-end", () => {
+  let repo: string;
+  beforeEach(async () => {
+    repo = await mkdtemp(
+      path.join(tmpdir(), `rmcp-${path.basename(import.meta.url, ".ts")}-${process.pid}-sp-`),
+    );
+  });
+  afterEach(async () => {
+    await rm(repo, { recursive: true, force: true });
+  });
+
+  it("ranks built-in presets for an intent and reports strong coverage", async () => {
+    session = await startServer();
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+    }>("tools/call", {
+      name: "suggest_presets",
+      arguments: { query: "automerge minor updates" },
+    });
+    const parsed = JSON.parse(res.result?.content[0]?.text ?? "{}");
+    expect(parsed.builtIn[0]?.name).toBe("default:automergeMinor");
+    expect(parsed.coverage).toBe("strong");
+    expect(parsed.draft).toBeUndefined();
+  });
+
+  it("emits an unvalidated draft skeleton when coverage is weak", async () => {
+    session = await startServer();
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+    }>("tools/call", {
+      name: "suggest_presets",
+      arguments: { query: "automerge patch updates and group dev dependencies for my qwerty repo" },
+    });
+    const parsed = JSON.parse(res.result?.content[0]?.text ?? "{}");
+    expect(parsed.draft).toBeDefined();
+    expect(parsed.draft.unvalidated).toBe(true);
+    expect(parsed.draft.config).toBeDefined();
+    expect(parsed.draft.facets).toEqual(expect.arrayContaining(["automerge", "groupDevDeps"]));
+  });
+
+  it("surfaces local presets from presetsPath alongside built-ins", async () => {
+    await writeFile(
+      path.join(repo, "groupDevDependencies.json"),
+      JSON.stringify({
+        packageRules: [{ matchDepTypes: ["devDependencies"], groupName: "dev dependencies" }],
+      }),
+    );
+    session = await startServer();
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+    }>("tools/call", {
+      name: "suggest_presets",
+      arguments: { query: "group dev dependencies", presetsPath: repo },
+    });
+    const parsed = JSON.parse(res.result?.content[0]?.text ?? "{}");
+    expect(parsed.local.some((m: { name: string }) => m.name === "groupDevDependencies")).toBe(true);
+  });
+
+  it("returns isError when presetsPath does not exist", async () => {
+    session = await startServer();
+    const res = await session.request<{
+      isError?: boolean;
+      content: Array<{ type: string; text: string }>;
+    }>("tools/call", {
+      name: "suggest_presets",
+      arguments: { query: "anything", presetsPath: path.join(repo, "does-not-exist") },
+    });
+    expect(res.result?.isError).toBe(true);
+    expect(res.result?.content[0]?.text).toContain("suggest_presets failed");
   });
 });
