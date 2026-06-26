@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.0](https://github.com/tibuntu/renovate-mcp/compare/v1.1.1...v1.2.0) (2026-06-26)
+
+
+### Features
+
+* **suggest:** add suggest_presets intent-to-preset discovery tool ([6e29768](https://github.com/tibuntu/renovate-mcp/commit/6e297686e80de6a0c586648b7c5126b1bfe5212f))
+
+
+### Bug Fixes
+
+* **deps:** update anthropics/claude-code-action action to v1.0.153 ([bf5ecef](https://github.com/tibuntu/renovate-mcp/commit/bf5ecef3c7b57b592918f711fcf5c7cafd2d23d5))
+* **deps:** update dependency smol-toml to v1.7.0 ([96f9d9f](https://github.com/tibuntu/renovate-mcp/commit/96f9d9f87cc586be38eb58d190341502316e57f7))
+
 ## [1.1.1](https://github.com/tibuntu/renovate-mcp/compare/v1.1.0...v1.1.1) (2026-06-21)
 
 
