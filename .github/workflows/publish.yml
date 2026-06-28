@@ -1,14 +1,19 @@
 name: Publish to npm
 
+# Single entry point: dispatched by release.yaml after release-please cuts a
+# release. We use workflow_dispatch (rather than workflow_call) so this stays
+# the *entry* workflow — npm's trusted-publisher check matches OIDC claims
+# against the entry workflow, and a reusable-workflow callee changes those
+# claims. workflow_dispatch is one of the two events GITHUB_TOKEN can trigger
+# downstream (the other is repository_dispatch).
+#
+# Do NOT add a `release: [published]` trigger here. release-please creates the
+# GitHub Release using a PAT (RELEASE_PLEASE_TOKEN), and PAT-generated events
+# DO trigger downstream workflows — so a `release: published` trigger would
+# fire a second, redundant publish run alongside the dispatch below. Both race
+# to `npm publish`; the loser 403s ("cannot publish over previously published
+# versions"), producing a spurious CI-failure email on every release.
 on:
-  release:
-    types: [published]
-  # Dispatched by release.yaml after release-please cuts a release. We use
-  # workflow_dispatch (rather than workflow_call) so this stays the *entry*
-  # workflow — npm's trusted-publisher check matches OIDC claims against the
-  # entry workflow, and a reusable-workflow callee changes those claims.
-  # workflow_dispatch is one of the two events GITHUB_TOKEN can trigger
-  # downstream (the other is repository_dispatch).
   workflow_dispatch:
     inputs:
       tag:
