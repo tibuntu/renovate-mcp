@@ -16,6 +16,8 @@ Detailed reference for every tool and resource exposed by `renovate-mcp`. The [R
 - [`dry_run`](#dry_run)
 - [`dry_run_diff`](#dry_run_diff)
 - [`resolve_config_diff`](#resolve_config_diff)
+- [`test_package_rules`](#test_package_rules)
+- [`annotate_dry_run`](#annotate_dry_run)
 - [`migrate_config`](#migrate_config)
 - [`write_config`](#write_config)
 
