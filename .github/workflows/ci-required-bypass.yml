@@ -1,0 +1,44 @@
+name: CI
+
+# Companion to `ci.yml`. The `build-test (ubuntu-latest)` / `build-test
+# (macos-latest)` contexts are REQUIRED status checks on `main` (ruleset
+# "main: required CI checks"). `ci.yml` skips those jobs for PRs that only
+# touch docs / non-build files (its `paths-ignore` list), which would leave
+# the required checks permanently pending and block the PR from merging —
+# this is the failure mode that stranded the Renovate PRs that only bump a
+# path-ignored workflow file.
+#
+# This workflow has the SAME job name and matrix as `ci.yml`, so it reports
+# check runs with identical context names, but as instant no-ops. Its
+# `paths` filter is the exact inverse of `ci.yml`'s `paths-ignore`: it fires
+# precisely for the changes `ci.yml` ignores, satisfying the required checks
+# without spinning up the full build.
+#
+# Keep the `paths` list below in lockstep with `ci.yml`'s `paths-ignore`.
+# On a PR that touches BOTH ignored and build-relevant files, both workflows
+# run and report the same contexts; the real `ci.yml` job completes last
+# (minutes vs. this job's seconds) and is the result that governs the merge.
+
+on:
+  pull_request:
+    paths:
+      - '**.md'
+      - 'LICENSE'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/PULL_REQUEST_TEMPLATE.md'
+      - '.github/workflows/claude.yml'
+      - '.github/workflows/dependency-review.yml'
+      - '.github/workflows/publish.yml'
+      - '.github/workflows/release.yaml'
+
+permissions: {}
+
+jobs:
+  build-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "No build-relevant changes in this PR; satisfying required check ${{ matrix.os }}."
