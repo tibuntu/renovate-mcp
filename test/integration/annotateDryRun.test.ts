@@ -82,6 +82,18 @@ describe("annotate_dry_run", () => {
     expect(body.rulesNeverMatched).toEqual([]);
   });
 
+  it("accepts a full dry_run summary (outer { report: … } wrapper)", async () => {
+    session = await startServer({});
+    const result = await call({
+      report: { report: reportWith(LODASH) }, // wrapped form, as dry_run emits
+      configContent: { packageRules: [{ matchDatasources: ["npm"], automerge: true }] },
+    });
+    expect(result.isError).toBeFalsy();
+    const body = JSON.parse(result.content[0]!.text) as Body;
+    expect(body.updateCount).toBe(1);
+    expect(body.annotations[0]!.matchedRules[0]!.matchedBy).toContain("matchDatasources");
+  });
+
   it("flags rules that never match and gaps in report-supplied fields", async () => {
     session = await startServer({});
     // Upgrade has no datasource; the rule needs it → unevaluatable + fieldGap.
