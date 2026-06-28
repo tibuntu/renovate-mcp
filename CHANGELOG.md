@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.3.0](https://github.com/tibuntu/renovate-mcp/compare/v1.2.0...v1.3.0) (2026-06-28)
+
+
+### Features
+
+* **tools:** add test_package_rules and annotate_dry_run for packageRules debugging ([7b1611f](https://github.com/tibuntu/renovate-mcp/commit/7b1611fdb11a45aca4940e75995a6d7b4095396b))
+
+
+### Bug Fixes
+
+* **ci:** ensure ci jobs always execute to avoid blocking merge checks ([70684b0](https://github.com/tibuntu/renovate-mcp/commit/70684b01334c9db61aee5bccdb916bcfbee97bc7))
+* **deps:** update dependency renovate to v43.245.0 ([979d79d](https://github.com/tibuntu/renovate-mcp/commit/979d79d7d2181f50a793bcdcf36a70f2ca55b469))
+
 ## [1.2.0](https://github.com/tibuntu/renovate-mcp/compare/v1.1.1...v1.2.0) (2026-06-26)
 
 
