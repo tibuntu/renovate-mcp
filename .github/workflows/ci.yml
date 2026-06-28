@@ -16,9 +16,13 @@ on:
   pull_request:
     # Skip PRs that only touch docs / non-build files. NOTE: `build-test` is
     # a required status check on `main` (ruleset "main: required CI checks"),
-    # so a doc-only PR whose workflow is skipped here will be blocked from
-    # merging — unblock by admin-merging or by adjusting this list. Push to
-    # `main` stays unfiltered as a post-merge sanity run.
+    # so a PR whose jobs are skipped here would be permanently blocked from
+    # merging. `ci-required-bypass.yml` covers exactly this gap: its `paths`
+    # filter is the inverse of the `paths-ignore` list below, and it reports
+    # the same `build-test (…)` contexts as instant no-ops so the required
+    # checks resolve. KEEP THE TWO LISTS IN SYNC — every entry added here
+    # must be added to that workflow's `paths`. Push to `main` stays
+    # unfiltered as a post-merge sanity run.
     #
     # Bot-authored PRs: Renovate uses its own App token, so its PRs trigger
     # this workflow normally. release-please's PR uses RELEASE_PLEASE_TOKEN
