@@ -11,11 +11,12 @@ afterEach(async () => {
 });
 
 describe("MCP server stdio handshake", () => {
-  it("lists all fourteen tools with expected names", async () => {
+  it("lists all sixteen tools with expected names", async () => {
     session = await startServer();
     const res = await session.request<{ tools: Array<{ name: string }> }>("tools/list");
     const names = (res.result?.tools ?? []).map((t) => t.name).sort();
     expect(names).toEqual([
+      "annotate_dry_run",
       "check_setup",
       "dry_run",
       "dry_run_diff",
@@ -28,6 +29,7 @@ describe("MCP server stdio handshake", () => {
       "resolve_config",
       "resolve_config_diff",
       "suggest_presets",
+      "test_package_rules",
       "validate_config",
       "write_config",
     ]);

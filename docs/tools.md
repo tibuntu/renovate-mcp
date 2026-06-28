@@ -203,6 +203,35 @@ The shared `externalPresets` / `endpoint` / `platform` knobs mirror [`resolve_co
 
 Returns `summary` (`fieldsChanged`, `arraysChanged`, `arrayItemsAdded`, `arrayItemsRemoved`), `fieldChanges`, `arrayChanges` (keyed by config key), a human-readable `text` rendering, and a `resolution` block carrying each side's `mergeQuality`, `presetsUnresolved`, and `warnings`. When either side fell back to the approximate `"preview"` merge or has unresolved presets, the `text` is prefixed with a one-line advisory so the diff is never read as authoritative when it isn't.
 
+## `test_package_rules`
+
+Offline "what-if" for `packageRules`: given a hypothetical dependency context and a config, report which rules match, **which matcher decided each**, and what each matched rule contributes. Answers "why didn't my rule match?" without running Renovate.
+
+Pass `repoPath` (locates + expands the repo's config via the same discovery order as [`read_config`](#read_config)) **or** `configContent` (an inline config). The config's `extends` are expanded first (via [`resolve_config`](#resolve_config)'s offline expansion + the same `externalPresets` / `endpoint` / `platform` opt-ins), so preset-provided `packageRules` are included. The dependency is described with optional synthetic fields — `depName`, `packageName`, `datasource`, `manager`, `depType`, `currentValue`, `currentVersion`, `packageFile`, `categories`, … — supply whatever you want to test against.
+
+**Faithful by construction.** Rules are evaluated with Renovate's **real matchers** in a worker thread (see [Architecture — worker isolation for packageRules](architecture.md#worker-isolation-for-packagerules)), so match decisions are bit-faithful for the fields you supply. The crucial subtlety: a matcher returns `false` identically for "supplied-but-no-match" and "field-absent", so results are classified against what you actually passed:
+
+- **`matchedRules`** — `{ index, rule, matchedBy, contributedConfig }`; `matchedBy` names the matchers that fired and `contributedConfig` is what the rule adds (match/exclude keys stripped).
+- **`unmatchedRules`** — `{ index, rule, decidedBy }`; `decidedBy` names the matcher(s) that returned a **trustworthy** false (their fields were supplied).
+- **`unevaluatable`** — `{ ruleIndex, matcher, requiredFields, reason }` for matchers we could not judge: `missing-input-field` (you didn't supply a field the matcher reads), `needs-merge-confidence-api` (`matchConfidence` needs the merge-confidence API — impossible offline), `jsonata-may-reference-computed-fields` (advisory — a `matchJsonata` verdict may depend on post-lookup fields), or `matcher-error`.
+
+Matchers that need post-lookup data you didn't supply (`matchUpdateTypes`, `matchCurrentVersion`, `matchNewValue`, `matchCurrentAge`) surface as `unevaluatable`, never as silent non-matches. Also returned: `effectiveConfig` (the faithful merged config for the dependency, minus the echoed `packageRules`), `ruleCount`, `matchedRuleCount`, `matchQuality` (`"faithful"`, or `"preview"` when the worker was unavailable — then only `matchPackageNames` / `matchDepNames` / `matchManagers` / `matchDatasources` / `matchFileNames` / `matchCategories` are evaluated, glob-only), a `disclaimer`, and `warnings`.
+
+Deprecated matcher keys (`matchPackagePatterns`, `matchPackagePrefixes`, `paths`, …) are detected and warned about — Renovate migrates them before applying rules, but this tool evaluates the post-migration matchers, so run [`migrate_config`](#migrate_config) first. Run [`dry_run`](#dry_run) for full-fidelity confirmation.
+
+## `annotate_dry_run`
+
+Attribute each proposed update in a `dry_run` report to the `packageRules` that caused it — "which of my rules produced these updates?". Stateless and offline: run [`dry_run`](#dry_run) first, then pass its report here.
+
+Takes a report (inline `report` — raw `{ repositories }` or a full `dry_run` summary with a `report` key — **or** `{ reportPath: "<absolute path>" }`, the same shapes as [`dry_run_diff`](#dry_run_diff)) **plus** a config source (`repoPath` or `configContent`, with the same `externalPresets` / `endpoint` / `platform` opt-ins as [`resolve_config`](#resolve_config)). Updates are deduplicated by `(manager, packageFile, depName)` and each is matched — using the **real facts already in the report** — against the config's effective `packageRules` in a single worker round-trip.
+
+Returns one `annotation` per update (`manager`, `packageFile`, `depName`, `currentVersion`, `newVersion`, `updateType`, plus `matchedRules` and `unevaluatable` with the same shapes as [`test_package_rules`](#test_package_rules)), and two aggregate signals:
+
+- **`rulesNeverMatched`** — indices of `packageRules` that matched no update in the report (a likely-dead-rule signal).
+- **`fieldGaps`** — context fields the config's matchers needed but **no** update in the report carried (e.g. `datasource` is often absent from the report shape, so `matchDatasources` rules can't be evaluated). These updates' matchers appear under `unevaluatable` rather than as non-matches.
+
+Also returns `matchQuality` (`"faithful"` / `"preview"`), `reportSource` (`"inline"` / `"reportPath"`), `ruleCount`, `updateCount`, a `disclaimer`, and `warnings` (including the deprecated-matcher-key warning that points at [`migrate_config`](#migrate_config)). Run [`dry_run`](#dry_run) for full-fidelity confirmation.
+
 ## `migrate_config`
 
 Apply Renovate's built-in config migrations (deprecated key renames like `masterIssue` → `dependencyDashboard`, template-variable rewrites, `packageRules` matcher consolidation, `host-rules` unification, …) and return the migrated config plus a unified diff.

@@ -15,6 +15,13 @@ export default defineConfig({
         process.cwd(),
         "dist/lib/mergeWorkerImpl.js",
       ),
+      // Same reason as the merge worker: the packageRules worker's main module
+      // runs as TS source under src/ in vitest, so point its entry at the
+      // compiled worker in dist/ (built by the `pretest` script).
+      RENOVATE_MCP_PACKAGE_RULES_WORKER_ENTRY: resolve(
+        process.cwd(),
+        "dist/lib/packageRulesWorkerImpl.js",
+      ),
     },
     coverage: {
       provider: "v8",

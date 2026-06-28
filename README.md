@@ -39,7 +39,7 @@ Restart your client and try the prompt: *"List the namespaces available under `r
 
 ## Tools & resources
 
-Fourteen tools and three resource templates. Each tool name below links to its full reference in [`docs/tools.md`](docs/tools.md).
+Sixteen tools and three resource templates. Each tool name below links to its full reference in [`docs/tools.md`](docs/tools.md).
 
 | Tool | Purpose |
 | --- | --- |
@@ -50,11 +50,13 @@ Fourteen tools and three resource templates. Each tool name below links to its f
 | [`resolve_config`](docs/tools.md#resolve_config) | Expand every `extends` preset offline. Opt in to fetching `github>` / `gitlab>` presets over HTTPS. |
 | [`explain_config`](docs/tools.md#explain_config) | Inverse of `resolve_config`: annotate every leaf field with the chain of presets that set it. |
 | [`resolve_config_diff`](docs/tools.md#resolve_config_diff) | Offline structural diff of two fully-resolved configs — changed fields plus an order-insensitive set diff of array keys (`packageRules`, `customManagers`, …). The refactor-friendly counterpart to `dry_run_diff`. |
+| [`test_package_rules`](docs/tools.md#test_package_rules) | Offline what-if: which `packageRules` match a hypothetical dependency, which matcher decided each, and what each contributes. Faithful (Renovate's real matchers in a worker); fields you don't supply are reported as unevaluatable, not non-matches. |
 | [`preview_custom_manager`](docs/tools.md#preview_custom_manager) | Preview a `customManagers` entry (regex or JSONata) against a local repo. Offline. |
 | [`validate_config`](docs/tools.md#validate_config) | Run `renovate-config-validator` against a file or inline object. |
 | [`lint_config`](docs/tools.md#lint_config) | Semantic lint pass for Renovate-specific footguns the schema validator declares valid. Offline. |
 | [`dry_run`](docs/tools.md#dry_run) | Run Renovate with `--dry-run` and return the structured JSON report. Local-by-default; remote with `platform` + `endpoint` + `token` + `repository`. No PRs, no pushes. |
 | [`dry_run_diff`](docs/tools.md#dry_run_diff) | Stateless semantic diff between two `dry_run` reports — added / removed / changed updates. |
+| [`annotate_dry_run`](docs/tools.md#annotate_dry_run) | Attribute each proposed update in a `dry_run` report to the `packageRules` that caused it; flags rules that never matched and report fields the matchers needed but the report lacked. Stateless + offline. |
 | [`migrate_config`](docs/tools.md#migrate_config) | Apply Renovate's built-in migrations and return the migrated config plus a unified diff. Does not write. |
 | [`write_config`](docs/tools.md#write_config) | Validate, then atomically write a config to disk. Preserves comments/key order on existing JSON-with-comments files. |
 | [`renovate://presets`](docs/tools.md#renovatepresets) (resource) | Markdown index of all built-in presets grouped by namespace. |

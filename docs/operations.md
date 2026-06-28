@@ -34,6 +34,12 @@ Preset *expansion* is in-process and instant, but the *merge* of expanded preset
 
 **Timeout / fallback.** The worker has a 30 s wall-clock budget (`MergeTimeoutError`). On timeout — or any worker failure, including a missing or corrupt bundled `renovate` — both tools **fall back** to a simplified in-process merge (arrays concat, objects merge, scalars overwrite), append a `warnings` entry naming the cause, and report `mergeQuality: "preview"` instead of `"faithful"`. A merge-worker problem never hard-fails the call.
 
+## `test_package_rules` / `annotate_dry_run` packageRules worker
+
+Rule *matching* runs Renovate's real `packageRules` matchers inside a `worker_threads` worker (so the main process never imports `renovate`). All dependency contexts are evaluated in a **single round-trip** — `annotate_dry_run` batches every update from the report into one worker call, so a 50-update report still pays only one cold start (~1-3 s, loading Renovate's matcher registry + versioning subsystem); the worker is terminated after each call. A call with no `packageRules` skips the worker entirely.
+
+**Timeout / fallback.** The worker has a 30 s wall-clock budget (`PackageRulesTimeoutError`). On timeout — or any worker failure, including a missing or corrupt bundled `renovate` — both tools **fall back** to an approximate in-process glob-only matcher (only `matchPackageNames` / `matchDepNames` / `matchManagers` / `matchDatasources` / `matchFileNames` / `matchCategories`; rules using any other matcher are reported as unevaluatable), append a `warnings` entry, and report `matchQuality: "preview"` instead of `"faithful"`. A worker problem never hard-fails the call. `matchConfidence` is always unevaluatable offline (it needs the merge-confidence API), and matchers needing post-lookup data the caller didn't supply are reported as unevaluatable, never as silent non-matches.
+
 ## `check_setup` bundled-binary fast path
 
 Each Renovate CLI binary is `node node_modules/renovate/dist/<cli>.js`, and a cold `--version` spawn loads Renovate's full ESM graph (~2 s per binary). Two of those at every MCP session start used to dominate cold-start latency and could blow past clients' `initialize` timeout.
