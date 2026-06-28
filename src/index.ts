@@ -12,6 +12,8 @@ import { registerSuggestPresets } from "./tools/suggestPresets.js";
 import { registerPreviewCustomManager } from "./tools/previewCustomManager.js";
 import { registerDryRun } from "./tools/dryRun.js";
 import { registerDryRunDiff } from "./tools/dryRunDiff.js";
+import { registerTestPackageRules } from "./tools/testPackageRules.js";
+import { registerAnnotateDryRun } from "./tools/annotateDryRun.js";
 import { registerWriteConfig } from "./tools/writeConfig.js";
 import { registerMigrateConfig } from "./tools/migrateConfig.js";
 import { registerGetVersion } from "./tools/getVersion.js";
@@ -39,13 +41,15 @@ const BASE_INSTRUCTIONS = [
   "  3. resolve_config         — expand built-in presets to see what a config actually becomes (offline)",
   "  4. explain_config         — inverse of resolve_config: trace which preset set each field (offline)",
   "  5. resolve_config_diff    — offline structural diff of two resolved configs (changed fields + array/packageRules set diffs); use this over dry_run_diff for config refactors, especially when registries are unreachable",
-  "  6. preview_custom_manager — iterate on a regex-based customManagers entry; shows file/line hits and extracted deps",
-  "  7. validate_config        — check a proposed config against Renovate's schema",
-  "  8. lint_config            — semantic lint pass: catches Renovate-specific footguns schema validation misses (e.g. malformed /…/ regex patterns)",
-  "  9. dry_run                — preview what Renovate would actually do (no PRs)",
-  " 10. dry_run_diff           — semantic diff between two dry_run reports (added/removed/changed updates)",
-  " 11. migrate_config         — apply Renovate's built-in migrations (deprecated keys → current schema) and return the migrated config",
-  " 12. write_config           — save the agreed-upon config (validates first)",
+  "  6. test_package_rules     — offline what-if: which packageRules match a hypothetical dependency, which matcher decided each, and what each contributes (debug \"why didn't my rule match?\")",
+  "  7. preview_custom_manager — iterate on a regex-based customManagers entry; shows file/line hits and extracted deps",
+  "  8. validate_config        — check a proposed config against Renovate's schema",
+  "  9. lint_config            — semantic lint pass: catches Renovate-specific footguns schema validation misses (e.g. malformed /…/ regex patterns)",
+  " 10. dry_run                — preview what Renovate would actually do (no PRs)",
+  " 11. dry_run_diff           — semantic diff between two dry_run reports (added/removed/changed updates)",
+  " 12. annotate_dry_run       — attribute each proposed update in a dry_run report to the packageRules that caused it (and flag rules that never matched)",
+  " 13. migrate_config         — apply Renovate's built-in migrations (deprecated keys → current schema) and return the migrated config",
+  " 14. write_config           — save the agreed-upon config (validates first)",
   "",
   "Before the first repo-touching tool call in a session (read_config, resolve_config, dry_run, write_config, …), call check_setup with the same repoPath. It surfaces token / endpoint / connectivity problems up front (e.g. \"set GITHUB_TOKEN or github-actions deps will be skipped\") instead of waiting for dry_run to fail. Skip if the user has already confirmed setup or is doing offline-only work that doesn't depend on git origin or registries.",
   "If any tool fails unexpectedly, call check_setup to diagnose CLI availability.",
@@ -82,6 +86,8 @@ registerValidateConfig(server);
 registerLintConfig(server);
 registerDryRun(server);
 registerDryRunDiff(server);
+registerTestPackageRules(server);
+registerAnnotateDryRun(server);
 registerMigrateConfig(server);
 registerWriteConfig(server);
 registerGetVersion(server);
