@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.2](https://github.com/tibuntu/renovate-mcp/compare/v1.3.1...v1.3.2) (2026-07-08)
+
+
+### Bug Fixes
+
+* **deps:** update dev dependencies to v24.13.3 ([c11a906](https://github.com/tibuntu/renovate-mcp/commit/c11a906159bc2fdda9d5114b49834ee947656d43))
+* **deps:** update dev dependencies to v4.1.10 ([80c55fe](https://github.com/tibuntu/renovate-mcp/commit/80c55fed168710c4b1da7fc4dbd99c0d2ac71457))
+
 ## [1.3.1](https://github.com/tibuntu/renovate-mcp/compare/v1.3.0...v1.3.1) (2026-07-05)
 
 
