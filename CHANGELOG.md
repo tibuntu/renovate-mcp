@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.4](https://github.com/tibuntu/renovate-mcp/compare/v1.3.3...v1.3.4) (2026-07-12)
+
+
+### Bug Fixes
+
+* **deps:** update dependency renovate to v43.259.2 ([0eab0be](https://github.com/tibuntu/renovate-mcp/commit/0eab0becb23d6888b65b5286ff15bd1b5b591bb6))
+
 ## [1.3.3](https://github.com/tibuntu/renovate-mcp/compare/v1.3.2...v1.3.3) (2026-07-10)
 
 
