@@ -21,6 +21,8 @@ import {
 } from "../lib/dryRunProgress.js";
 import { classifyReportProblem } from "../lib/runtimeWarnings.js";
 import {
+  BASE_BRANCHES_MAX_ITEMS,
+  BRANCH_NAME_MAX_BYTES,
   HOST_RULES_MAX_ITEMS,
   endpointString,
   hostRuleRecord,
@@ -184,7 +186,7 @@ export function registerDryRun(server: McpServer): void {
     {
       title: "Dry-run Renovate",
       description:
-        "Run Renovate in dry-run mode to preview what it would do — no PRs opened, no git pushes. Returns a structured JSON report plus a top-level `ok` boolean (false when the CLI failed OR the report records a validation/error-level problem, even if the exit code was 0). RE2 native-module fallback noise and Renovate's `Unsupported node environment` notice are filtered out of `reportErrors` — the former flows into `warnings` (still actionable, still surfaced), the latter into a separate `environmentWarnings[]` since the run still produced a usable report.\n\nEffective platform = `platform` input → `RENOVATE_PLATFORM` env → `local`. The `platformSource` field on the result echoes which step won; preflight errors and the env-overrides-default advisory both reference it so callers don't have to read the source to find where a surprising `gitlab`/`github` came from.\n\nThe full structured report ships inline by default. For large repos that is bigger than most MCP clients' response-content cap (≈75 KB on Claude Desktop) and the middle of the JSON is silently truncated. Pass `reportOutputPath` to redirect the structured report to a file (mode 0600), in which case `summary.report` collapses to `{ reportPath, repoCount, updateCount }` and `dry_run_diff` can pick it up via `{ reportPath: … }`. Pair with `summaryOnly: true` to also strip per-repo upgrade arrays from the inline payload when you only need the path + counts. `warnings`, `problems`, `reportErrors`, and `environmentWarnings` always stay inline regardless of these flags — those are the actionable bits.\n\n**Auth — prefer env vars.** Set `RENOVATE_TOKEN` (or `GITHUB_TOKEN` / `GITLAB_TOKEN`, auto-translated to `RENOVATE_TOKEN` for the spawned Renovate CLI) on the MCP server's env via `claude_desktop_config.json` / `.mcp.json`. This matches the precedence `resolve_config` uses, so a single `GITLAB_TOKEN` in `.mcp.json` works for both tools. The `token` input is retained as an ad-hoc / testing fallback — when supplied inline it is persisted in the MCP tool transcript that the client may share, replay, or feed back into the LLM, so an advisory entry is appended to the result `warnings` array steering callers toward env-var auth. For a remote-platform run, an actionable preflight error is returned before spawning Renovate when no token can be resolved at all.\n\nDefault mode runs `--platform=local` against the filesystem at `repoPath`. If your config extends `local>…` presets, pass `platform` (`github` or `gitlab`), `endpoint` (API base URL), `token`, and `repository` to run as a real platform client that can actually fetch those presets — Renovate still runs with `--dry-run`, so no PRs are opened. If you only need `gitlab>…` / `github>…` presets resolved against a self-hosted host (not a full remote run), pass just `endpoint` (and `token` if needed) while leaving `platform` unset — both flow through to Renovate in local mode too, which is enough to redirect those preset shortcuts away from the public defaults. The tool preflight-checks for `local>` presets under `--platform=local` (in `lookup` and `full` modes) and fails fast with remediation guidance rather than spawning a Renovate run that would fail opaquely with `config-validation`. The preflight is skipped for `dryRunMode=extract` so manifest-only extraction can be attempted regardless.\n\nCredentials for private registries (e.g. `COMPOSER_AUTH` for Packagist/Satis proxies, `NPM_TOKEN` / `.npmrc` for npm, Docker registry creds, `RENOVATE_HOST_RULES` for anything else) must be set on the MCP server process itself — via the `env` key in `claude_desktop_config.json` / `.mcp.json`, not your shell, since the MCP server runs as a child of Claude and does not inherit shell env. Alternatively, encode credentials as `hostRules` in the Renovate config, or pass them per-call via the `hostRules` input on this tool (written to a mode-0600 temp file that is cleaned up after the run; token/password values — including the platform `token` input — are scrubbed from `logTail` and `problems`). Per-call `hostRules` are appended to any the repo's own config already declares. If a lookup can't auth to a registry, Renovate often reports 0 updates without a loud error; when that happens this tool surfaces detected auth failures under `problems` in the output so callers can distinguish a genuine \"no updates\" from a silent registry-auth failure.",
+        "Run Renovate in dry-run mode to preview what it would do — no PRs opened, no git pushes. Returns a structured JSON report plus a top-level `ok` boolean (false when the CLI failed OR the report records a validation/error-level problem, even if the exit code was 0). RE2 native-module fallback noise and Renovate's `Unsupported node environment` notice are filtered out of `reportErrors` — the former flows into `warnings` (still actionable, still surfaced), the latter into a separate `environmentWarnings[]` since the run still produced a usable report.\n\nEffective platform = `platform` input → `RENOVATE_PLATFORM` env → `local`. The `platformSource` field on the result echoes which step won; preflight errors and the env-overrides-default advisory both reference it so callers don't have to read the source to find where a surprising `gitlab`/`github` came from.\n\nThe full structured report ships inline by default. For large repos that is bigger than most MCP clients' response-content cap (≈75 KB on Claude Desktop) and the middle of the JSON is silently truncated. Pass `reportOutputPath` to redirect the structured report to a file (mode 0600), in which case `summary.report` collapses to `{ reportPath, repoCount, updateCount }` and `dry_run_diff` can pick it up via `{ reportPath: … }`. Pair with `summaryOnly: true` to also strip per-repo upgrade arrays from the inline payload when you only need the path + counts. `warnings`, `problems`, `reportErrors`, and `environmentWarnings` always stay inline regardless of these flags — those are the actionable bits.\n\n**Custom base branches.** By default Renovate evaluates the repository's default branch. Pass `baseBranches` to evaluate other branches instead — this is how you dry-run a Renovate config change that lives on a feature branch before merging it. Entries are exact branch names; regex requires `/…/` wrapping (e.g. `/^renovate\\/.+/`, negate with `!/…/`) — bare `^foo` is matched literally, not as regex. `$default` expands to the default branch. With `readConfigFromBaseBranch` (default true) Renovate also reads its config FROM those branches (`useBaseBranchConfig=merge`), so the branch's edited config is what gets evaluated; set it false to scan the branches' manifests using the default branch's config. Base-branch selection only applies to remote-platform runs (`platform: 'github'`/`'gitlab'`) — it is ignored (with a warning) under `platform=local`.\n\n**Auth — prefer env vars.** Set `RENOVATE_TOKEN` (or `GITHUB_TOKEN` / `GITLAB_TOKEN`, auto-translated to `RENOVATE_TOKEN` for the spawned Renovate CLI) on the MCP server's env via `claude_desktop_config.json` / `.mcp.json`. This matches the precedence `resolve_config` uses, so a single `GITLAB_TOKEN` in `.mcp.json` works for both tools. The `token` input is retained as an ad-hoc / testing fallback — when supplied inline it is persisted in the MCP tool transcript that the client may share, replay, or feed back into the LLM, so an advisory entry is appended to the result `warnings` array steering callers toward env-var auth. For a remote-platform run, an actionable preflight error is returned before spawning Renovate when no token can be resolved at all.\n\nDefault mode runs `--platform=local` against the filesystem at `repoPath`. If your config extends `local>…` presets, pass `platform` (`github` or `gitlab`), `endpoint` (API base URL), `token`, and `repository` to run as a real platform client that can actually fetch those presets — Renovate still runs with `--dry-run`, so no PRs are opened. If you only need `gitlab>…` / `github>…` presets resolved against a self-hosted host (not a full remote run), pass just `endpoint` (and `token` if needed) while leaving `platform` unset — both flow through to Renovate in local mode too, which is enough to redirect those preset shortcuts away from the public defaults. The tool preflight-checks for `local>` presets under `--platform=local` (in `lookup` and `full` modes) and fails fast with remediation guidance rather than spawning a Renovate run that would fail opaquely with `config-validation`. The preflight is skipped for `dryRunMode=extract` so manifest-only extraction can be attempted regardless.\n\nCredentials for private registries (e.g. `COMPOSER_AUTH` for Packagist/Satis proxies, `NPM_TOKEN` / `.npmrc` for npm, Docker registry creds, `RENOVATE_HOST_RULES` for anything else) must be set on the MCP server process itself — via the `env` key in `claude_desktop_config.json` / `.mcp.json`, not your shell, since the MCP server runs as a child of Claude and does not inherit shell env. Alternatively, encode credentials as `hostRules` in the Renovate config, or pass them per-call via the `hostRules` input on this tool (written to a mode-0600 temp file that is cleaned up after the run; token/password values — including the platform `token` input — are scrubbed from `logTail` and `problems`). Per-call `hostRules` are appended to any the repo's own config already declares. If a lookup can't auth to a registry, Renovate often reports 0 updates without a loud error; when that happens this tool surfaces detected auth failures under `problems` in the output so callers can distinguish a genuine \"no updates\" from a silent registry-auth failure.",
       inputSchema: {
         repoPath: pathString(
           "Absolute path to the repository root. Required for the default `platform=local` mode. When `platform` is overridden (e.g. `gitlab` / `github`), Renovate runs against the remote `repository` instead — `repoPath` is still used as the child's working directory but its manifest files are ignored.",
@@ -234,6 +236,19 @@ export function registerDryRun(server: McpServer): void {
           .describe(
             "Only meaningful in combination with `reportOutputPath`. When true, also strips per-repo `branches[]`/`packageFiles` arrays from the inline summary so the response is purely the path + counts + actionable lists. No effect when `reportOutputPath` is unset.",
           ),
+        baseBranches: z
+          .array(z.string().min(1).max(BRANCH_NAME_MAX_BYTES))
+          .max(BASE_BRANCHES_MAX_ITEMS)
+          .optional()
+          .describe(
+            "One or more base branches to evaluate instead of the repository's default branch (Renovate's `baseBranchPatterns`). Each entry is an EXACT branch name unless it is wrapped in slashes: only `/…/`-delimited entries are treated as regex (optionally `!/…/` to negate) — a bare `^release/.*` is matched literally as a branch named `^release/.*` and will never match. The magic value `$default` expands to the repository's default branch. This is what lets you dry-run a Renovate config change that lives on a non-default branch (e.g. a feature branch) before it is merged. Maps to the `RENOVATE_BASE_BRANCH_PATTERNS` env var — `baseBranchPatterns` is not a CLI flag. Only applies to remote-platform runs (`platform: 'github'`/`'gitlab'`); ignored under `platform=local`, which always inspects the working tree at `repoPath`. See also `readConfigFromBaseBranch`.",
+          ),
+        readConfigFromBaseBranch: z
+          .boolean()
+          .optional()
+          .describe(
+            "Only meaningful together with `baseBranches`. When true (default), Renovate reads its config (renovate.json/.json5) FROM each base branch — `useBaseBranchConfig=merge` — so a config edit that only exists on that branch is actually evaluated. Set false to scan the base branches' manifests while still using the default branch's config.",
+          ),
       },
     },
     async (
@@ -249,6 +264,8 @@ export function registerDryRun(server: McpServer): void {
         hostRules,
         reportOutputPath,
         summaryOnly,
+        baseBranches,
+        readConfigFromBaseBranch,
       },
       extra,
     ) => {
@@ -454,6 +471,40 @@ export function registerDryRun(server: McpServer): void {
           // var, not a CLI flag — `--config-file` is not a real Renovate flag
           // and passing it crashes the CLI with "unknown option".
           childEnv.RENOVATE_CONFIG_FILE = hostRulesConfigPath;
+        }
+
+        // Base-branch selection. `baseBranchPatterns` (the option formerly
+        // known as `baseBranches`) is `cli:false` in Renovate, so it can only
+        // be supplied via env, not a flag. Renovate coerces the array option
+        // from a JSON5/JSON string (falling back to comma-split), so a JSON
+        // array is the unambiguous encoding even for branch names with commas.
+        // Base branches are a remote concept — under `--platform=local`
+        // Renovate inspects the working tree at `repoPath` and never resolves
+        // branches, so the input would silently do nothing; warn instead.
+        if (baseBranches !== undefined) {
+          if (baseBranches.length === 0) {
+            mcpWarnings.push(
+              "`baseBranches` was ignored: an empty array has no effect. Pass at least one exact branch name or a `/…/`-wrapped regex pattern.",
+            );
+          } else if (isRemotePlatform) {
+            childEnv.RENOVATE_BASE_BRANCH_PATTERNS = JSON.stringify(baseBranches);
+            // Patterns alone only change WHICH branches are scanned for
+            // manifests; Renovate still reads its config from the default
+            // branch unless `useBaseBranchConfig=merge`. Enable it by default
+            // so a config change living on a non-default branch is actually
+            // evaluated — the headline use case for this input.
+            if (readConfigFromBaseBranch ?? true) {
+              childEnv.RENOVATE_USE_BASE_BRANCH_CONFIG = "merge";
+            }
+          } else {
+            mcpWarnings.push(
+              "`baseBranches` was ignored: base-branch selection requires a remote-platform run (`platform: 'github'` / `'gitlab'`). Under `platform=local` Renovate only inspects the working tree at `repoPath`.",
+            );
+          }
+        } else if (readConfigFromBaseBranch !== undefined) {
+          mcpWarnings.push(
+            "`readConfigFromBaseBranch` was ignored: it only has an effect together with `baseBranches`.",
+          );
         }
 
         if (progressEnabled) {

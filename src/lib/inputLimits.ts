@@ -16,6 +16,8 @@ export const CONFIG_JSON_MAX_BYTES = 1_000_000;
 export const REPORT_JSON_MAX_BYTES = 10_000_000;
 export const HOST_RULES_MAX_ITEMS = 256;
 export const HOST_RULE_JSON_MAX_BYTES = 64_000;
+export const BASE_BRANCHES_MAX_ITEMS = 50;
+export const BRANCH_NAME_MAX_BYTES = 256;
 
 export const pathString = (description: string) =>
   z.string().max(PATH_MAX_BYTES).describe(description);
