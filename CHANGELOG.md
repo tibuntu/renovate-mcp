@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/tibuntu/renovate-mcp/compare/v1.3.4...v1.4.0) (2026-07-16)
+
+
+### Features
+
+* **dry_run:** add baseBranches input ([b63cd29](https://github.com/tibuntu/renovate-mcp/commit/b63cd296929772b578c12374b62aaaf4efcbcf78))
+
 ## [1.3.4](https://github.com/tibuntu/renovate-mcp/compare/v1.3.3...v1.3.4) (2026-07-12)
 
 
