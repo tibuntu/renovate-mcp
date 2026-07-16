@@ -1345,3 +1345,226 @@ describe("dry_run inline-secret warning", () => {
     expect(matches).toHaveLength(0);
   });
 });
+
+describe("dry_run baseBranches", () => {
+  // Fake that dumps argv plus the two base-branch env vars the tool sets, so
+  // tests can assert the env plumbing without a real Renovate run.
+  async function makeBaseBranchEnvDump(dir: string): Promise<string> {
+    const file = path.join(dir, "base-branch-renovate.mjs");
+    await writeFile(
+      file,
+      `#!/usr/bin/env node
+import { writeFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+const dumpPath = process.env.FAKE_RENOVATE_ARGV_DUMP;
+if (dumpPath) {
+  writeFileSync(dumpPath, JSON.stringify({
+    args,
+    baseBranchPatterns: process.env.RENOVATE_BASE_BRANCH_PATTERNS ?? null,
+    useBaseBranchConfig: process.env.RENOVATE_USE_BASE_BRANCH_CONFIG ?? null,
+  }));
+}
+const reportArg = args.find(a => a.startsWith('--report-path='));
+if (reportArg) writeFileSync(reportArg.slice('--report-path='.length), JSON.stringify({ repositories: [] }));
+process.exit(0);
+`,
+    );
+    await chmod(file, 0o755);
+    return file;
+  }
+
+  it("passes RENOVATE_BASE_BRANCH_PATTERNS (JSON) and useBaseBranchConfig=merge by default on a remote run", async () => {
+    const argvDump = path.join(repo, "argv.json");
+    const fakeBin = await makeBaseBranchEnvDump(repo);
+    session = await startServer({
+      RENOVATE_BIN: fakeBin,
+      FAKE_RENOVATE_ARGV_DUMP: argvDump,
+    });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: {
+        repoPath: repo,
+        platform: "gitlab",
+        endpoint: "https://gitlab.example.com/api/v4/",
+        token: "glpat-xyz",
+        repository: "devops/gitops",
+        baseBranches: ["feature/my-branch", "/^renovate\\/.+/"],
+      },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    const dumped = JSON.parse(await readFile(argvDump, "utf8")) as {
+      baseBranchPatterns: string | null;
+      useBaseBranchConfig: string | null;
+    };
+    expect(JSON.parse(dumped.baseBranchPatterns!)).toEqual(["feature/my-branch", "/^renovate\\/.+/"]);
+    expect(dumped.useBaseBranchConfig).toBe("merge");
+  });
+
+  it("omits useBaseBranchConfig when readConfigFromBaseBranch is false", async () => {
+    const argvDump = path.join(repo, "argv.json");
+    const fakeBin = await makeBaseBranchEnvDump(repo);
+    session = await startServer({
+      RENOVATE_BIN: fakeBin,
+      FAKE_RENOVATE_ARGV_DUMP: argvDump,
+    });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: {
+        repoPath: repo,
+        platform: "gitlab",
+        endpoint: "https://gitlab.example.com/api/v4/",
+        token: "glpat-xyz",
+        repository: "devops/gitops",
+        baseBranches: ["feature/my-branch"],
+        readConfigFromBaseBranch: false,
+      },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    const dumped = JSON.parse(await readFile(argvDump, "utf8")) as {
+      baseBranchPatterns: string | null;
+      useBaseBranchConfig: string | null;
+    };
+    expect(JSON.parse(dumped.baseBranchPatterns!)).toEqual(["feature/my-branch"]);
+    expect(dumped.useBaseBranchConfig).toBeNull();
+  });
+
+  it("ignores baseBranches under platform=local and emits a warning", async () => {
+    const argvDump = path.join(repo, "argv.json");
+    const fakeBin = await makeBaseBranchEnvDump(repo);
+    session = await startServer({
+      RENOVATE_BIN: fakeBin,
+      FAKE_RENOVATE_ARGV_DUMP: argvDump,
+    });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: {
+        repoPath: repo,
+        baseBranches: ["feature/my-branch"],
+      },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    const dumped = JSON.parse(await readFile(argvDump, "utf8")) as {
+      baseBranchPatterns: string | null;
+      useBaseBranchConfig: string | null;
+    };
+    expect(dumped.baseBranchPatterns).toBeNull();
+    expect(dumped.useBaseBranchConfig).toBeNull();
+
+    const body = JSON.parse(res.result!.content[0]!.text) as { warnings?: string[] };
+    expect((body.warnings ?? []).some((w) => /baseBranches.*ignored/.test(w))).toBe(true);
+  });
+
+  it("warns when baseBranches is an empty array and sets no env vars", async () => {
+    const argvDump = path.join(repo, "argv.json");
+    const fakeBin = await makeBaseBranchEnvDump(repo);
+    session = await startServer({
+      RENOVATE_BIN: fakeBin,
+      FAKE_RENOVATE_ARGV_DUMP: argvDump,
+    });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: {
+        repoPath: repo,
+        platform: "gitlab",
+        endpoint: "https://gitlab.example.com/api/v4/",
+        token: "glpat-xyz",
+        repository: "devops/gitops",
+        baseBranches: [],
+      },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    const dumped = JSON.parse(await readFile(argvDump, "utf8")) as {
+      baseBranchPatterns: string | null;
+      useBaseBranchConfig: string | null;
+    };
+    expect(dumped.baseBranchPatterns).toBeNull();
+    expect(dumped.useBaseBranchConfig).toBeNull();
+
+    const body = JSON.parse(res.result!.content[0]!.text) as { warnings?: string[] };
+    expect((body.warnings ?? []).some((w) => /baseBranches.*empty/.test(w))).toBe(true);
+  });
+
+  it("warns when readConfigFromBaseBranch is passed without baseBranches", async () => {
+    const argvDump = path.join(repo, "argv.json");
+    const fakeBin = await makeBaseBranchEnvDump(repo);
+    session = await startServer({
+      RENOVATE_BIN: fakeBin,
+      FAKE_RENOVATE_ARGV_DUMP: argvDump,
+    });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: {
+        repoPath: repo,
+        platform: "gitlab",
+        endpoint: "https://gitlab.example.com/api/v4/",
+        token: "glpat-xyz",
+        repository: "devops/gitops",
+        readConfigFromBaseBranch: false,
+      },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    const dumped = JSON.parse(await readFile(argvDump, "utf8")) as {
+      useBaseBranchConfig: string | null;
+    };
+    expect(dumped.useBaseBranchConfig).toBeNull();
+
+    const body = JSON.parse(res.result!.content[0]!.text) as { warnings?: string[] };
+    expect((body.warnings ?? []).some((w) => /readConfigFromBaseBranch.*ignored/.test(w))).toBe(true);
+  });
+
+  it("sets neither base-branch env var when baseBranches is not passed", async () => {
+    const argvDump = path.join(repo, "argv.json");
+    const fakeBin = await makeBaseBranchEnvDump(repo);
+    session = await startServer({
+      RENOVATE_BIN: fakeBin,
+      FAKE_RENOVATE_ARGV_DUMP: argvDump,
+    });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: {
+        repoPath: repo,
+        platform: "gitlab",
+        endpoint: "https://gitlab.example.com/api/v4/",
+        token: "glpat-xyz",
+        repository: "devops/gitops",
+      },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    const dumped = JSON.parse(await readFile(argvDump, "utf8")) as {
+      baseBranchPatterns: string | null;
+      useBaseBranchConfig: string | null;
+    };
+    expect(dumped.baseBranchPatterns).toBeNull();
+    expect(dumped.useBaseBranchConfig).toBeNull();
+  });
+});
