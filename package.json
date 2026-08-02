@@ -64,7 +64,7 @@
     "json5": "^2.2.3",
     "jsonata": "2.2.1",
     "jsonc-parser": "^3.3.1",
-    "renovate": "^43.288.0",
+    "renovate": "^44.0.0",
     "smol-toml": "^1.6.1",
     "yaml": "^2.9.0",
     "zod": "^4.0.0"
