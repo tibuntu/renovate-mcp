@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.6](https://github.com/tibuntu/renovate-mcp/compare/v1.4.5...v1.4.6) (2026-08-12)
+
+
+### Bug Fixes
+
+* **deps:** update dependency smol-toml to v1.7.2 ([87b8288](https://github.com/tibuntu/renovate-mcp/commit/87b828854d737806d122f16b41330edc170f9fc1))
+* **deps:** update dependency smol-toml to v1.8.0 ([ea8c0dd](https://github.com/tibuntu/renovate-mcp/commit/ea8c0dd854ba001d98c1adcc642648f79ced4899))
+
 ## [1.4.5](https://github.com/tibuntu/renovate-mcp/compare/v1.4.4...v1.4.5) (2026-08-09)
 
 
