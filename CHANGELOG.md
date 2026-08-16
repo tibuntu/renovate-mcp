@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.8](https://github.com/tibuntu/renovate-mcp/compare/v1.4.7...v1.4.8) (2026-08-16)
+
+
+### Bug Fixes
+
+* **deps:** update dependency renovate to v44.30.4 ([b8af11b](https://github.com/tibuntu/renovate-mcp/commit/b8af11b9d86810ef5c1bfa318aed772ab60fe532))
+
 ## [1.4.7](https://github.com/tibuntu/renovate-mcp/compare/v1.4.6...v1.4.7) (2026-08-15)
 
 
