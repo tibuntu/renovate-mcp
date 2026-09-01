@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.9](https://github.com/tibuntu/renovate-mcp/compare/v1.4.8...v1.4.9) (2026-09-01)
+
+
+### Bug Fixes
+
+* **deps:** update dependency ignore to v7.0.8 ([60e0d6f](https://github.com/tibuntu/renovate-mcp/commit/60e0d6f28dfc102fdff725c1c9e901dad9393fab))
+* **deps:** update dependency zod to v4.5.4 ([72075f5](https://github.com/tibuntu/renovate-mcp/commit/72075f5ff90defb717607b72c020e2d54b288258))
+
 ## [1.4.8](https://github.com/tibuntu/renovate-mcp/compare/v1.4.7...v1.4.8) (2026-08-16)
 
 
