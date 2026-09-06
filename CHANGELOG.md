@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.11](https://github.com/tibuntu/renovate-mcp/compare/v1.4.10...v1.4.11) (2026-09-06)
+
+
+### Bug Fixes
+
+* **deps:** bump fast-uri override to ^4.1.4 and let Renovate bump npm overrides ([5153a79](https://github.com/tibuntu/renovate-mcp/commit/5153a79436b9650e4ae482e85e34ccee9fa0618a))
+* **deps:** update dependency fast-xml-builder to ^1.3.1 ([a94ae10](https://github.com/tibuntu/renovate-mcp/commit/a94ae10764ad333b77b313ec1fdf53b823446868))
+
 ## [1.4.10](https://github.com/tibuntu/renovate-mcp/compare/v1.4.9...v1.4.10) (2026-09-06)
 
 
