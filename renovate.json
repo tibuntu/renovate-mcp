@@ -12,6 +12,12 @@
   ],
   "packageRules": [
     {
+      "description": "npm rejects lockfile-only updates for packages listed in `overrides` (EOVERRIDE: override spec must equal the requested spec). Bump the override range in package.json instead.",
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["overrides"],
+      "rangeStrategy": "bump"
+    },
+    {
       "description": "claude-code-action releases very frequently; propose its updates at most once per week to reduce PR churn.",
       "matchPackageNames": ["anthropics/claude-code-action"],
       "schedule": ["* * * * 0"]
