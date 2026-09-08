@@ -276,14 +276,17 @@ Validate, then atomically write a config to disk. A failed validation must never
 
 **Round-trip preservation.** When the target file already exists and parses as JSON-with-comments, edits go through a round-trip serializer that preserves comments, key order, trailing commas, blank-line groupings, and any unrelated trivia — only the keys the caller actually changed are rewritten. Brand-new file writes (no prior file at the target path) fall back to plain `JSON.stringify(config, null, 2) + "\n"` — byte-identical to pre-round-trip behavior. See [Architecture — round-trip writer](architecture.md#round-trip-writer).
 
+**`package.json` targets.** With `filename: "package.json"` the Renovate config lives under the top-level `renovate` key, so the round-trip edit is scoped to that key: `name`, `version`, `dependencies`, every other key, comments, and ordering are left untouched, and the `renovate` key is added if absent. Validation runs on the Renovate slice alone (written to its own temp file, never named `package.json`, removed afterwards) — the validator would otherwise reject `name` / `version` / `dependencies` as unknown options. The tool will not create a `package.json` just to hold Renovate config.
+
 **Refusal reasons (part of the documented contract):**
 
 - `reason: "json5-not-jsonc-compatible"` — `.json5` files that lean on JSON5-only syntax (unquoted keys, single-quoted strings, hex literals, etc.) cannot round-trip safely.
 - `reason: "existing-file-unparseable"` — the file on disk doesn't parse as JSON / JSONC.
+- `reason: "package-json-missing"` — `filename` is `package.json` but no such file exists; write `renovate.json` instead.
 
-Both refusals hint at `force: true` as the escape hatch.
+The first two hint at `force: true` as the escape hatch (except for an unparseable `package.json`, which `force` never rewrites — fix it by hand). `package-json-missing` has no `force` escape hatch.
 
-**`force: true` is destructive.** Pair it with `confirmForce: "YES_OVERRIDE_VALIDATION"` (the literal sentinel makes accidental overrides under prompt-injected tool calls harder). `force: true` skips both validation AND the round-trip path and rewrites the file with a clean `JSON.stringify` rendering — the user has accepted a clean rewrite.
+**`force: true` is destructive.** Pair it with `confirmForce: "YES_OVERRIDE_VALIDATION"` (the literal sentinel makes accidental overrides under prompt-injected tool calls harder). `force: true` skips both validation AND the round-trip path and rewrites the file with a clean `JSON.stringify` rendering — the user has accepted a clean rewrite. **Exception: `package.json`.** There `force: true` skips validation only; the nested round-trip at the `renovate` key still runs, because a whole-file rewrite would destroy the rest of the manifest.
 
 ## `renovate://presets`
 

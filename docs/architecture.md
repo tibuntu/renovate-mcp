@@ -36,6 +36,8 @@ The same worker pattern protects `preview_custom_manager`'s JSONata path. The `j
 
 Brand-new file writes (no prior file at the target path) fall back to plain `JSON.stringify(config, null, 2) + "\n"` — byte-identical to pre-round-trip behavior.
 
+For `package.json` the edit is rooted at the `renovate` key instead of the document root, so the rest of the manifest is never diffed or rewritten — not even under `force: true`. Validation runs on the Renovate slice alone, written to its own temp file.
+
 ## Preset catalogue
 
 `resolve_config` expands `extends` against a committed snapshot of Renovate's built-in presets at `src/data/presets.generated.ts`. Three generated snapshot files exist:

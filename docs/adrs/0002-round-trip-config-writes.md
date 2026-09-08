@@ -160,3 +160,7 @@ flowchart TD
     J -->|Fail and not force| L[Refuse, cleanup temp]
     K --> M[Return wrote: true,<br/>round-trip preserved]
 ```
+
+## Status update — 2026-09-08
+
+The deferred `package.json#renovate` round-trip is now implemented. `serializeConfig` roots the edit at `["renovate"]` when the target basename is `package.json` (adding the key if absent), so every sibling key, comment, and ordering survives; `write_config` validates only the Renovate slice from its own temp file. A missing `package.json` refuses with the new contract reason `package-json-missing`, and `force: true` on a `package.json` target skips validation but still performs the nested round-trip — a whole-file rewrite there is exactly the clobber this ADR set out to avoid.

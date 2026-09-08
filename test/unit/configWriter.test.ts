@@ -436,3 +436,107 @@ describe("serializeConfig — json5 + refusal-reason dispatch", () => {
     });
   });
 });
+
+describe("serializeConfig — package.json#renovate", () => {
+  const pkg = {
+    name: "my-app",
+    version: "1.0.0",
+    dependencies: { zod: "^4" },
+    renovate: { extends: ["config:recommended"] },
+  };
+
+  it("diffs against the nested `renovate` key only — name/version/dependencies survive", () => {
+    const result = serializeConfig({
+      targetPath: "/x/package.json",
+      nextConfig: { extends: ["config:recommended", ":semanticCommits"] },
+      existing: JSON.stringify(pkg, null, 2) + "\n",
+    });
+
+    if ("refuse" in result) throw new Error(`unexpected refusal: ${result.reason}`);
+    expect(result.mode).toBe("round-trip");
+    expect(JSON.parse(result.bytes)).toEqual({
+      ...pkg,
+      renovate: { extends: ["config:recommended", ":semanticCommits"] },
+    });
+  });
+
+  it("removes a key that disappeared from the config, but only under `renovate`", () => {
+    const existing = JSON.stringify(
+      { ...pkg, renovate: { extends: ["config:recommended"], schedule: ["before 5am"] } },
+      null,
+      2,
+    );
+    const result = serializeConfig({
+      targetPath: "/x/package.json",
+      nextConfig: { extends: ["config:recommended"] },
+      existing,
+    });
+
+    if ("refuse" in result) throw new Error(`unexpected refusal: ${result.reason}`);
+    expect(JSON.parse(result.bytes)).toEqual(pkg);
+  });
+
+  it("adds the `renovate` key when absent, leaving every other key intact", () => {
+    const { renovate: _omit, ...withoutRenovate } = pkg;
+    const result = serializeConfig({
+      targetPath: "/x/package.json",
+      nextConfig: { extends: ["config:recommended"] },
+      existing: JSON.stringify(withoutRenovate, null, 2) + "\n",
+    });
+
+    if ("refuse" in result) throw new Error(`unexpected refusal: ${result.reason}`);
+    expect(result.mode).toBe("round-trip");
+    expect(JSON.parse(result.bytes)).toEqual(pkg);
+  });
+
+  it("preserves sibling comments and key order around the nested edit", () => {
+    const existing = [
+      "{",
+      '  "name": "my-app",',
+      "  // keep this comment",
+      '  "renovate": { "extends": ["config:recommended"] },',
+      '  "dependencies": { "zod": "^4" }',
+      "}",
+      "",
+    ].join("\n");
+
+    const result = serializeConfig({
+      targetPath: "/x/package.json",
+      nextConfig: { extends: ["config:recommended"], automerge: true },
+      existing,
+    });
+
+    if ("refuse" in result) throw new Error(`unexpected refusal: ${result.reason}`);
+    expect(result.bytes).toContain("// keep this comment");
+    expect(result.bytes).toContain('"automerge": true');
+    const order = ['"name"', '"renovate"', '"dependencies"'].map((k) => result.bytes.indexOf(k));
+    expect(order.every((i) => i > -1)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+  });
+
+  it("refuses with 'package-json-missing' when package.json does not exist", () => {
+    const result = serializeConfig({
+      targetPath: "/x/package.json",
+      nextConfig: { extends: ["config:recommended"] },
+      existing: undefined,
+    });
+
+    expect(result).toMatchObject({ refuse: true, reason: "package-json-missing" });
+    if (!("refuse" in result)) return;
+    expect(result.hint).toContain("renovate.json");
+  });
+
+  it("refuses an unparseable package.json with 'existing-file-unparseable' and does not suggest force", () => {
+    const result = serializeConfig({
+      targetPath: "/x/package.json",
+      nextConfig: { extends: ["config:recommended"] },
+      existing: '{ "name": ',
+    });
+
+    expect(result).toMatchObject({ refuse: true, reason: "existing-file-unparseable" });
+    if (!("refuse" in result)) return;
+    // Must NOT offer the override sentinel — force never rewrites package.json.
+    expect(result.hint).not.toContain("YES_OVERRIDE_VALIDATION");
+    expect(result.hint).toContain("does not rewrite package.json");
+  });
+});
