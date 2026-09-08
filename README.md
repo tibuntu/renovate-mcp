@@ -39,7 +39,7 @@ Restart your client and try the prompt: *"List the namespaces available under `r
 
 ## Tools & resources
 
-Sixteen tools, three resource templates, and three workflow prompts. Each tool name below links to its full reference in [`docs/tools.md`](docs/tools.md).
+Seventeen tools, three resource templates, and three workflow prompts. Each tool name below links to its full reference in [`docs/tools.md`](docs/tools.md).
 
 | Tool | Purpose |
 | --- | --- |
@@ -57,6 +57,7 @@ Sixteen tools, three resource templates, and three workflow prompts. Each tool n
 | [`dry_run`](docs/tools.md#dry_run) | Run Renovate with `--dry-run` and return the structured JSON report. Local-by-default; remote with `platform` + `endpoint` + `token` + `repository`. No PRs, no pushes. |
 | [`dry_run_diff`](docs/tools.md#dry_run_diff) | Stateless semantic diff between two `dry_run` reports — added / removed / changed updates. |
 | [`annotate_dry_run`](docs/tools.md#annotate_dry_run) | Attribute each proposed update in a `dry_run` report to the `packageRules` that caused it; flags rules that never matched and report fields the matchers needed but the report lacked. Stateless + offline. |
+| [`explain_dependency`](docs/tools.md#explain_dependency) | Answer "why was/wasn't dependency X updated?" from a `dry_run` report: per-occurrence `skipReason`, proposed `updates`, `warnings`, a one-line verdict and remedy hints; optionally the `packageRules` that matched it. Stateless + offline. |
 | [`migrate_config`](docs/tools.md#migrate_config) | Apply Renovate's built-in migrations and return the migrated config plus a unified diff. Does not write. |
 | [`write_config`](docs/tools.md#write_config) | Validate, then atomically write a config to disk. Preserves comments/key order on existing JSON-with-comments files. |
 | [`renovate://presets`](docs/tools.md#renovatepresets) (resource) | Markdown index of all built-in presets grouped by namespace. |
@@ -76,7 +77,7 @@ Sixteen tools, three resource templates, and three workflow prompts. Each tool n
 - **Linux or macOS.** Windows is not supported — `package.json` declares `"os": ["darwin", "linux"]`, so `npm i` surfaces an `EBADPLATFORM` warning on Windows and the server exits with a clear stderr message at startup. Use WSL2 or a Linux/macOS host instead.
 - **Node.js ≥ 24** (aligns with Renovate's own engine requirement).
 
-Renovate ships bundled — the `renovate` package is a runtime dependency, so `validate_config`, `dry_run`, and `write_config` work out of the box with no separate install. The offline tools (`read_config`, `suggest_presets`, `resolve_config`, `explain_config`, `resolve_config_diff`, `preview_custom_manager`, `lint_config`) never spawn Renovate at all.
+Renovate ships bundled — the `renovate` package is a runtime dependency, so `validate_config`, `dry_run`, and `write_config` work out of the box with no separate install. The offline tools (`read_config`, `suggest_presets`, `resolve_config`, `explain_config`, `resolve_config_diff`, `preview_custom_manager`, `lint_config`, `explain_dependency`) never spawn Renovate at all.
 
 **Optional env vars:**
 
@@ -160,6 +161,7 @@ Once the server is wired up, try prompts like these. Written for Claude but work
 
 - "Validate this proposed config against Renovate's schema without writing it anywhere."
 - "Do a dry run and show me which PRs Renovate would open — no pushes."
+- "Why didn't Renovate update `lodash`? Run a dry run and explain that dependency."
 - "Add `:semanticCommits` to my `extends`, validate it, and save back to `renovate.json`."
 
 ## Example session
