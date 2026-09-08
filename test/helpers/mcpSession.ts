@@ -45,6 +45,8 @@ export interface McpSession {
   close(): Promise<void>;
   readonly child: ChildProcess;
   readonly instructions: string;
+  /** Server capabilities advertised in the `initialize` response. */
+  readonly capabilities: Record<string, unknown>;
   /** Current buffered stderr from the server (capped). */
   readonly stderr: string;
   /** All notifications received from the server (in arrival order). */
@@ -207,7 +209,10 @@ export async function startServer(
     child.stdin!.write(JSON.stringify({ jsonrpc: "2.0", method, params }) + "\n");
   }
 
-  const init = await request<{ instructions?: string }>("initialize", {
+  const init = await request<{
+    instructions?: string;
+    capabilities?: Record<string, unknown>;
+  }>("initialize", {
     protocolVersion: "2025-06-18",
     capabilities: {},
     clientInfo: { name: "vitest", version: "0" },
@@ -219,6 +224,7 @@ export async function startServer(
     notify,
     child,
     instructions: init.result?.instructions ?? "",
+    capabilities: init.result?.capabilities ?? {},
     get stderr() {
       return stderrBuffer;
     },
