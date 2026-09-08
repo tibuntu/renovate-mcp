@@ -72,7 +72,7 @@ Seventeen tools, six resources, and three workflow prompts. Each tool name below
 | Prompt | Drives |
 | --- | --- |
 | [`design-renovate-config`](docs/tools.md#design-renovate-config) | `check_setup` → `read_config` → `suggest_presets` → `resolve_config`/`explain_config` → `validate_config`/`lint_config` → `dry_run` → `write_config` on confirmation. |
-| [`debug-package-rule`](docs/tools.md#debug-package-rule) | `check_setup` → `read_config` → `test_package_rules` → `dry_run` (with `reportOutputPath`) → `annotate_dry_run` → a verdict naming rule indices and matchers. |
+| [`debug-package-rule`](docs/tools.md#debug-package-rule) | `check_setup` → `read_config` → `test_package_rules` → `dry_run` (with `reportOutputPath`) → `annotate_dry_run` → `explain_dependency` → a verdict naming rule indices and matchers. |
 | [`author-custom-manager`](docs/tools.md#author-custom-manager) | Draft a `customManagers` entry → `preview_custom_manager` iteratively → `validate_config`/`lint_config` → `dry_run` → `write_config` on confirmation. |
 
 ## Requirements
