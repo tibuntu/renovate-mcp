@@ -27,6 +27,9 @@ Detailed reference for every tool and resource exposed by `renovate-mcp`. The [R
 - [`renovate://presets`](#renovatepresets)
 - [`renovate://presets/{namespace}`](#renovatepresetsnamespace)
 - [`renovate://preset/{name}`](#renovatepresetname)
+- [`renovate://options`](#renovateoptions)
+- [`renovate://option/{name}`](#renovateoptionname)
+- [`renovate://managers`](#renovatemanagers)
 
 ## Prompts
 
@@ -299,6 +302,18 @@ Markdown listing for a single namespace (e.g. `renovate://presets/config`) — c
 ## `renovate://preset/{name}`
 
 Expanded JSON body for one preset (e.g. `renovate://preset/config:recommended`).
+
+## `renovate://options`
+
+Markdown index of all Renovate config options, split into "Repository config options" and "Global / self-hosted-only options" sections. Each line names the option's type and a truncated description, tagged `[deprecated]` / `[experimental]` where applicable. Fetch `renovate://option/{name}` for one option's full definition.
+
+## `renovate://option/{name}`
+
+Full definition of a single Renovate config option as JSON (e.g. `renovate://option/rangeStrategy`) — description, type, default, `allowedValues`, `globalOnly`, `deprecationMsg`, and the rest of the snapshot fields listed in [Architecture](architecture.md).
+
+## `renovate://managers`
+
+Markdown list of all manager names accepted by `matchManagers` / `excludeManagers`, plus a "Custom managers" section noting the `custom.`-prefixed form (e.g. `custom.regex`).
 
 ## Prompts
 

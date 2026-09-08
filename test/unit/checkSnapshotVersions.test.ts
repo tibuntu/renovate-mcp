@@ -6,17 +6,19 @@ import {
 } from "../../scripts/check-snapshot-versions.mjs";
 
 describe("SNAPSHOTS catalogue", () => {
-  it("describes exactly the three generated snapshot files with the right regenerate commands", () => {
-    expect(SNAPSHOTS).toHaveLength(3);
+  it("describes exactly the four generated snapshot files with the right regenerate commands", () => {
+    expect(SNAPSHOTS).toHaveLength(4);
     expect(SNAPSHOTS.map((s) => s.file)).toEqual([
       "src/data/presets.generated.ts",
       "src/data/managers.generated.ts",
       "src/data/migrations.generated.ts",
+      "src/data/options.generated.ts",
     ]);
     expect(SNAPSHOTS.map((s) => s.regenerateCmd)).toEqual([
       "npm run generate:presets",
       "npm run generate:managers",
       "npm run generate:migrations",
+      "npm run generate:options",
     ]);
   });
 });
@@ -38,6 +40,11 @@ describe("checkSnapshotVersions", () => {
       file: "src/data/migrations.generated.ts",
       version: liveVersion,
       regenerateCmd: "npm run generate:migrations",
+    },
+    {
+      file: "src/data/options.generated.ts",
+      version: liveVersion,
+      regenerateCmd: "npm run generate:options",
     },
   ];
 
@@ -68,12 +75,12 @@ describe("checkSnapshotVersions", () => {
     ]);
   });
 
-  it("reports all three snapshots when every one is behind, preserving regenerate mapping", () => {
+  it("reports all four snapshots when every one is behind, preserving regenerate mapping", () => {
     const snapshots = baseSnaps.map((s) => ({ ...s, version: "43.100.0" }));
     const result = checkSnapshotVersions({ liveVersion, snapshots });
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("unreachable");
-    expect(result.stale).toHaveLength(3);
+    expect(result.stale).toHaveLength(4);
     const byFile = Object.fromEntries(
       result.stale.map((s) => [s.file, s.regenerateCmd]),
     );
@@ -85,6 +92,9 @@ describe("checkSnapshotVersions", () => {
     );
     expect(byFile["src/data/migrations.generated.ts"]).toBe(
       "npm run generate:migrations",
+    );
+    expect(byFile["src/data/options.generated.ts"]).toBe(
+      "npm run generate:options",
     );
   });
 });
