@@ -329,7 +329,7 @@ Drives `check_setup` → `read_config` → `suggest_presets` (with `intent`) →
 
 **Arguments:** `repoPath` (required) — absolute path to the repository root. `depName` (optional) — the dependency to investigate.
 
-Drives `check_setup` → `read_config` → `test_package_rules` for the (hypothetical) dependency → `dry_run` with `reportOutputPath` → `annotate_dry_run` on that report → a verdict naming the packageRules index/indices and matcher(s) that decided the outcome.
+Drives `check_setup` → `read_config` → `test_package_rules` for the (hypothetical) dependency → `dry_run` with `reportOutputPath` → `annotate_dry_run` on that report → `explain_dependency` for the dependency's `skipReason`, updates and matched rules → a verdict naming the packageRules index/indices and matcher(s) that decided the outcome.
 
 ### `author-custom-manager`
 

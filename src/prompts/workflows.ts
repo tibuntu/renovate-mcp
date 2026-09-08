@@ -54,7 +54,7 @@ export function registerWorkflowPrompts(server: McpServer): void {
     {
       title: "Debug why a packageRule did or didn't match",
       description:
-        "Trace a packageRules decision for a dependency: read_config, test_package_rules, dry_run with a report file, annotate_dry_run, then a verdict naming rule indices and matchers.",
+        "Trace a packageRules decision for a dependency: read_config, test_package_rules, dry_run with a report file, annotate_dry_run, explain_dependency, then a verdict naming rule indices and matchers.",
       argsSchema: {
         repoPath: z.string().max(4096).describe("Absolute path to the repository root."),
         depName: z
@@ -76,7 +76,10 @@ export function registerWorkflowPrompts(server: McpServer): void {
             : "3. Ask the user which dependency to investigate (and any known fields — datasource, manager, currentValue, …), then call test_package_rules with repoPath and those fields.",
           "4. Call dry_run against the repo with reportOutputPath set to a temp file path, to get the real Renovate report without a huge inline payload.",
           "5. Call annotate_dry_run with reportPath pointing at that same file (plus repoPath) to attribute each proposed update to the packageRules that caused it, and flag rules that never matched.",
-          "6. State the verdict: name the exact packageRules index/indices and matcher(s) that decided the outcome for this dependency, and call out any rulesNeverMatched that look like dead rules.",
+          depName
+            ? `6. Call explain_dependency with reportPath pointing at that same file, depName "${depName}" and repoPath, to see whether the dependency was found at all, its skipReason, proposed updates, warnings and the rules that matched it.`
+            : "6. Call explain_dependency with reportPath pointing at that same file, the chosen depName and repoPath, to see whether the dependency was found at all, its skipReason, proposed updates, warnings and the rules that matched it.",
+          "7. State the verdict: name the exact packageRules index/indices and matcher(s) that decided the outcome for this dependency, explain any skipReason, and call out any rulesNeverMatched that look like dead rules.",
         ].join("\n"),
       ),
   );
