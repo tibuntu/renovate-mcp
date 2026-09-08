@@ -27,6 +27,12 @@ Detailed reference for every tool and resource exposed by `renovate-mcp`. The [R
 - [`renovate://presets/{namespace}`](#renovatepresetsnamespace)
 - [`renovate://preset/{name}`](#renovatepresetname)
 
+## Prompts
+
+- [`design-renovate-config`](#design-renovate-config)
+- [`debug-package-rule`](#debug-package-rule)
+- [`author-custom-manager`](#author-custom-manager)
+
 ---
 
 ## `check_setup`
@@ -270,3 +276,25 @@ Markdown listing for a single namespace (e.g. `renovate://presets/config`) — c
 ## `renovate://preset/{name}`
 
 Expanded JSON body for one preset (e.g. `renovate://preset/config:recommended`).
+
+## Prompts
+
+MCP prompts package the documented multi-tool workflows into ready-to-run starting points. Claude Code surfaces each one as a slash command, e.g. `/mcp__renovate__design-renovate-config`. Every prompt calls `check_setup` first with the same `repoPath`, and calls `write_config` only after the user explicitly confirms.
+
+### `design-renovate-config`
+
+**Arguments:** `repoPath` (required) — absolute path to the repository root. `intent` (optional) — free-text description of what Renovate should do.
+
+Drives `check_setup` → `read_config` → `suggest_presets` (with `intent`) → `resolve_config` + `explain_config` on the resulting draft → `validate_config` + `lint_config` → `dry_run` → `write_config` on confirmation.
+
+### `debug-package-rule`
+
+**Arguments:** `repoPath` (required) — absolute path to the repository root. `depName` (optional) — the dependency to investigate.
+
+Drives `check_setup` → `read_config` → `test_package_rules` for the (hypothetical) dependency → `dry_run` with `reportOutputPath` → `annotate_dry_run` on that report → a verdict naming the packageRules index/indices and matcher(s) that decided the outcome.
+
+### `author-custom-manager`
+
+**Arguments:** `repoPath` (required) — absolute path to the repository root. `description` (required) — what to extract, and from which files.
+
+Drives drafting a `customManagers` entry (regex or jsonata) → `preview_custom_manager` iteratively until the hits look right → `validate_config` + `lint_config` → `dry_run` → `write_config` on confirmation.

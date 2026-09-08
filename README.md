@@ -39,7 +39,7 @@ Restart your client and try the prompt: *"List the namespaces available under `r
 
 ## Tools & resources
 
-Sixteen tools and three resource templates. Each tool name below links to its full reference in [`docs/tools.md`](docs/tools.md).
+Sixteen tools, three resource templates, and three workflow prompts. Each tool name below links to its full reference in [`docs/tools.md`](docs/tools.md).
 
 | Tool | Purpose |
 | --- | --- |
@@ -62,6 +62,14 @@ Sixteen tools and three resource templates. Each tool name below links to its fu
 | [`renovate://presets`](docs/tools.md#renovatepresets) (resource) | Markdown index of all built-in presets grouped by namespace. |
 | [`renovate://presets/{namespace}`](docs/tools.md#renovatepresetsnamespace) (resource) | Markdown listing for a single namespace. |
 | [`renovate://preset/{name}`](docs/tools.md#renovatepresetname) (resource) | Expanded JSON body for one preset. |
+
+**Prompts.** Three workflow prompts package the tool sequences above into ready-to-run starting points. Claude Code surfaces MCP prompts as slash commands (e.g. `/mcp__renovate__design-renovate-config`); other MCP clients expose them through their own prompt picker.
+
+| Prompt | Drives |
+| --- | --- |
+| [`design-renovate-config`](docs/tools.md#design-renovate-config) | `check_setup` → `read_config` → `suggest_presets` → `resolve_config`/`explain_config` → `validate_config`/`lint_config` → `dry_run` → `write_config` on confirmation. |
+| [`debug-package-rule`](docs/tools.md#debug-package-rule) | `check_setup` → `read_config` → `test_package_rules` → `dry_run` (with `reportOutputPath`) → `annotate_dry_run` → a verdict naming rule indices and matchers. |
+| [`author-custom-manager`](docs/tools.md#author-custom-manager) | Draft a `customManagers` entry → `preview_custom_manager` iteratively → `validate_config`/`lint_config` → `dry_run` → `write_config` on confirmation. |
 
 ## Requirements
 

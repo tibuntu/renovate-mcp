@@ -18,6 +18,7 @@ import { registerWriteConfig } from "./tools/writeConfig.js";
 import { registerMigrateConfig } from "./tools/migrateConfig.js";
 import { registerGetVersion } from "./tools/getVersion.js";
 import { registerPresetResources } from "./resources/presets.js";
+import { registerWorkflowPrompts } from "./prompts/workflows.js";
 import { checkSetup, startupBanner } from "./lib/setupCheck.js";
 import { SERVER_VERSION } from "./lib/version.js";
 import { logError } from "./lib/log.js";
@@ -92,6 +93,7 @@ registerMigrateConfig(server);
 registerWriteConfig(server);
 registerGetVersion(server);
 registerPresetResources(server);
+registerWorkflowPrompts(server);
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
