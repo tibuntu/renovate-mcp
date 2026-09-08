@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.5.0](https://github.com/tibuntu/renovate-mcp/compare/v1.4.11...v1.5.0) (2026-09-08)
+
+
+### Features
+
+* **explain_dependency:** add offline dependency explainer over dry_run reports ([5c9b79e](https://github.com/tibuntu/renovate-mcp/commit/5c9b79e68a6599406e7d5215dd9cccbf924aaaf6))
+* **lint:** add automerge-includes-major rule ([29a73ba](https://github.com/tibuntu/renovate-mcp/commit/29a73ba638dc5feac980564e5159136faa1d94e8))
+* **lint:** add duplicate-package-rule-matchers rule ([2e06fff](https://github.com/tibuntu/renovate-mcp/commit/2e06fff45974fe0beb36539939f63d63c9c486b6))
+* **lint:** add host-rule-inline-secret rule ([e7d74f2](https://github.com/tibuntu/renovate-mcp/commit/e7d74f260af09a086a8de896e4c374b206c20a1a))
+* **prompts:** add design/debug/author workflow prompts ([93ccbfb](https://github.com/tibuntu/renovate-mcp/commit/93ccbfb89d1fc4607076f4e5ed87e5cc8fb89b2d))
+* **prompts:** route debug-package-rule through explain_dependency ([20a5244](https://github.com/tibuntu/renovate-mcp/commit/20a5244a6789c2b3df8b591d31c581b29caba060))
+* **resources:** add renovate://options, renovate://option/{name} and renovate://managers ([8530ae5](https://github.com/tibuntu/renovate-mcp/commit/8530ae55d0555be6bc615af56df0f1fcfcd8a76a))
+* **write_config:** round-trip package.json#renovate writes ([33c829d](https://github.com/tibuntu/renovate-mcp/commit/33c829d3bbbd33af25decf2ccf0ca408785ed223))
+
+
+### Bug Fixes
+
+* **deps:** update dependency ignore to v7.0.9 ([d76c33c](https://github.com/tibuntu/renovate-mcp/commit/d76c33c02fed331ef38b98a0dc8f3e1c53295b03))
+* **write_config:** give the validation temp file a .json suffix ([32db1d5](https://github.com/tibuntu/renovate-mcp/commit/32db1d5da839a451c610ec38ddcdb54847ef053f))
+
 ## [1.4.11](https://github.com/tibuntu/renovate-mcp/compare/v1.4.10...v1.4.11) (2026-09-06)
 
 
