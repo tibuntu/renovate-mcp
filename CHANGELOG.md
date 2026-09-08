@@ -2,23 +2,26 @@
 
 ## [1.5.0](https://github.com/tibuntu/renovate-mcp/compare/v1.4.11...v1.5.0) (2026-09-08)
 
+This release adds a tool that answers **why Renovate did or didn't update a dependency**, gives the assistant an **authoritative reference for every config option** of the bundled Renovate version, and fixes a bug that made **every validated `write_config` fail** against Renovate 44. `write_config` also stops destroying `package.json`; that is a behaviour change, so please read the upgrade note below.
 
-### Features
+### New features
 
-* **explain_dependency:** add offline dependency explainer over dry_run reports ([5c9b79e](https://github.com/tibuntu/renovate-mcp/commit/5c9b79e68a6599406e7d5215dd9cccbf924aaaf6))
-* **lint:** add automerge-includes-major rule ([29a73ba](https://github.com/tibuntu/renovate-mcp/commit/29a73ba638dc5feac980564e5159136faa1d94e8))
-* **lint:** add duplicate-package-rule-matchers rule ([2e06fff](https://github.com/tibuntu/renovate-mcp/commit/2e06fff45974fe0beb36539939f63d63c9c486b6))
-* **lint:** add host-rule-inline-secret rule ([e7d74f2](https://github.com/tibuntu/renovate-mcp/commit/e7d74f260af09a086a8de896e4c374b206c20a1a))
-* **prompts:** add design/debug/author workflow prompts ([93ccbfb](https://github.com/tibuntu/renovate-mcp/commit/93ccbfb89d1fc4607076f4e5ed87e5cc8fb89b2d))
-* **prompts:** route debug-package-rule through explain_dependency ([20a5244](https://github.com/tibuntu/renovate-mcp/commit/20a5244a6789c2b3df8b591d31c581b29caba060))
-* **resources:** add renovate://options, renovate://option/{name} and renovate://managers ([8530ae5](https://github.com/tibuntu/renovate-mcp/commit/8530ae55d0555be6bc615af56df0f1fcfcd8a76a))
-* **write_config:** round-trip package.json#renovate writes ([33c829d](https://github.com/tibuntu/renovate-mcp/commit/33c829d3bbbd33af25decf2ccf0ca408785ed223))
+**Ask why a dependency was or wasn't updated.** The new `explain_dependency` tool takes a `dry_run` report (inline or via `reportPath`) and a dependency name, and returns every place Renovate found it: manager, file, current value, datasource, the `skipReason` with a hint on how to fix it, proposed updates and warnings. Pass a config as well and it lists the `packageRules` that matched, using the same faithful matcher worker as `annotate_dry_run`. Renovate already recorded all of this in the report, but the report was either too large to read inline or stripped by `summaryOnly`; now it is one call, and it needs no Renovate run beyond the dry run you already have.
 
+**A reference for every config option.** Three new resources: `renovate://options` lists all config options, split into repository options and self-hosted-only options; `renovate://option/{name}` returns one option's full definition (type, default, allowed values, deprecation notice, supported managers); `renovate://managers` lists every manager name `matchManagers` accepts. Like the preset catalogue, the data is a snapshot of the bundled Renovate version (487 options from 44.65.5) and is regenerated on every Renovate bump, so the assistant stops guessing option names and defaults.
 
-### Bug Fixes
+**Workflow prompts.** `design-renovate-config`, `debug-package-rule` and `author-custom-manager` package the documented tool sequences into MCP prompts. Claude Code shows them as slash commands, for example `/mcp__renovate__design-renovate-config`. Each one starts with `check_setup` and only calls `write_config` after you have confirmed.
 
-* **deps:** update dependency ignore to v7.0.9 ([d76c33c](https://github.com/tibuntu/renovate-mcp/commit/d76c33c02fed331ef38b98a0dc8f3e1c53295b03))
-* **write_config:** give the validation temp file a .json suffix ([32db1d5](https://github.com/tibuntu/renovate-mcp/commit/32db1d5da839a451c610ec38ddcdb54847ef053f))
+**Three new lint rules.** `automerge-includes-major` flags a `packageRules` entry that automerges without restricting update types, or restricts them but includes `major`. `duplicate-package-rule-matchers` flags two rules with identical selectors, where the later one silently overrides the earlier one. `host-rule-inline-secret` flags a plaintext `token` or `password` in the `hostRules` of a committed config; the finding names the field, never the value. Checks that Renovate's own validator already performs were deliberately left out.
+
+**`write_config` can now edit `package.json` safely.** Until now, writing to `package.json` replaced the whole file with the Renovate config: `name`, `version` and `dependencies` were gone, and validation passed because the result was a valid Renovate config. The write is now scoped to the `renovate` key, every other key stays untouched, and validation runs on the Renovate slice only. `force: true` skips validation but keeps the nested write. If `package.json` does not exist, the tool refuses with `package-json-missing` instead of creating one; use `renovate.json` for that.
+
+### Fixes & improvements
+
+* The temp file `write_config` hands to `renovate-config-validator` had no `.json` suffix. The validator dispatches on the extension, so with Renovate 44 every validated write failed with "File could not be parsed", and older versions quietly validated nothing. The fake-validator tests never noticed; a test now pins the suffix.
+* Dependency updates: `ignore` 7.0.9.
+
+> **Upgrading:** `write_config` with `filename: "package.json"` now edits only the `renovate` key and refuses when the file is missing; `force: true` on that target no longer rewrites the whole file. `lint_config` can report three new rule IDs, so callers that filter findings by ID should add them to their lists. Everything else is additive.
 
 ## [1.4.11](https://github.com/tibuntu/renovate-mcp/compare/v1.4.10...v1.4.11) (2026-09-06)
 
