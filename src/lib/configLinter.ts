@@ -10,7 +10,8 @@ export type LintRuleId =
   | "empty-extends"
   | "contradictory-disabled-with-package-rules"
   | "package-rule-without-action"
-  | "invalid-schedule";
+  | "invalid-schedule"
+  | "automerge-includes-major";
 
 export interface LintFinding {
   ruleId: LintRuleId;
@@ -268,6 +269,7 @@ export function lintConfig(config: unknown): LintFinding[] {
   checkAutomergeWithoutType(config, findings);
   checkContradictoryDisabled(config, findings);
   checkPackageRuleWithoutAction(config, findings);
+  checkAutomergeIncludesMajor(config, findings);
   return findings;
 }
 
@@ -366,6 +368,54 @@ function checkAutomergeWithoutType(config: unknown, findings: LintFinding[]): vo
       }
     });
   }
+}
+
+function checkAutomergeIncludesMajor(
+  config: unknown,
+  findings: LintFinding[],
+): void {
+  if (!isPlainObject(config)) return;
+  const pkgRules = config.packageRules;
+  if (!Array.isArray(pkgRules)) return;
+
+  // ponytail: suppressing the WHOLE rule on any later `matchUpdateTypes:
+  // ["major"]` + `automerge: false` guard entry, without checking that the
+  // guard's selectors actually cover the same deps as the offending entry.
+  // Ceiling: a guard scoped to a different dep subset silently suppresses
+  // findings for unrelated entries. Upgrade path: track guard ordering /
+  // selector overlap per-entry if false negatives show up in practice.
+  const hasLaterMajorGuard = pkgRules.some((entry) => {
+    if (!isPlainObject(entry)) return false;
+    if (entry.automerge !== false) return false;
+    return (
+      Array.isArray(entry.matchUpdateTypes) &&
+      entry.matchUpdateTypes.includes("major")
+    );
+  });
+  if (hasLaterMajorGuard) return;
+
+  pkgRules.forEach((entry, i) => {
+    if (!isPlainObject(entry)) return;
+    if (entry.automerge !== true) return;
+    const updateTypes = entry.matchUpdateTypes;
+    const includesMajor =
+      updateTypes === undefined ||
+      (Array.isArray(updateTypes) && updateTypes.includes("major"));
+    if (!includesMajor) return;
+    findings.push({
+      ruleId: "automerge-includes-major",
+      severity: "warn",
+      path: `packageRules[${i}].automerge`,
+      value: "true",
+      message:
+        `packageRules[${i}] has automerge: true with matchUpdateTypes ${
+          updateTypes === undefined ? "absent" : 'including "major"'
+        }, so major version bumps will be merged automatically without review.`,
+      suggestion:
+        'Add "matchUpdateTypes": ["minor", "patch"] (or "pin" / "digest") to this rule, ' +
+        'or add a later rule with matchUpdateTypes: ["major"] and automerge: false.',
+    });
+  });
 }
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
