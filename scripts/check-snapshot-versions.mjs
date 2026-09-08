@@ -29,6 +29,10 @@ export const SNAPSHOTS = Object.freeze([
     file: "src/data/migrations.generated.ts",
     regenerateCmd: "npm run generate:migrations",
   }),
+  Object.freeze({
+    file: "src/data/options.generated.ts",
+    regenerateCmd: "npm run generate:options",
+  }),
 ]);
 
 const RENOVATE_VERSION_RE = /export const RENOVATE_VERSION\s*=\s*"([^"]+)";/;
