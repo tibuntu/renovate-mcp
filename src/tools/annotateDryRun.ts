@@ -1,9 +1,9 @@
-import { promises as fs } from "node:fs";
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { locateConfig } from "../lib/configLocations.js";
 import { resolveConfig } from "../lib/presetResolver.js";
-import { identityKey } from "../lib/dryRunDiff.js";
+import { extractReport, identityKey, readArray, readRecord } from "../lib/dryRunDiff.js";
+import { readReportPath } from "../lib/reportInput.js";
 import {
   analyzePackageRules,
   MATCHER_META,
@@ -33,29 +33,6 @@ interface UpdateEntry {
     updateType?: unknown;
   };
   context: Record<string, unknown>;
-}
-
-function extractReport(input: unknown): unknown {
-  if (input && typeof input === "object" && !Array.isArray(input)) {
-    const obj = input as Record<string, unknown>;
-    if ("report" in obj && obj.report && typeof obj.report === "object") {
-      return obj.report;
-    }
-  }
-  return input;
-}
-
-function readRecord(node: unknown, key: string): Record<string, unknown> | null {
-  if (!node || typeof node !== "object") return null;
-  const value = (node as Record<string, unknown>)[key];
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  return value as Record<string, unknown>;
-}
-
-function readArray(node: unknown, key: string): unknown[] | null {
-  if (!node || typeof node !== "object") return null;
-  const value = (node as Record<string, unknown>)[key];
-  return Array.isArray(value) ? value : null;
 }
 
 /** Walk repositories[*].branches[*].upgrades[] and lift matcher-relevant facts. */
@@ -98,24 +75,6 @@ function collectUpdateEntries(report: unknown): UpdateEntry[] {
     }
   }
   return out;
-}
-
-async function readReportPath(
-  reportPath: string,
-): Promise<{ ok: true; value: unknown } | { ok: false; error: string }> {
-  let raw: string;
-  try {
-    raw = await fs.readFile(reportPath, "utf8");
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return { ok: false, error: `Could not read reportPath (\`${reportPath}\`): ${msg}.` };
-  }
-  try {
-    return { ok: true, value: JSON.parse(raw) };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return { ok: false, error: `reportPath (\`${reportPath}\`) is not valid JSON: ${msg}.` };
-  }
 }
 
 export function registerAnnotateDryRun(server: McpServer): void {

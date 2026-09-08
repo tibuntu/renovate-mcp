@@ -18,6 +18,7 @@ Detailed reference for every tool and resource exposed by `renovate-mcp`. The [R
 - [`resolve_config_diff`](#resolve_config_diff)
 - [`test_package_rules`](#test_package_rules)
 - [`annotate_dry_run`](#annotate_dry_run)
+- [`explain_dependency`](#explain_dependency)
 - [`migrate_config`](#migrate_config)
 - [`write_config`](#write_config)
 
@@ -241,6 +242,22 @@ Returns one `annotation` per update (`manager`, `packageFile`, `depName`, `curre
 - **`fieldGaps`** — context fields the config's matchers needed but **no** update in the report carried (e.g. `datasource` is often absent from the report shape, so `matchDatasources` rules can't be evaluated). These updates' matchers appear under `unevaluatable` rather than as non-matches.
 
 Also returns `matchQuality` (`"faithful"` / `"preview"`), `reportSource` (`"inline"` / `"reportPath"`), `ruleCount`, `updateCount`, a `disclaimer`, and `warnings` (including the deprecated-matcher-key warning that points at [`migrate_config`](#migrate_config)). Run [`dry_run`](#dry_run) for full-fidelity confirmation.
+
+## `explain_dependency`
+
+Answer the most common Renovate support question — "why was/wasn't dependency X updated?" — from an existing `dry_run` report. Stateless and offline (no CLI, no network): run [`dry_run`](#dry_run) first, then pass its report here.
+
+The report already carries the answer: every extracted dependency under `repositories[*].packageFiles[manager][*].deps[]` has a `skipReason` / `skipStage`, an `updates` array, and `warnings`. `dry_run` either inlines the whole report (large, often truncated by clients) or drops `packageFiles` with `summaryOnly`, so this tool walks it for you.
+
+**Inputs.** A report — inline `report` (raw `{ repositories }` or a full `dry_run` summary with a `report` key) **or** `reportPath` (absolute path; pair with `dry_run`'s `reportOutputPath`), the same shapes as [`annotate_dry_run`](#annotate_dry_run) — plus `depName` (required). Matching is case-insensitive against both `depName` and `packageName`; exact by default, `partial: true` for substring matching. Optional `manager` restricts hits to one manager. Optionally add a config source — `repoPath` (same discovery as [`read_config`](#read_config)) or `configContent` — to attach `matchedRules` per hit.
+
+**Output.**
+
+- **`verdict`** — one line: `not found in report`, `skipped: <skipReason>` (one entry per distinct reason when hits differ), `up to date`, or `N update(s) available`.
+- **`hits`** — one per extracted occurrence: `repository`, `manager`, `packageFile`, `depName`, `packageName`, `currentValue`, `currentVersion`, `datasource`, `depType`, `skipReason`, `skipStage`, `updates` (`newVersion`, `newValue`, `updateType`, `branchName`; absent when the report came from `dryRunMode: "extract"`, where no lookup runs), `warnings` (`topic`, `message`), and — when a config source was given — `matchedRules` (`index`, `matchedBy`, `contributedConfig`), evaluated with Renovate's real matchers in the same worker as [`test_package_rules`](#test_package_rules).
+- **`hints`** — remedies. `not found` points at `enabledManagers`, `fileMatch` / `managerFilePatterns`, `ignorePaths`, and a `dryRunMode: "extract"` re-run; a small hand-maintained map turns the common skip reasons (`ignored`, `disabled`, `invalid-value`, `unsupported-datasource`, `github-token-required`, `internal-package`, …) into a one-line fix, and unknown reasons get a generic hint.
+- **`relatedProblems`** — report-level and per-repository `problems` entries whose message (or structured `depName` / `packageName`) mentions the dependency; repo-level entries carry a `repository` key.
+- **`reportSource`** (`"inline"` / `"reportPath"`), `configPath` and `matchQuality` (`"faithful"` / `"preview"`, only when a config source was given), and `warnings`. If the matcher worker is unavailable the tool degrades to the same approximate glob-only preview as `annotate_dry_run` and says so in `warnings`.
 
 ## `migrate_config`
 

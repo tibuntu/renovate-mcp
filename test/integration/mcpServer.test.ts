@@ -11,7 +11,7 @@ afterEach(async () => {
 });
 
 describe("MCP server stdio handshake", () => {
-  it("lists all sixteen tools with expected names", async () => {
+  it("lists all seventeen tools with expected names", async () => {
     session = await startServer();
     const res = await session.request<{ tools: Array<{ name: string }> }>("tools/list");
     const names = (res.result?.tools ?? []).map((t) => t.name).sort();
@@ -21,6 +21,7 @@ describe("MCP server stdio handshake", () => {
       "dry_run",
       "dry_run_diff",
       "explain_config",
+      "explain_dependency",
       "get_version",
       "lint_config",
       "migrate_config",
