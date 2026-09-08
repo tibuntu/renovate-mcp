@@ -913,4 +913,106 @@ describe("lintConfig", () => {
       expect(findings[0]!.path).toBe("packageRules[3].enabled");
     });
   });
+
+  describe("automerge-includes-major", () => {
+    const RULE = "automerge-includes-major";
+
+    it("flags automerge:true with matchUpdateTypes absent", () => {
+      const findings = lintConfig({
+        packageRules: [
+          { matchPackageNames: ["lodash"], automerge: true },
+        ],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toHaveLength(1);
+      expect(findings[0]).toMatchObject({
+        ruleId: RULE,
+        severity: "warn",
+        path: "packageRules[0].automerge",
+      });
+      expect(findings[0]!.suggestion).toContain("matchUpdateTypes");
+    });
+
+    it("flags automerge:true with matchUpdateTypes including 'major'", () => {
+      const findings = lintConfig({
+        packageRules: [
+          {
+            matchPackageNames: ["lodash"],
+            automerge: true,
+            matchUpdateTypes: ["minor", "major"],
+          },
+        ],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toHaveLength(1);
+      expect(findings[0]!.path).toBe("packageRules[0].automerge");
+    });
+
+    it("does not flag automerge:true with matchUpdateTypes excluding 'major'", () => {
+      const findings = lintConfig({
+        packageRules: [
+          {
+            matchPackageNames: ["lodash"],
+            automerge: true,
+            matchUpdateTypes: ["minor", "patch"],
+          },
+        ],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toEqual([]);
+    });
+
+    it("does not flag top-level automerge:true", () => {
+      const findings = lintConfig({ automerge: true }).filter(
+        (f) => f.ruleId === RULE,
+      );
+      expect(findings).toEqual([]);
+    });
+
+    it("does not flag automerge:false", () => {
+      const findings = lintConfig({
+        packageRules: [{ matchPackageNames: ["lodash"], automerge: false }],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toEqual([]);
+    });
+
+    it("suppresses the whole rule when a later guard entry pairs matchUpdateTypes:['major'] with automerge:false", () => {
+      const findings = lintConfig({
+        packageRules: [
+          { matchPackageNames: ["lodash"], automerge: true },
+          { matchUpdateTypes: ["major"], automerge: false },
+        ],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toEqual([]);
+    });
+
+    it("does not suppress when the guard entry lacks automerge:false", () => {
+      const findings = lintConfig({
+        packageRules: [
+          { matchPackageNames: ["lodash"], automerge: true },
+          { matchUpdateTypes: ["major"] },
+        ],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toHaveLength(1);
+    });
+
+    it("emits one finding per offending entry when no guard is present", () => {
+      const findings = lintConfig({
+        packageRules: [
+          { matchPackageNames: ["a"], automerge: true },
+          { matchPackageNames: ["b"], automerge: true, matchUpdateTypes: ["patch"] },
+          { matchPackageNames: ["c"], automerge: true, matchUpdateTypes: ["major"] },
+        ],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toHaveLength(2);
+      const paths = findings.map((f) => f.path).sort();
+      expect(paths).toEqual(["packageRules[0].automerge", "packageRules[2].automerge"]);
+    });
+
+    it("is robust to malformed packageRules entries", () => {
+      expect(() =>
+        lintConfig({
+          packageRules: ["a string", null, 42, { automerge: true }],
+        }),
+      ).not.toThrow();
+    });
+  });
+
 });

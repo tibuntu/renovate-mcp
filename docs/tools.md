@@ -164,8 +164,9 @@ Schema validation catches structural bugs; the linter catches Renovate-specific 
 - `contradictory-disabled-with-package-rules`
 - `package-rule-without-action`
 - `invalid-schedule`
+- `automerge-includes-major`
 
-The ruleset is intentionally small, scoped to the regex-aware and manager-aware fields plus a handful of `packageRules`-level footguns, and tuned to avoid false positives on benign exact strings containing a `.`. The valid-manager list is snapshotted from the `renovate` devDep; unknown names get a Damerau-Levenshtein "did you mean?" suggestion when something close enough exists. The `deprecated-key` rule scans the top level plus `packageRules` / `hostRules` / `customManagers` entries for keys Renovate has renamed (e.g. `masterIssue` → `dependencyDashboard`); the rename is embedded in the finding message and the user is pointed at [`migrate_config`](#migrate_config) to auto-apply.
+The ruleset is intentionally small, scoped to the regex-aware and manager-aware fields plus a handful of `packageRules`-level footguns, and tuned to avoid false positives on benign exact strings containing a `.`. The valid-manager list is snapshotted from the `renovate` devDep; unknown names get a Damerau-Levenshtein "did you mean?" suggestion when something close enough exists. The `deprecated-key` rule scans the top level plus `packageRules` / `hostRules` / `customManagers` entries for keys Renovate has renamed (e.g. `masterIssue` → `dependencyDashboard`); the rename is embedded in the finding message and the user is pointed at [`migrate_config`](#migrate_config) to auto-apply. The `automerge-includes-major` rule flags a `packageRules` entry with `automerge: true` whose `matchUpdateTypes` is absent or includes `"major"`, since major bumps then merge automatically without review; it's suppressed for the whole config only when a later entry pairs `matchUpdateTypes: ["major"]` with `automerge: false` as an explicit guard (a heuristic that doesn't verify the guard actually covers the same deps).
 
 ## `dry_run`
 
