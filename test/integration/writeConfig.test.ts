@@ -82,6 +82,32 @@ describe("write_config", () => {
     expect(written).toMatchObject({ extends: ["config:recommended"] });
   });
 
+  it("hands the validator a temp path ending in .json (renovate-config-validator dispatches on extension)", async () => {
+    // The real validator's getParsedContent() switches on upath.extname() and
+    // throws "Unsupported file type" for anything else — a suffix-less temp
+    // name makes every non-force write fail against the bundled validator.
+    const record = path.join(repo, "validator-saw.json");
+    const validator = await makeFakeValidator(repo, "fake-record.mjs", 0, record);
+    session = await startServer({ RENOVATE_CONFIG_VALIDATOR_BIN: validator });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "write_config",
+      arguments: {
+        repoPath: repo,
+        config: { extends: ["config:recommended"] },
+      },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    const seen = await readRecord(record);
+    expect(path.extname(seen.file)).toBe(".json");
+    expect(path.basename(seen.file)).toMatch(/^renovate\.json\.renovate-mcp-tmp-/);
+    expect(JSON.parse(seen.content)).toEqual({ extends: ["config:recommended"] });
+  });
+
   it("refuses to write and leaves no files behind when validation fails", async () => {
     const validator = await makeFakeValidator(repo, "fake-fail.mjs", 1);
     session = await startServer({ RENOVATE_CONFIG_VALIDATOR_BIN: validator });
