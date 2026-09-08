@@ -12,7 +12,8 @@ export type LintRuleId =
   | "package-rule-without-action"
   | "invalid-schedule"
   | "automerge-includes-major"
-  | "duplicate-package-rule-matchers";
+  | "duplicate-package-rule-matchers"
+  | "host-rule-inline-secret";
 
 export interface LintFinding {
   ruleId: LintRuleId;
@@ -272,6 +273,7 @@ export function lintConfig(config: unknown): LintFinding[] {
   checkPackageRuleWithoutAction(config, findings);
   checkAutomergeIncludesMajor(config, findings);
   checkDuplicatePackageRuleMatchers(config, findings);
+  checkHostRuleInlineSecret(config, findings);
   return findings;
 }
 
@@ -471,6 +473,38 @@ function checkDuplicatePackageRuleMatchers(
       });
     }
   }
+}
+
+const HOST_RULE_SECRET_FIELDS = ["token", "password"] as const;
+
+function checkHostRuleInlineSecret(
+  config: unknown,
+  findings: LintFinding[],
+): void {
+  if (!isPlainObject(config)) return;
+  const hostRules = config.hostRules;
+  if (!Array.isArray(hostRules)) return;
+
+  hostRules.forEach((entry, i) => {
+    if (!isPlainObject(entry)) return;
+    for (const field of HOST_RULE_SECRET_FIELDS) {
+      const value = entry[field];
+      if (typeof value !== "string" || value.length === 0) continue;
+      if (value.includes("{{")) continue;
+      findings.push({
+        ruleId: "host-rule-inline-secret",
+        severity: "warn",
+        path: `hostRules[${i}].${field}`,
+        value: field,
+        message:
+          `hostRules[${i}].${field} is an inline secret. Repo config is committed and ` +
+          "readable by everyone with access to the repo.",
+        suggestion:
+          `Move the value into hostRules[${i}].encrypted, use a template like ` +
+          '"{{ secrets.NAME }}", or keep it in the self-hosted/global config instead.',
+      });
+    }
+  });
 }
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {

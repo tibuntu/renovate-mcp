@@ -1111,4 +1111,91 @@ describe("lintConfig", () => {
       expect(findings[0]!.path).toBe("packageRules[4]");
     });
   });
+
+  describe("host-rule-inline-secret", () => {
+    const RULE = "host-rule-inline-secret";
+
+    it("flags a plain-string token", () => {
+      const findings = lintConfig({
+        hostRules: [{ matchHost: "example.com", token: "sk-abc123" }],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toHaveLength(1);
+      expect(findings[0]).toMatchObject({
+        ruleId: RULE,
+        severity: "warn",
+        path: "hostRules[0].token",
+      });
+      expect(findings[0]!.suggestion).toContain("encrypted");
+    });
+
+    it("flags a plain-string password", () => {
+      const findings = lintConfig({
+        hostRules: [{ matchHost: "example.com", password: "hunter2" }],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toHaveLength(1);
+      expect(findings[0]!.path).toBe("hostRules[0].password");
+    });
+
+    it("never echoes the secret value in the finding", () => {
+      const findings = lintConfig({
+        hostRules: [{ token: "super-secret-value" }],
+      }).filter((f) => f.ruleId === RULE);
+      expect(JSON.stringify(findings)).not.toContain("super-secret-value");
+    });
+
+    it("does not flag a templated token", () => {
+      const findings = lintConfig({
+        hostRules: [{ token: "{{ secrets.NPM_TOKEN }}" }],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toEqual([]);
+    });
+
+    it("does not flag a token inside the encrypted sub-object", () => {
+      const findings = lintConfig({
+        hostRules: [{ matchHost: "example.com", encrypted: { token: "abc123" } }],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toEqual([]);
+    });
+
+    it("does not flag an empty-string token", () => {
+      const findings = lintConfig({
+        hostRules: [{ token: "" }],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toEqual([]);
+    });
+
+    it("does not flag a non-string token", () => {
+      const findings = lintConfig({
+        hostRules: [{ token: 12345 }],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toEqual([]);
+    });
+
+    it("emits one finding per secret field on the same entry", () => {
+      const findings = lintConfig({
+        hostRules: [{ token: "abc123", password: "hunter2" }],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toHaveLength(2);
+    });
+
+    it("is robust to malformed hostRules entries", () => {
+      expect(() =>
+        lintConfig({
+          hostRules: ["a string", null, 42, { token: "abc123" }],
+        }),
+      ).not.toThrow();
+      const findings = lintConfig({
+        hostRules: ["a string", null, 42, { token: "abc123" }],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toHaveLength(1);
+      expect(findings[0]!.path).toBe("hostRules[3].token");
+    });
+
+    it("does not fire when hostRules is absent", () => {
+      const findings = lintConfig({ extends: ["config:recommended"] }).filter(
+        (f) => f.ruleId === RULE,
+      );
+      expect(findings).toEqual([]);
+    });
+  });
 });
