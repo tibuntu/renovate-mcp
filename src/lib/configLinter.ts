@@ -11,7 +11,8 @@ export type LintRuleId =
   | "contradictory-disabled-with-package-rules"
   | "package-rule-without-action"
   | "invalid-schedule"
-  | "automerge-includes-major";
+  | "automerge-includes-major"
+  | "duplicate-package-rule-matchers";
 
 export interface LintFinding {
   ruleId: LintRuleId;
@@ -270,6 +271,7 @@ export function lintConfig(config: unknown): LintFinding[] {
   checkContradictoryDisabled(config, findings);
   checkPackageRuleWithoutAction(config, findings);
   checkAutomergeIncludesMajor(config, findings);
+  checkDuplicatePackageRuleMatchers(config, findings);
   return findings;
 }
 
@@ -416,6 +418,59 @@ function checkAutomergeIncludesMajor(
         'or add a later rule with matchUpdateTypes: ["major"] and automerge: false.',
     });
   });
+}
+
+function selectorSignature(entry: Record<string, unknown>): string | null {
+  const keys = Object.keys(entry).filter(isSelectorKey).sort();
+  if (keys.length === 0) return null;
+  const normalized: Record<string, unknown> = {};
+  for (const key of keys) {
+    normalized[key] = normalizeSelectorValue(entry[key]);
+  }
+  return JSON.stringify(normalized);
+}
+
+function normalizeSelectorValue(v: unknown): unknown {
+  if (Array.isArray(v)) {
+    return v
+      .map(normalizeSelectorValue)
+      .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+  }
+  return v;
+}
+
+function checkDuplicatePackageRuleMatchers(
+  config: unknown,
+  findings: LintFinding[],
+): void {
+  if (!isPlainObject(config)) return;
+  const pkgRules = config.packageRules;
+  if (!Array.isArray(pkgRules)) return;
+
+  const signatures: (string | null)[] = pkgRules.map((entry) =>
+    isPlainObject(entry) ? selectorSignature(entry) : null,
+  );
+
+  for (let i = 0; i < signatures.length; i++) {
+    if (signatures[i] === null) continue;
+    for (let j = i + 1; j < signatures.length; j++) {
+      if (signatures[j] === null || signatures[j] !== signatures[i]) continue;
+      findings.push({
+        ruleId: "duplicate-package-rule-matchers",
+        severity: "warn",
+        path: `packageRules[${j}]`,
+        value: `packageRules[${i}]`,
+        message:
+          `packageRules[${j}] has the same selector(s) as packageRules[${i}]. ` +
+          "Renovate applies both, and packageRules[" +
+          j +
+          "]'s action keys silently override packageRules[" +
+          i +
+          "]'s where they overlap.",
+        suggestion: `Merge packageRules[${i}] and packageRules[${j}] into one rule.`,
+      });
+    }
+  }
 }
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {

@@ -1015,4 +1015,100 @@ describe("lintConfig", () => {
     });
   });
 
+  describe("duplicate-package-rule-matchers", () => {
+    const RULE = "duplicate-package-rule-matchers";
+
+    it("flags a later entry with the same selector as an earlier one", () => {
+      const findings = lintConfig({
+        packageRules: [
+          { matchPackageNames: ["lodash"], groupName: "a" },
+          { matchPackageNames: ["lodash"], automerge: true },
+        ],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toHaveLength(1);
+      expect(findings[0]).toMatchObject({
+        ruleId: RULE,
+        severity: "warn",
+        path: "packageRules[1]",
+      });
+      expect(findings[0]!.message).toContain("packageRules[0]");
+      expect(findings[0]!.message).toContain("packageRules[1]");
+      expect(findings[0]!.suggestion).toBeDefined();
+    });
+
+    it("ignores array order when comparing selector values", () => {
+      const findings = lintConfig({
+        packageRules: [
+          { matchPackageNames: ["a", "b"], groupName: "x" },
+          { matchPackageNames: ["b", "a"], groupName: "y" },
+        ],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toHaveLength(1);
+    });
+
+    it("does not flag entries with different selector values", () => {
+      const findings = lintConfig({
+        packageRules: [
+          { matchPackageNames: ["lodash"], groupName: "a" },
+          { matchPackageNames: ["typescript"], groupName: "b" },
+        ],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toEqual([]);
+    });
+
+    it("does not flag entries with different selector key sets", () => {
+      const findings = lintConfig({
+        packageRules: [
+          { matchPackageNames: ["lodash"], groupName: "a" },
+          { matchDepNames: ["lodash"], groupName: "b" },
+        ],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toEqual([]);
+    });
+
+    it("does not flag entries with no selector keys at all", () => {
+      const findings = lintConfig({
+        packageRules: [{ groupName: "a" }, { groupName: "b" }],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toEqual([]);
+    });
+
+    it("fires once per duplicate pair among three identical entries", () => {
+      const findings = lintConfig({
+        packageRules: [
+          { matchPackageNames: ["lodash"], groupName: "a" },
+          { matchPackageNames: ["lodash"], groupName: "b" },
+          { matchPackageNames: ["lodash"], groupName: "c" },
+        ],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toHaveLength(3);
+      const paths = findings.map((f) => f.path).sort();
+      expect(paths).toEqual(["packageRules[1]", "packageRules[2]", "packageRules[2]"]);
+    });
+
+    it("is robust to malformed packageRules entries", () => {
+      expect(() =>
+        lintConfig({
+          packageRules: [
+            "a string",
+            null,
+            42,
+            { matchPackageNames: ["x"] },
+            { matchPackageNames: ["x"] },
+          ],
+        }),
+      ).not.toThrow();
+      const findings = lintConfig({
+        packageRules: [
+          "a string",
+          null,
+          42,
+          { matchPackageNames: ["x"] },
+          { matchPackageNames: ["x"] },
+        ],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toHaveLength(1);
+      expect(findings[0]!.path).toBe("packageRules[4]");
+    });
+  });
 });
