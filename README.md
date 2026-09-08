@@ -59,7 +59,7 @@ Seventeen tools, three resource templates, and three workflow prompts. Each tool
 | [`annotate_dry_run`](docs/tools.md#annotate_dry_run) | Attribute each proposed update in a `dry_run` report to the `packageRules` that caused it; flags rules that never matched and report fields the matchers needed but the report lacked. Stateless + offline. |
 | [`explain_dependency`](docs/tools.md#explain_dependency) | Answer "why was/wasn't dependency X updated?" from a `dry_run` report: per-occurrence `skipReason`, proposed `updates`, `warnings`, a one-line verdict and remedy hints; optionally the `packageRules` that matched it. Stateless + offline. |
 | [`migrate_config`](docs/tools.md#migrate_config) | Apply Renovate's built-in migrations and return the migrated config plus a unified diff. Does not write. |
-| [`write_config`](docs/tools.md#write_config) | Validate, then atomically write a config to disk. Preserves comments/key order on existing JSON-with-comments files. |
+| [`write_config`](docs/tools.md#write_config) | Validate, then atomically write a config to disk. Preserves comments/key order on existing JSON-with-comments files; for `package.json` edits only the nested `renovate` key. |
 | [`renovate://presets`](docs/tools.md#renovatepresets) (resource) | Markdown index of all built-in presets grouped by namespace. |
 | [`renovate://presets/{namespace}`](docs/tools.md#renovatepresetsnamespace) (resource) | Markdown listing for a single namespace. |
 | [`renovate://preset/{name}`](docs/tools.md#renovatepresetname) (resource) | Expanded JSON body for one preset. |

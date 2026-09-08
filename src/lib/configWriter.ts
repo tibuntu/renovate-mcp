@@ -38,6 +38,17 @@ function isJson5Target(targetPath: string): boolean {
   return path.extname(targetPath) === ".json5";
 }
 
+/**
+ * `package.json` holds the Renovate config under its top-level `renovate` key.
+ * The writer must diff against that slice only — diffing against the whole
+ * document would delete `name`, `version`, `dependencies`, … (the exact bug
+ * this branch fixes). Exported so `write_config` can pick the same branch for
+ * its validation and `force` handling.
+ */
+export function isPackageJsonTarget(targetPath: string): boolean {
+  return path.basename(targetPath) === "package.json";
+}
+
 export type SerializeArgs = {
   /**
    * The on-disk path the bytes will eventually be written to. Used by the
@@ -75,12 +86,22 @@ const JSON5_REFUSAL_HINT =
   "are supported and will be preserved).";
 
 function genericRefusalHint(targetPath: string): string {
+  const corrupted = `The existing file at ${targetPath} could not be parsed as JSON or JSONC. It may be corrupted. `;
+  // force=true never rewrites package.json wholesale (that IS the clobber), so
+  // don't offer it as an escape hatch there.
+  if (isPackageJsonTarget(targetPath)) {
+    return corrupted + "Fix the file by hand and retry — force=true does not rewrite package.json.";
+  }
   return (
-    `The existing file at ${targetPath} could not be parsed as JSON or JSONC. It may be corrupted. ` +
+    corrupted +
     "Pass force=true with confirmForce='YES_OVERRIDE_VALIDATION' to overwrite with a fresh JSON " +
     "rendering, or fix the file by hand and retry."
   );
 }
+
+const PACKAGE_JSON_MISSING_HINT =
+  "write_config will not create a package.json just to hold Renovate config. " +
+  "Write renovate.json instead (omit filename, or pass filename: 'renovate.json').";
 
 // Parse errors of these codes are non-fatal in JSONC: `allowTrailingComma`
 // makes the parser still emit `InvalidCommentToken` / `TrailingCommaExpected`-
@@ -199,7 +220,12 @@ function planEdits(
 }
 
 export function serializeConfig(args: SerializeArgs): SerializeResult {
+  const packageJson = isPackageJsonTarget(args.targetPath);
+
   if (args.existing === undefined) {
+    if (packageJson) {
+      return { refuse: true, reason: "package-json-missing", hint: PACKAGE_JSON_MISSING_HINT };
+    }
     return {
       mode: "fresh-write",
       // MUST stay byte-identical to the literal expression currently inlined
@@ -251,7 +277,12 @@ export function serializeConfig(args: SerializeArgs): SerializeResult {
     existingObj[key] = getNodeValue(child);
   }
 
-  const planned = planEdits(root, args.nextConfig, [], existingObj);
+  // package.json: diff against the `renovate` slice only. `planEdits` already
+  // falls back to a single SET at the parent path when the existing value is
+  // not a plain object, which covers "key absent" for free.
+  const planned = packageJson
+    ? planEdits(root, args.nextConfig, ["renovate"], existingObj.renovate)
+    : planEdits(root, args.nextConfig, [], existingObj);
 
   // Detect line endings: preserve CRLF if the existing file uses it.
   const eol = existing.includes("\r\n") ? "\r\n" : "\n";

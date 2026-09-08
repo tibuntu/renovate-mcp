@@ -6,7 +6,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { run, resolveRenovateTool, formatMissingBinaryError } from "../lib/renovateCli.js";
 import type { RuntimeWarning } from "../lib/runtimeWarnings.js";
 import { configRecord, filenameString, pathString } from "../lib/inputLimits.js";
-import { serializeConfig } from "../lib/configWriter.js";
+import { serializeConfig, isPackageJsonTarget } from "../lib/configWriter.js";
 
 // Resolve symlinks in `p`, walking up to the nearest existing ancestor when
 // tail components don't exist yet (e.g. a new subdir we're about to mkdir).
@@ -95,9 +95,11 @@ export function registerWriteConfig(server: McpServer): void {
       // round-trip-preserving edit. On `force: true` we deliberately SKIP
       // this read — per ADR-0002 the force path is a clean rewrite via
       // JSON.stringify, and the user has accepted that comments/key-order
-      // will be lost.
+      // will be lost. Exception: package.json. A whole-file rewrite there IS
+      // the clobber, so the nested round-trip at ["renovate"] always runs.
+      const packageJson = isPackageJsonTarget(target);
       let existing: string | undefined = undefined;
-      if (!force) {
+      if (!force || packageJson) {
         try {
           existing = await fs.readFile(target, "utf8");
         } catch (err) {
@@ -137,17 +139,32 @@ export function registerWriteConfig(server: McpServer): void {
       // `flag: "wx"` (O_CREAT|O_EXCL) so a pre-existing symlink at the temp
       // path is refused with EEXIST instead of silently followed (issue #129).
       const tmp = `${target}.renovate-mcp-tmp-${randomUUID()}`;
+      // package.json: the validator must see ONLY the Renovate slice — handed
+      // the full file it would reject name/version/dependencies as unknown
+      // options. The slice gets its own temp file (never named package.json,
+      // `.json` suffix so the validator's extension dispatch parses it).
+      const sliceTmp = packageJson
+        ? `${target}.renovate-mcp-slice-${randomUUID()}.json`
+        : undefined;
       await fs.mkdir(path.dirname(target), { recursive: true });
       await fs.writeFile(tmp, payload, { flag: "wx", mode: 0o600 });
 
       try {
+        if (sliceTmp) {
+          await fs.writeFile(sliceTmp, JSON.stringify(config, null, 2) + "\n", {
+            flag: "wx",
+            mode: 0o600,
+          });
+        }
         let valid = false;
         let validationOutput = "";
         let validatorMissing = false;
         let runtimeWarnings: RuntimeWarning[] = [];
         try {
           const tool = resolveRenovateTool("renovate-config-validator");
-          const v = await run(tool.cmd, [...tool.prefixArgs, tmp], { timeoutMs: 30_000 });
+          const v = await run(tool.cmd, [...tool.prefixArgs, sliceTmp ?? tmp], {
+            timeoutMs: 30_000,
+          });
           validationOutput = (v.stdout + v.stderr).trim();
           valid = v.exitCode === 0;
           runtimeWarnings = v.runtimeWarnings;
@@ -198,6 +215,7 @@ export function registerWriteConfig(server: McpServer): void {
         // No-op when rename already moved tmp (ENOENT); otherwise cleans up on
         // validation failure or a mid-flight rename error (see #57).
         await fs.unlink(tmp).catch(() => undefined);
+        if (sliceTmp) await fs.unlink(sliceTmp).catch(() => undefined);
       }
     },
   );

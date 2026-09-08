@@ -38,14 +38,23 @@ async function makeFakeValidator(
   dir: string,
   name: string,
   exitCode: 0 | 1,
+  /** When set, the fake writes `{ file, content }` of the path it was handed here. */
+  recordPath?: string,
 ): Promise<string> {
   const file = path.join(dir, name);
+  const record = recordPath
+    ? `import { readFileSync, writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(recordPath)}, JSON.stringify({ file: process.argv[2], content: readFileSync(process.argv[2], "utf8") }));\n`
+    : "";
   await writeFile(
     file,
-    `#!/usr/bin/env node\n${exitCode === 0 ? "" : "console.error('fake validation error');"}\nprocess.exit(${exitCode});\n`,
+    `#!/usr/bin/env node\n${record}${exitCode === 0 ? "" : "console.error('fake validation error');"}\nprocess.exit(${exitCode});\n`,
   );
   await chmod(file, 0o755);
   return file;
+}
+
+async function readRecord(recordPath: string): Promise<{ file: string; content: string }> {
+  return JSON.parse(await readFile(recordPath, "utf8"));
 }
 
 describe("write_config", () => {
@@ -414,6 +423,82 @@ describe("write_config", () => {
     // Unquoted keys / trailing commas are gone.
     const written = await readFile(targetPath, "utf8");
     expect(written).toBe(JSON.stringify(newConfig, null, 2) + "\n");
+  });
+
+  describe("package.json#renovate", () => {
+    const pkg = {
+      name: "my-app",
+      version: "1.0.0",
+      dependencies: { zod: "^4" },
+      renovate: { extends: ["config:recommended"] },
+    };
+    const next = { extends: ["config:recommended", ":semanticCommits"] };
+
+    async function call(args: Record<string, unknown>) {
+      return session.request<{
+        content: Array<{ type: string; text: string }>;
+        isError?: boolean;
+      }>("tools/call", {
+        name: "write_config",
+        arguments: { repoPath: repo, filename: "package.json", config: next, ...args },
+      });
+    }
+
+    it("validates only the renovate slice and keeps name/version/dependencies on disk", async () => {
+      const record = path.join(repo, "validator-saw.json");
+      const validator = await makeFakeValidator(repo, "fake-record.mjs", 0, record);
+      session = await startServer({ RENOVATE_CONFIG_VALIDATOR_BIN: validator });
+      await writeFile(path.join(repo, "package.json"), JSON.stringify(pkg, null, 2) + "\n");
+
+      const res = await call({});
+
+      expect(res.result?.isError).toBeFalsy();
+      const payload = JSON.parse(res.result!.content[0]!.text);
+      expect(payload).toMatchObject({ wrote: true, path: "package.json", valid: true });
+
+      // The validator saw a file that is NOT package.json and holds only the slice.
+      const seen = await readRecord(record);
+      expect(path.basename(seen.file)).not.toBe("package.json");
+      expect(JSON.parse(seen.content)).toEqual(next);
+
+      // The full package.json keeps every sibling key.
+      const written = JSON.parse(await readFile(path.join(repo, "package.json"), "utf8"));
+      expect(written).toEqual({ ...pkg, renovate: next });
+
+      // No temp files (neither the full-file tmp nor the slice tmp) left behind.
+      const files = await readdir(repo);
+      expect(files.filter((f) => f.startsWith("package.json."))).toHaveLength(0);
+    });
+
+    it("force=true skips validation but STILL round-trips the nested key (no whole-file clobber)", async () => {
+      const validator = await makeFakeValidator(repo, "fake-fail.mjs", 1);
+      session = await startServer({ RENOVATE_CONFIG_VALIDATOR_BIN: validator });
+      await writeFile(path.join(repo, "package.json"), JSON.stringify(pkg, null, 2) + "\n");
+
+      const res = await call({ force: true, confirmForce: "YES_OVERRIDE_VALIDATION" });
+
+      expect(res.result?.isError).toBeFalsy();
+      const payload = JSON.parse(res.result!.content[0]!.text);
+      expect(payload).toMatchObject({ wrote: true, valid: false });
+
+      const written = JSON.parse(await readFile(path.join(repo, "package.json"), "utf8"));
+      expect(written).toEqual({ ...pkg, renovate: next });
+    });
+
+    it("refuses with 'package-json-missing' when package.json does not exist and creates nothing", async () => {
+      const validator = await makeFakeValidator(repo, "fake-pass.mjs", 0);
+      session = await startServer({ RENOVATE_CONFIG_VALIDATOR_BIN: validator });
+
+      const res = await call({});
+
+      expect(res.result?.isError).toBe(true);
+      const payload = JSON.parse(res.result!.content[0]!.text);
+      expect(payload).toMatchObject({ wrote: false, reason: "package-json-missing" });
+      expect(payload.hint).toContain("renovate.json");
+
+      const files = await readdir(repo);
+      expect(files.filter((f) => f.startsWith("package.json"))).toHaveLength(0);
+    });
   });
 
   it("rejects force=true without confirmForce", async () => {
