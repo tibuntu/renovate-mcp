@@ -138,11 +138,13 @@ export function registerWriteConfig(server: McpServer): void {
       // Randomize the suffix so two concurrent writes don't collide, and use
       // `flag: "wx"` (O_CREAT|O_EXCL) so a pre-existing symlink at the temp
       // path is refused with EEXIST instead of silently followed (issue #129).
-      const tmp = `${target}.renovate-mcp-tmp-${randomUUID()}`;
+      // Both temp names end in `.json`: renovate-config-validator dispatches
+      // on the file extension and rejects anything else as "Unsupported file
+      // type", which would fail every non-force write.
+      const tmp = `${target}.renovate-mcp-tmp-${randomUUID()}.json`;
       // package.json: the validator must see ONLY the Renovate slice — handed
       // the full file it would reject name/version/dependencies as unknown
-      // options. The slice gets its own temp file (never named package.json,
-      // `.json` suffix so the validator's extension dispatch parses it).
+      // options. The slice gets its own temp file, never named package.json.
       const sliceTmp = packageJson
         ? `${target}.renovate-mcp-slice-${randomUUID()}.json`
         : undefined;
