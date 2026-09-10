@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.1](https://github.com/tibuntu/renovate-mcp/compare/v1.5.0...v1.5.1) (2026-09-10)
+
+
+### Bug Fixes
+
+* **deps:** update dependency zod to v4.6.1 ([7fc0678](https://github.com/tibuntu/renovate-mcp/commit/7fc06784ac8a8da8259c6e2fc6b9debc9bc64ff1))
+
 ## [1.5.0](https://github.com/tibuntu/renovate-mcp/compare/v1.4.11...v1.5.0) (2026-09-08)
 
 This release adds a tool that answers **why Renovate did or didn't update a dependency**, gives the assistant an **authoritative reference for every config option** of the bundled Renovate version, and fixes a bug that made **every validated `write_config` fail** against Renovate 44. `write_config` also stops destroying `package.json`; that is a behaviour change, so please read the upgrade note below.
