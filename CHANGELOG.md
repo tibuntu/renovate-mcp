@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.3](https://github.com/tibuntu/renovate-mcp/compare/v1.5.2...v1.5.3) (2026-09-12)
+
+
+### Bug Fixes
+
+* **deps:** update dependency yaml to v2.9.1 ([9f60850](https://github.com/tibuntu/renovate-mcp/commit/9f60850a712ddab0ff3c72a23443bc87e3e24b81))
+
 ## [1.5.2](https://github.com/tibuntu/renovate-mcp/compare/v1.5.1...v1.5.2) (2026-09-11)
 
 
