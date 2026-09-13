@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.4](https://github.com/tibuntu/renovate-mcp/compare/v1.5.3...v1.5.4) (2026-09-13)
+
+
+### Bug Fixes
+
+* **deps:** update dependency renovate to v44.82.5 ([c3af9a6](https://github.com/tibuntu/renovate-mcp/commit/c3af9a6ac6b3b2a570df349134640e8ed7969721))
+* **deps:** update dependency zod to v4.6.4 ([45ee6c0](https://github.com/tibuntu/renovate-mcp/commit/45ee6c059c4455ccf8d4d83bd1a39ab5fc42eca4))
+
 ## [1.5.3](https://github.com/tibuntu/renovate-mcp/compare/v1.5.2...v1.5.3) (2026-09-12)
 
 
