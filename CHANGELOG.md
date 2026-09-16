@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.5](https://github.com/tibuntu/renovate-mcp/compare/v1.5.4...v1.5.5) (2026-09-16)
+
+
+### Bug Fixes
+
+* **deps:** update dependency fast-uri to ^4.1.5 ([36fbeef](https://github.com/tibuntu/renovate-mcp/commit/36fbeef423ea61eb2fada00a57d926d4063b60f5))
+* **deps:** update dependency zod to v4.6.5 ([01a2898](https://github.com/tibuntu/renovate-mcp/commit/01a2898bbec5f2eaee3e32a10b5ff09677e6dfce))
+
 ## [1.5.4](https://github.com/tibuntu/renovate-mcp/compare/v1.5.3...v1.5.4) (2026-09-13)
 
 
