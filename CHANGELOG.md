@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.5.6](https://github.com/tibuntu/renovate-mcp/compare/v1.5.5...v1.5.6) (2026-09-23)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @modelcontextprotocol/sdk to v1.30.1 ([f51c7bb](https://github.com/tibuntu/renovate-mcp/commit/f51c7bb4dcc6d985c8bda4ffff88ec65f33b2997))
+* **deps:** update dependency ignore to v7.0.10 ([4fd2f7d](https://github.com/tibuntu/renovate-mcp/commit/4fd2f7d7c71077afb23a61170c400910bb92bea8))
+* **deps:** update dependency smol-toml to v1.9.0 ([c4e733c](https://github.com/tibuntu/renovate-mcp/commit/c4e733c35a598342b608f35a6177b0762c31491d))
+
 ## [1.5.5](https://github.com/tibuntu/renovate-mcp/compare/v1.5.4...v1.5.5) (2026-09-20)
 
 
