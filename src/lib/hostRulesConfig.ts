@@ -51,8 +51,15 @@ function escapeRegex(s: string): string {
 }
 
 /**
- * Replace every literal occurrence of any secret in `text` with `[REDACTED]`.
- * No-op when `secrets` is empty.
+ * Secrets shorter than this are not scrubbed: redacting a 1-char "token"
+ * would blank every occurrence of that character in the log.
+ */
+const MIN_SECRET_LENGTH = 4;
+
+/**
+ * Replace every literal occurrence of any secret (of at least
+ * MIN_SECRET_LENGTH characters) in `text` with `[REDACTED]`. No-op when
+ * `secrets` is empty.
  */
 export function scrubSecrets(text: string, secrets: string[]): string {
   // Sort by length descending so that when one secret is a substring of
@@ -65,7 +72,7 @@ export function scrubSecrets(text: string, secrets: string[]): string {
   const alternatives = [
     ...new Set(
       secrets
-        .filter((s) => s.length > 0)
+        .filter((s) => s.length >= MIN_SECRET_LENGTH)
         .flatMap((s) => [s, encodeURIComponent(s)]),
     ),
   ]
