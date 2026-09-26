@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Only the latest released minor on npm receives security fixes. `renovate-mcp` is pre-1.0, so expect breaking changes between minors; pin loosely and upgrade when an advisory ships.
+Only the latest released minor on npm receives security fixes; pin loosely and upgrade promptly when an advisory ships.
 
 | Version | Supported |
 | --- | --- |
@@ -22,7 +22,7 @@ A maintainer will acknowledge the report within a few business days. If the issu
 In scope:
 
 - The `renovate-mcp` server itself (code under `src/`, the published npm package, the resources and tools it exposes over MCP).
-- Handling of auth tokens read from the environment (`GITHUB_TOKEN`, `GITLAB_TOKEN`, `RENOVATE_TOKEN`).
+- Handling of auth tokens read from the environment (`GITHUB_TOKEN`, `GITLAB_TOKEN`, `RENOVATE_TOKEN`, `GITHUB_COM_TOKEN`).
 - File writes performed by `write_config` against user-supplied paths.
 - HTTPS fetches performed by `resolve_config` when `externalPresets: true` (github.com / gitlab.com / custom endpoints).
 
