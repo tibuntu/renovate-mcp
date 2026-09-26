@@ -67,6 +67,40 @@ export class CommandTimeoutError extends Error {
   }
 }
 
+/** Pids of children still running; each is a process-group leader. */
+const liveChildren = new Set<number>();
+let exitHooksInstalled = false;
+
+/**
+ * SIGKILL every live child's process group. A detached child is no longer in
+ * the server's own group, so nothing else takes it down when the server
+ * exits or is signalled — and the in-process timeout dies with the server.
+ */
+export function killLiveChildren(): void {
+  for (const pid of liveChildren) {
+    try {
+      process.kill(-pid, "SIGKILL");
+    } catch {
+      // already gone
+    }
+  }
+  liveChildren.clear();
+}
+
+function installExitHooks(): void {
+  if (exitHooksInstalled) return;
+  exitHooksInstalled = true;
+  process.once("exit", killLiveChildren);
+  process.once("SIGINT", () => {
+    killLiveChildren();
+    process.exit(130);
+  });
+  process.once("SIGTERM", () => {
+    killLiveChildren();
+    process.exit(143);
+  });
+}
+
 export interface RunOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
@@ -98,6 +132,11 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
       stdio: ["pipe", "pipe", "pipe"],
       detached: true,
     });
+    const pid = child.pid;
+    if (pid !== undefined) {
+      liveChildren.add(pid);
+      installExitHooks();
+    }
 
     const stdoutBuf = new TailBuffer();
     const stderrBuf = new TailBuffer();
@@ -149,10 +188,12 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
     });
     child.on("error", (err) => {
       if (timer) clearTimeout(timer);
+      if (pid !== undefined) liveChildren.delete(pid);
       reject(err);
     });
     child.on("close", (code) => {
       if (timer) clearTimeout(timer);
+      if (pid !== undefined) liveChildren.delete(pid);
       // Flush trailing partial lines (output that didn't end with a newline).
       if (stdoutLineBuf && opts.onStdoutLine) {
         try {
