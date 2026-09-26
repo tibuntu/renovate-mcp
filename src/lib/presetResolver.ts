@@ -1,6 +1,7 @@
 import { PRESETS } from "../data/presets.generated.js";
 import { fetchExternalPreset, type FetchResult } from "./externalPresetFetcher.js";
 import { runMerge } from "./mergeWorker.js";
+import { isRecord } from "./util.js";
 
 export interface UnresolvedPreset {
   preset: string;
@@ -577,15 +578,11 @@ function mergeConfig(
     const aVal = out[key];
     if (Array.isArray(aVal) && Array.isArray(bVal)) {
       out[key] = [...aVal, ...bVal];
-    } else if (isPlainObject(aVal) && isPlainObject(bVal)) {
+    } else if (isRecord(aVal) && isRecord(bVal)) {
       out[key] = mergeConfig(aVal, bVal);
     } else {
       out[key] = bVal;
     }
   }
   return out;
-}
-
-function isPlainObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
 }

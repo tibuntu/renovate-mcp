@@ -13,6 +13,8 @@
  * context.
  */
 
+import { truncate } from "./util.js";
+
 const AUTH_PATTERNS: RegExp[] = [
   // A bare status code: not glued to other digits, and not a segment of a
   // dotted version like `1.403.0` (a trailing sentence period is still fine).
@@ -35,11 +37,6 @@ export interface LookupProblem {
 
 function matchesAuthPattern(text: string): boolean {
   return AUTH_PATTERNS.some((re) => re.test(text));
-}
-
-function truncate(s: string): string {
-  if (s.length <= MAX_MESSAGE_LENGTH) return s;
-  return `${s.slice(0, MAX_MESSAGE_LENGTH - 1)}…`;
 }
 
 function extractContext(parsed: Record<string, unknown>): string | undefined {
@@ -83,11 +80,11 @@ export function detectLookupProblems(log: string): LookupProblem[] {
       const errMsg = err && typeof err.message === "string" ? err.message : "";
       const combined = [msg, errMsg].filter(Boolean).join(" — ");
       if (!combined || !matchesAuthPattern(combined)) continue;
-      message = truncate(combined);
+      message = truncate(combined, MAX_MESSAGE_LENGTH);
       context = extractContext(parsed);
     } else {
       if (!matchesAuthPattern(line)) continue;
-      message = truncate(line);
+      message = truncate(line, MAX_MESSAGE_LENGTH);
     }
 
     const dedupeKey = context ? `${context}::${message}` : message;

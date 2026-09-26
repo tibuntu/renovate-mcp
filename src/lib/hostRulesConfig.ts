@@ -46,10 +46,6 @@ export function collectSecrets(hostRules: HostRule[]): string[] {
   return [...out];
 }
 
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 /**
  * Secrets shorter than this are not scrubbed: redacting a 1-char "token"
  * would blank every occurrence of that character in the log.
@@ -77,7 +73,7 @@ export function scrubSecrets(text: string, secrets: string[]): string {
     ),
   ]
     .sort((a, b) => b.length - a.length)
-    .map(escapeRegex);
+    .map((s) => RegExp.escape(s));
   if (!alternatives.length) return text;
   const pattern = new RegExp(alternatives.join("|"), "g");
   return text.replace(pattern, "[REDACTED]");

@@ -4,6 +4,7 @@ import type {
   PerContextResult,
   PerRuleResult,
 } from "./packageRulesWorker.js";
+import { isRecord } from "./util.js";
 
 /**
  * Worker entry point for faithful `packageRules` matching used by
@@ -42,12 +43,6 @@ interface Matcher {
 }
 
 const { packageRules, contexts } = workerData as WorkerData;
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
 
 /** Mirror of Renovate's `removeMatchers` (dist/util/package-rules/index.js). */
 function removeMatchers(rule: Record<string, unknown>): Record<string, unknown> {
@@ -115,7 +110,7 @@ try {
         // `mergedConfig` matches applyPackageRules. Overrides mutate `config`
         // mid-loop, so a later rule sees an earlier rule's overrides.
         const toApply = removeMatchers({ ...rule });
-        const force = asRecord(toApply.force);
+        const force = isRecord(toApply.force) ? toApply.force : undefined;
 
         if (config.groupSlug && rule.groupName && !rule.groupSlug) {
           toApply.groupSlug = slugify(String(rule.groupName), { lower: true });
