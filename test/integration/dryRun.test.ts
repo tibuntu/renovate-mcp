@@ -1653,6 +1653,18 @@ setInterval(() => {}, 1000);
       expect(await spawnedDryRun(argvDump)).toBe(false);
     });
 
+    it("rejects a reportOutputPath whose parent directory is missing before spawning", async () => {
+      const argvDump = path.join(repo, "argv.json");
+      const fakeBin = await makeFakeRenovate(repo);
+      session = await startServer({ RENOVATE_BIN: fakeBin, FAKE_RENOVATE_ARGV_DUMP: argvDump });
+
+      const parent = path.join(repo, "missing-dir");
+      const res = await call({ reportOutputPath: path.join(parent, "report.json") });
+      expect(res.result?.isError).toBe(true);
+      expect(res.result!.content[0]!.text).toContain(parent);
+      expect(await spawnedDryRun(argvDump)).toBe(false);
+    });
+
     it("refuses to overwrite a pre-existing symlink at reportOutputPath (no spawn, target untouched)", async () => {
       const argvDump = path.join(repo, "argv.json");
       const fakeBin = await makeFakeRenovate(repo);

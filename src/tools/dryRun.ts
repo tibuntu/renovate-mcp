@@ -310,6 +310,16 @@ export function registerDryRun(server: McpServer): void {
             content: [{ type: "text", text: `\`reportOutputPath\` must be an absolute path (got \`${reportOutputPath}\`).` }],
           };
         }
+        // A missing parent would only surface as ENOENT after a run of up
+        // to 15 minutes; fail before spawning instead.
+        const parent = path.dirname(reportOutputPath);
+        const parentStat = await fs.stat(parent).catch(() => null);
+        if (!parentStat?.isDirectory()) {
+          return {
+            isError: true,
+            content: [{ type: "text", text: `\`reportOutputPath\` parent directory \`${parent}\` does not exist or is not a directory.` }],
+          };
+        }
         // lstat: a dangling symlink counts as "exists" too (the wx write
         // below would refuse it anyway — this just fails before the run).
         if (await fs.lstat(reportOutputPath).then(() => true, () => false)) {
