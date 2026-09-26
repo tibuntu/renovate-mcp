@@ -49,6 +49,12 @@ describe("renovate://presets/{namespace} template", () => {
     expect(res.error).toBeDefined();
     expect(res.error?.message ?? "").toMatch(/unknown preset namespace/i);
   });
+
+  it("treats malformed percent-encoding like an unknown namespace, not a raw URIError", async () => {
+    session = await startServer();
+    const res = await session.request("resources/read", { uri: "renovate://presets/%E0%A4%A" });
+    expect(res.error?.message ?? "").toMatch(/unknown preset namespace/i);
+  });
 });
 
 describe("renovate://preset/{name} template", () => {
