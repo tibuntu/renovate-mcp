@@ -44,7 +44,7 @@ describe("customManagerPreview JSONata worker — cwd independence", () => {
     const manager = {
       customType: "jsonata",
       fileFormat: "yaml",
-      fileMatch: ["Chart\\.yaml$"],
+      managerFilePatterns: ["/Chart\\.yaml$/"],
       matchStrings: ['dependencies.{ "depName": name, "currentValue": version }'],
     };
     const probe = path.join(work, "probe.mjs");
