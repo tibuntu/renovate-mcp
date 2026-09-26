@@ -27,6 +27,7 @@ import {
   buildDryRunHeartbeatMessage,
 } from "../lib/dryRunProgress.js";
 import { classifyReportProblem } from "../lib/runtimeWarnings.js";
+import { readArray, readRecord } from "../lib/dryRunDiff.js";
 import {
   BASE_BRANCHES_MAX_ITEMS,
   BRANCH_NAME_MAX_BYTES,
@@ -56,12 +57,7 @@ export const INLINE_SECRET_WARNING =
  * must not fire on a `password`-only host rule.
  */
 function hasInlineHostRuleToken(rules: HostRule[]): boolean {
-  for (const rule of rules) {
-    if (!rule || typeof rule !== "object") continue;
-    const value = rule.token;
-    if (typeof value === "string" && value.length > 0) return true;
-  }
-  return false;
+  return rules.some((rule) => typeof rule?.token === "string" && rule.token.length > 0);
 }
 
 const hostRuleSchema = hostRuleRecord(
@@ -89,11 +85,9 @@ interface CollectedReportProblems {
 function collectReportProblems(report: unknown): CollectedReportProblems {
   const fatal: Array<Record<string, unknown>> = [];
   const environment: Array<Record<string, unknown>> = [];
-  const seen = new Set<object>();
+  // The report is parsed JSON, so the walk cannot cycle.
   const visit = (node: unknown): void => {
     if (node === null || typeof node !== "object") return;
-    if (seen.has(node)) return;
-    seen.add(node);
     if (Array.isArray(node)) {
       for (const entry of node) visit(entry);
       return;
@@ -158,33 +152,18 @@ async function detectUnresolvableLocalPresets(
 }
 
 function countRepositories(report: unknown): number {
-  if (!report || typeof report !== "object") return 0;
-  const repos = (report as { repositories?: unknown }).repositories;
-  if (!repos || typeof repos !== "object") return 0;
-  if (Array.isArray(repos)) return repos.length;
-  return Object.keys(repos as Record<string, unknown>).length;
+  return Object.keys(readRecord(report, "repositories") ?? {}).length;
 }
 
+/**
+ * Every `repositories[*].branches[*].upgrades[]` entry. Not
+ * `collectProposedUpdates(report).length`: that drops upgrades without a
+ * `depName` (lockFileMaintenance), which this count includes.
+ */
 function countUpdates(report: unknown): number {
-  if (!report || typeof report !== "object") return 0;
-  const repos = (report as { repositories?: unknown }).repositories;
-  if (!repos || typeof repos !== "object") return 0;
-  let total = 0;
-  const visit = (repo: unknown): void => {
-    if (!repo || typeof repo !== "object") return;
-    const branches = (repo as { branches?: unknown }).branches;
-    if (!Array.isArray(branches)) return;
-    for (const b of branches) {
-      const upgrades = (b as { upgrades?: unknown }).upgrades;
-      if (Array.isArray(upgrades)) total += upgrades.length;
-    }
-  };
-  if (Array.isArray(repos)) {
-    for (const r of repos) visit(r);
-  } else {
-    for (const r of Object.values(repos as Record<string, unknown>)) visit(r);
-  }
-  return total;
+  return Object.values(readRecord(report, "repositories") ?? {})
+    .flatMap((repo) => readArray(repo, "branches") ?? [])
+    .reduce<number>((n, branch) => n + (readArray(branch, "upgrades")?.length ?? 0), 0);
 }
 
 export function registerDryRun(server: McpServer): void {

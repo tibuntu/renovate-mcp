@@ -1,6 +1,5 @@
 import {
   collectMergeSteps,
-  OWN_SOURCE,
   type MergeQuality,
   type MergeStep,
   type PresetWarning,
@@ -10,9 +9,6 @@ import {
 import { runMerge } from "./mergeWorker.js";
 import { isRecord } from "./util.js";
 import { isDeepStrictEqual } from "node:util";
-
-// Re-exported for callers that historically imported the sentinel from here.
-export { OWN_SOURCE };
 
 export interface Contribution {
   /**

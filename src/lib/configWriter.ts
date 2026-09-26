@@ -1,11 +1,9 @@
 /**
  * Serialization entry point for `write_config`.
  *
- * Per ADR-0002, every Phase 4 write path funnels through `serializeConfig`.
- * Plan 04-01 landed the public surface plus the fresh-write branch; plan 04-02
- * (this one) implements the round-trip branch via `jsonc-parser`'s
- * `modify` + `applyEdits` API. Plan 04-03 will refine the refusal-reason
- * dispatch for `.json5`-specific cases.
+ * Per ADR-0002, every write path funnels through `serializeConfig`: a fresh
+ * write for new files, otherwise a round-trip edit via `jsonc-parser`'s
+ * `modify` + `applyEdits` API that preserves comments and key order.
  *
  * Pure function: no `fs`, no `process`, no I/O. The caller is responsible for
  * reading the existing file off disk and passing the string in (or omitting it
@@ -19,20 +17,18 @@ import {
   applyEdits,
   getNodeValue,
   ParseErrorCode,
-  type Node,
   type ParseError,
   type JSONPath,
   type Edit,
 } from "jsonc-parser";
 
 /**
- * The refusal-reason dispatch (plan 04-03) is driven purely by the file
- * extension on the target path. `.json5` is the only extension that signals
- * "the user may be writing JSON5-only syntax", so it gets a more specific
- * refusal pointing at the JSONC-subset workaround. Every other extension
- * (`.json`, `.renovaterc`, `.renovaterc.json`, etc.) is conceptually JSONC,
- * so a parse failure there is treated as "the file is corrupted or
- * otherwise unparseable."
+ * The refusal-reason dispatch is driven purely by the file extension on the
+ * target path. `.json5` is the only extension that signals "the user may be
+ * writing JSON5-only syntax", so it gets a more specific refusal pointing at
+ * the JSONC-subset workaround. Every other extension (`.json`, `.renovaterc`,
+ * `.renovaterc.json`, etc.) is conceptually JSONC, so a parse failure there is
+ * treated as "the file is corrupted or otherwise unparseable."
  */
 function isJson5Target(targetPath: string): boolean {
   return path.extname(targetPath) === ".json5";
@@ -113,11 +109,10 @@ const PACKAGE_JSON_MISSING_HINT =
 // empty errors array. So treating ANY error as fatal is the safe default.
 
 function deepEqual(a: unknown, b: unknown): boolean {
-  // Sufficient for config-shaped data (no functions / Dates / Maps).
-  // Key-order-sensitive at the same nesting level: matches what we want —
-  // reordering keys at one level is a no-op (handled by the recursive walk
-  // visiting each key and finding equal subtrees), while value changes
-  // produce different stringifications and trigger a real edit.
+  // Structural comparison for config-shaped data (no functions / Dates / Maps).
+  // Not `util.isDeepStrictEqual`: that is prototype-strict, and the values on
+  // the existing side come from jsonc-parser's `getNodeValue`, which builds
+  // null-prototype objects — every nested object would read as changed.
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
@@ -130,32 +125,9 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
   );
 }
 
-/** Extract the parsed object value at a node-path from the parseTree root. */
-function nodeObjectKeys(node: Node | undefined): string[] {
-  if (!node || node.type !== "object" || !node.children) return [];
-  return node.children
-    .filter((c) => c.type === "property" && c.children && c.children.length >= 1)
-    .map((c) => c.children![0]!.value as string);
-}
-
-function nodeChildValue(node: Node | undefined, key: string): Node | undefined {
-  if (!node || node.type !== "object" || !node.children) return undefined;
-  for (const prop of node.children) {
-    if (
-      prop.type === "property" &&
-      prop.children &&
-      prop.children.length === 2 &&
-      prop.children[0]!.value === key
-    ) {
-      return prop.children[1];
-    }
-  }
-  return undefined;
-}
-
 /**
- * Compute the list of JSONPath-rooted edits between the parsed `existingRoot`
- * and `nextConfig`. The returned list is in walk order; the caller applies
+ * Compute the list of JSONPath-rooted edits between the existing value and
+ * `nextConfig`. The returned list is in walk order; the caller applies
  * them iteratively (one `modify` + `applyEdits` per edit, against the running
  * text) because `jsonc-parser`'s docs warn that EditResults from separate
  * `modify` calls MUST NOT be concatenated and applied in one shot — the
@@ -166,15 +138,14 @@ function nodeChildValue(node: Node | undefined, key: string): Node | undefined {
  * whole array being replaced via a single REPLACE at the array's path.
  * Comments ABOVE the array key survive (they are outside the edited region).
  * Comments INSIDE an array element MAY NOT survive. This is a deliberate
- * scope-cap; element-wise array round-trip is a real-world ask but is NOT in
- * Phase 4 GOAL.md's acceptance list. Future plans can revisit.
+ * scope-cap; element-wise array round-trip is a real-world ask that ADR-0002
+ * leaves for later.
  */
 type PlannedEdit =
   | { kind: "set"; path: JSONPath; value: unknown }
   | { kind: "remove"; path: JSONPath };
 
 function planEdits(
-  existingRoot: Node,
   nextConfig: Record<string, unknown>,
   parentPath: JSONPath,
   existingValue: unknown,
@@ -203,7 +174,7 @@ function planEdits(
         if (deepEqual(a, b)) continue;
         // Both present, different. Recurse only if BOTH are plain objects.
         if (isPlainObject(a) && isPlainObject(b)) {
-          edits.push(...planEdits(existingRoot, b, path, a));
+          edits.push(...planEdits(b, path, a));
         } else {
           // Arrays or primitives → atomic replace at this path.
           edits.push({ kind: "set", path, value: b });
@@ -264,27 +235,20 @@ export function serializeConfig(args: SerializeArgs): SerializeResult {
     };
   }
 
-  // Build the in-memory "existing object" view by walking the root's keys.
-  // We need the object form (not just the Node) for the diff walk.
-  //
-  // Use jsonc-parser's `getNodeValue` instead of slicing the source text and
-  // calling `JSON.parse` — the slice can contain JSONC-only constructs
-  // (trailing commas, comments) that strict `JSON.parse` rejects but the
-  // parseTree walk already accepted. `getNodeValue` builds the JS value
-  // directly from the node tree and is JSONC-aware by construction.
-  const existingObj: Record<string, unknown> = {};
-  for (const key of nodeObjectKeys(root)) {
-    const child = nodeChildValue(root, key);
-    if (!child) continue;
-    existingObj[key] = getNodeValue(child);
-  }
+  // The object form of the existing document, for the diff walk. jsonc-parser's
+  // `getNodeValue` builds it straight from the node tree (JSONC-aware — no
+  // `JSON.parse` of a slice that may hold comments or trailing commas). The
+  // spread gives the top level an ordinary prototype so `planEdits` walks it
+  // key by key; nested objects keep `getNodeValue`'s null prototype and are
+  // therefore replaced atomically, like arrays.
+  const existingObj: Record<string, unknown> = { ...getNodeValue(root) };
 
   // package.json: diff against the `renovate` slice only. `planEdits` already
   // falls back to a single SET at the parent path when the existing value is
   // not a plain object, which covers "key absent" for free.
   const planned = packageJson
-    ? planEdits(root, args.nextConfig, ["renovate"], existingObj.renovate)
-    : planEdits(root, args.nextConfig, [], existingObj);
+    ? planEdits(args.nextConfig, ["renovate"], existingObj.renovate)
+    : planEdits(args.nextConfig, [], existingObj);
 
   // Detect line endings: preserve CRLF if the existing file uses it.
   const eol = existing.includes("\r\n") ? "\r\n" : "\n";

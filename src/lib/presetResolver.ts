@@ -102,7 +102,7 @@ export type SourceClassification =
  *   points users at `dry_run` (the Renovate CLI resolves these) rather than at
  *   a tracking issue.
  */
-export function classifyExternalSource(source: string): SourceClassification {
+export function classifyExternalSource(source: ExternalSource): SourceClassification {
   switch (source) {
     case "github":
     case "gitlab":
@@ -124,11 +124,6 @@ export function classifyExternalSource(source: string): SourceClassification {
         fetchable: false,
         reason:
           "npm-hosted presets are not supported by resolve_config. Run dry_run for full-fidelity resolution via the Renovate CLI, or host the preset on GitHub or GitLab.",
-      };
-    default:
-      return {
-        fetchable: false,
-        reason: `Unknown preset source: ${source}`,
       };
   }
 }
@@ -157,12 +152,15 @@ export interface ParsedPreset {
   unresolvableReason?: string;
 }
 
-export interface ExpandContext {
+/** One expansion's fetch settings plus the accumulators every step appends to. */
+export interface ExpandContext extends CollectResult {
   fetchExternal: boolean;
   timeoutMs: number | undefined;
   endpoint: string | undefined;
   platform: FetchPlatform | undefined;
   cache: Map<string, Promise<FetchResult>>;
+  /** Preset keys on the current expansion path, for cycle detection. */
+  stack: string[];
 }
 
 /**
@@ -226,12 +224,12 @@ export async function collectMergeSteps(
   config: Record<string, unknown>,
   options: ResolveOptions = {},
 ): Promise<CollectResult> {
-  const presetsResolved: string[] = [];
-  const presetsUnresolved: UnresolvedPreset[] = [];
-  const warnings: PresetWarning[] = [];
-  const steps: MergeStep[] = [];
-  const stack: string[] = [];
   const ctx: ExpandContext = {
+    steps: [],
+    presetsResolved: [],
+    presetsUnresolved: [],
+    warnings: [],
+    stack: [],
     fetchExternal: options.fetchExternal ?? false,
     timeoutMs: options.timeoutMs,
     endpoint: options.endpoint,
@@ -239,17 +237,8 @@ export async function collectMergeSteps(
     cache: new Map(),
   };
 
-  await collectSteps(
-    config,
-    null,
-    [],
-    steps,
-    presetsResolved,
-    presetsUnresolved,
-    warnings,
-    stack,
-    ctx,
-  );
+  await collectSteps(config, null, [], ctx);
+  const { steps, presetsResolved, presetsUnresolved, warnings } = ctx;
   return { steps, presetsResolved, presetsUnresolved, warnings };
 }
 
@@ -257,11 +246,6 @@ async function collectSteps(
   input: Record<string, unknown>,
   ownerName: string | null,
   viaChain: string[],
-  steps: MergeStep[],
-  resolvedList: string[],
-  unresolvedList: UnresolvedPreset[],
-  warningsList: PresetWarning[],
-  stack: string[],
   ctx: ExpandContext,
 ): Promise<void> {
   const rawExtends = input.extends;
@@ -272,7 +256,7 @@ async function collectSteps(
 
     for (const entry of rawExtends) {
       if (typeof entry !== "string") {
-        unresolvedList.push({
+        ctx.presetsUnresolved.push({
           preset: String(entry),
           reason: "Preset entry must be a string.",
         });
@@ -280,15 +264,15 @@ async function collectSteps(
       }
 
       const parsed = parsePreset(entry);
-      if (stack.includes(parsed.key)) {
-        unresolvedList.push({
+      if (ctx.stack.includes(parsed.key)) {
+        ctx.presetsUnresolved.push({
           preset: entry,
-          reason: `Cycle detected: ${[...stack, parsed.key].join(" → ")}`,
+          reason: `Cycle detected: ${[...ctx.stack, parsed.key].join(" → ")}`,
         });
         continue;
       }
 
-      const body = await loadPresetBody(parsed, ctx, unresolvedList);
+      const body = await loadPresetBody(parsed, ctx);
       if (!body) continue;
 
       const { value, missingArgs, unknownTemplates } = applyArgs(
@@ -300,22 +284,12 @@ async function collectSteps(
         parsed.args.length,
         missingArgs,
         unknownTemplates,
-        warningsList,
+        ctx.warnings,
       );
-      stack.push(parsed.key);
-      await collectSteps(
-        value as Record<string, unknown>,
-        entry,
-        childVia,
-        steps,
-        resolvedList,
-        unresolvedList,
-        warningsList,
-        stack,
-        ctx,
-      );
-      stack.pop();
-      resolvedList.push(entry);
+      ctx.stack.push(parsed.key);
+      await collectSteps(value as Record<string, unknown>, entry, childVia, ctx);
+      ctx.stack.pop();
+      ctx.presetsResolved.push(entry);
     }
   }
 
@@ -323,7 +297,7 @@ async function collectSteps(
   // own-key sets so a single-preset config stays a single step (no worker).
   const { extends: _drop, ...ownKeys } = input;
   if (Object.keys(ownKeys).length > 0) {
-    steps.push({
+    ctx.steps.push({
       label: ownerName ?? OWN_SOURCE,
       via: [...viaChain],
       config: ownKeys,
@@ -361,8 +335,8 @@ export function recordTemplateWarnings(
 export async function loadPresetBody(
   parsed: ParsedPreset,
   ctx: ExpandContext,
-  unresolvedList: UnresolvedPreset[],
 ): Promise<Record<string, unknown> | null> {
+  const unresolvedList = ctx.presetsUnresolved;
   if (parsed.unresolvableReason) {
     unresolvedList.push({ preset: parsed.original, reason: parsed.unresolvableReason });
     return null;

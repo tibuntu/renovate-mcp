@@ -7,21 +7,8 @@ import {
 } from "../data/presets.generated.js";
 import { decodeUriVariable } from "../lib/uriVariable.js";
 
-interface NamespaceEntry {
-  name: string;
-  description: string | null;
-}
-
-const BY_NAMESPACE: Map<string, NamespaceEntry[]> = (() => {
-  const map = new Map<string, NamespaceEntry[]>();
-  for (const name of PRESET_NAMES) {
-    const preset = PRESETS[name]!;
-    const bucket = map.get(preset.namespace) ?? [];
-    bucket.push({ name, description: preset.description });
-    map.set(preset.namespace, bucket);
-  }
-  return map;
-})();
+/** Preset names per namespace, in catalogue (sorted) order. */
+const BY_NAMESPACE = Map.groupBy(PRESET_NAMES, (name) => PRESETS[name]!.namespace);
 
 const NAMESPACES: string[] = Array.from(BY_NAMESPACE.keys()).sort();
 
@@ -153,7 +140,7 @@ function renderNamespaceIndex(): string {
   return lines.join("\n");
 }
 
-function renderNamespace(ns: string, bucket: NamespaceEntry[]): string {
+function renderNamespace(ns: string, bucket: string[]): string {
   const lines: string[] = [
     `# Renovate \`${ns}\` presets`,
     "",
@@ -162,7 +149,8 @@ function renderNamespace(ns: string, bucket: NamespaceEntry[]): string {
     "Reference any of these in the `extends` array of your config. Fetch `renovate://preset/<name>` for the expanded JSON of a single preset.",
     "",
   ];
-  for (const { name, description } of bucket) {
+  for (const name of bucket) {
+    const { description } = PRESETS[name]!;
     lines.push(description ? `- \`${name}\` — ${description}` : `- \`${name}\``);
   }
   lines.push("");

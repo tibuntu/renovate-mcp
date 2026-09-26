@@ -156,13 +156,7 @@ export function classifyReportProblem(problem: unknown): ReportProblemKind {
   return "fatal";
 }
 
+/** One warning per kind; the first occurrence wins. */
 export function dedupeRuntimeWarnings(warnings: RuntimeWarning[]): RuntimeWarning[] {
-  const seen = new Set<RuntimeWarningKind>();
-  const out: RuntimeWarning[] = [];
-  for (const w of warnings) {
-    if (seen.has(w.kind)) continue;
-    seen.add(w.kind);
-    out.push(w);
-  }
-  return out;
+  return warnings.filter((w, i) => warnings.findIndex((x) => x.kind === w.kind) === i);
 }
