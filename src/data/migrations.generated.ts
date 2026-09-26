@@ -6,16 +6,17 @@ export const RENOVATE_VERSION = "44.115.10";
 export interface DeprecatedKeyEntry {
   /** Key as it appeared in old configs. */
   readonly oldKey: string;
-  /** Current key that replaces it. */
-  readonly newKey: string;
+  /** Current key that replaces it — plain renames only; custom migrations omit it. */
+  readonly newKey?: string;
 }
 
 /**
- * Deprecated config keys with their current replacement. Sourced from
- * Renovate's `MigrationsService.renamedProperties` — the "RenamePropertyMigration"
- * subset only. Value coercions (e.g. `stabilityDays` → `minimumReleaseAge`)
- * and structural transformations are deliberately excluded; `migrate_config`
- * is the right tool for those.
+ * Deprecated config keys. Sourced from Renovate's `MigrationsService`:
+ * `renamedProperties` (plain renames, with `newKey`) plus every
+ * `customMigrations` class flagged `deprecated` (value coercions such as
+ * `stabilityDays` → `minimumReleaseAge`, structural rewrites such as
+ * `fileMatch` → `managerFilePatterns`; no `newKey` — `migrate_config`
+ * shows the replacement).
  */
 export const DEPRECATED_KEYS: readonly DeprecatedKeyEntry[] = Object.freeze([
   {
@@ -31,12 +32,27 @@ export const DEPRECATED_KEYS: readonly DeprecatedKeyEntry[] = Object.freeze([
     "newKey": "allowedCommands"
   },
   {
+    "oldKey": "automergeMajor"
+  },
+  {
+    "oldKey": "automergeMinor"
+  },
+  {
+    "oldKey": "automergePatch"
+  },
+  {
     "oldKey": "azureAutoApprove",
     "newKey": "autoApprove"
   },
   {
+    "oldKey": "baseBranch"
+  },
+  {
     "oldKey": "baseBranches",
     "newKey": "baseBranchPatterns"
+  },
+  {
+    "oldKey": "compatibility"
   },
   {
     "oldKey": "customChangelogUrl",
@@ -53,6 +69,24 @@ export const DEPRECATED_KEYS: readonly DeprecatedKeyEntry[] = Object.freeze([
   {
     "oldKey": "exposeEnv",
     "newKey": "exposeAllEnv"
+  },
+  {
+    "oldKey": "fetchReleaseNotes"
+  },
+  {
+    "oldKey": "fileMatch"
+  },
+  {
+    "oldKey": "gomodTidy"
+  },
+  {
+    "oldKey": "ignoreNodeModules"
+  },
+  {
+    "oldKey": "ignoreNpmrcFile"
+  },
+  {
+    "oldKey": "includeForks"
   },
   {
     "oldKey": "keepalive",
@@ -99,6 +133,33 @@ export const DEPRECATED_KEYS: readonly DeprecatedKeyEntry[] = Object.freeze([
     "newKey": "separateMultipleMajor"
   },
   {
+    "oldKey": "packageFiles"
+  },
+  {
+    "oldKey": "packageName"
+  },
+  {
+    "oldKey": "packagePattern"
+  },
+  {
+    "oldKey": "packages"
+  },
+  {
+    "oldKey": "pathRules"
+  },
+  {
+    "oldKey": "pinVersions"
+  },
+  {
+    "oldKey": "rebaseConflictedPrs"
+  },
+  {
+    "oldKey": "rebaseStalePrs"
+  },
+  {
+    "oldKey": "recreateClosed"
+  },
+  {
     "oldKey": "regexManagers",
     "newKey": "customManagers"
   },
@@ -107,11 +168,38 @@ export const DEPRECATED_KEYS: readonly DeprecatedKeyEntry[] = Object.freeze([
     "newKey": "renovate-config"
   },
   {
+    "oldKey": "renovateFork"
+  },
+  {
+    "oldKey": "requiredStatusChecks"
+  },
+  {
+    "oldKey": "semanticPrefix"
+  },
+  {
     "oldKey": "separatePatchReleases",
     "newKey": "separateMinorPatch"
   },
   {
+    "oldKey": "stabilityDays"
+  },
+  {
+    "oldKey": "trustLevel"
+  },
+  {
+    "oldKey": "unpublishSafe"
+  },
+  {
+    "oldKey": "updateLockFiles"
+  },
+  {
+    "oldKey": "upgradeInRange"
+  },
+  {
     "oldKey": "versionScheme",
     "newKey": "versioning"
+  },
+  {
+    "oldKey": "versionStrategy"
   }
 ]);

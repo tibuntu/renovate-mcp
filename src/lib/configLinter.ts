@@ -1,5 +1,8 @@
 import { ALL_MANAGERS, CUSTOM_MANAGERS } from "../data/managers.generated.js";
-import { DEPRECATED_KEYS } from "../data/migrations.generated.js";
+import {
+  DEPRECATED_KEYS,
+  type DeprecatedKeyEntry,
+} from "../data/migrations.generated.js";
 
 export type LintRuleId =
   | "dead-regex-missing-slash"
@@ -38,8 +41,8 @@ const VALID_MANAGER_NAMES: ReadonlySet<string> = new Set([
   ...CUSTOM_MANAGERS.map((m) => `custom.${m}`),
 ]);
 
-const DEPRECATED_KEY_LOOKUP: ReadonlyMap<string, string> = new Map(
-  DEPRECATED_KEYS.map((e) => [e.oldKey, e.newKey]),
+const DEPRECATED_KEY_LOOKUP: ReadonlyMap<string, DeprecatedKeyEntry> = new Map(
+  DEPRECATED_KEYS.map((e) => [e.oldKey, e]),
 );
 
 // Hand-maintained snapshot of keys that count as "actions" on a packageRules entry
@@ -512,10 +515,20 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 }
 
 function makeDeprecatedKeyFinding(
-  oldKey: string,
-  newKey: string,
+  { oldKey, newKey }: DeprecatedKeyEntry,
   path: string,
 ): LintFinding {
+  // Plain renames carry the replacement; custom migrations (value coercions,
+  // structural rewrites) only tell us the key is deprecated.
+  if (newKey === undefined) {
+    return {
+      ruleId: "deprecated-key",
+      severity: "warn",
+      path,
+      value: oldKey,
+      message: `"${oldKey}" is deprecated; Renovate migrates it automatically — run migrate_config to see the replacement.`,
+    };
+  }
   return {
     ruleId: "deprecated-key",
     severity: "warn",
@@ -530,23 +543,19 @@ function checkDeprecatedKeys(config: unknown, findings: LintFinding[]): void {
   if (!isPlainObject(config)) return;
 
   for (const key of Object.keys(config)) {
-    const replacement = DEPRECATED_KEY_LOOKUP.get(key);
-    if (replacement !== undefined) {
-      findings.push(makeDeprecatedKeyFinding(key, replacement, key));
-    }
+    const entry = DEPRECATED_KEY_LOOKUP.get(key);
+    if (entry) findings.push(makeDeprecatedKeyFinding(entry, key));
   }
 
   for (const container of DEPRECATED_KEY_CONTAINERS) {
     const arr = (config as Record<string, unknown>)[container];
     if (!Array.isArray(arr)) continue;
-    arr.forEach((entry, i) => {
-      if (!isPlainObject(entry)) return;
-      for (const key of Object.keys(entry)) {
-        const replacement = DEPRECATED_KEY_LOOKUP.get(key);
-        if (replacement !== undefined) {
-          findings.push(
-            makeDeprecatedKeyFinding(key, replacement, `${container}[${i}].${key}`),
-          );
+    arr.forEach((item, i) => {
+      if (!isPlainObject(item)) return;
+      for (const key of Object.keys(item)) {
+        const entry = DEPRECATED_KEY_LOOKUP.get(key);
+        if (entry) {
+          findings.push(makeDeprecatedKeyFinding(entry, `${container}[${i}].${key}`));
         }
       }
     });
