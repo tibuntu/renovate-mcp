@@ -89,10 +89,7 @@ When `platform` is unset and the env fallback yields a non-local platform, an ad
 
 MCP harnesses truncate tool responses at modest sizes (≈75 KB on Claude Desktop), and a real Renovate report easily exceeds that.
 
-`dry_run` accepts:
-
-- `reportOutputPath` (absolute path that must not exist yet; the full report is created there with `O_EXCL` and mode 0600 — a pre-existing file or symlink is refused with `already exists`, never overwritten) which collapses `summary.report` to `{ reportPath, repoCount, updateCount }`.
-- `summaryOnly: true` for further inline trimming.
+`dry_run` accepts `reportOutputPath` (absolute path that must not exist yet; the full report is created there with `O_EXCL` and mode 0600 — a pre-existing file or symlink is refused with `already exists`, never overwritten), which collapses `summary.report` to `{ reportPath, repoCount, updateCount }` so nothing per-repo stays inline.
 
 `dry_run_diff` accepts each input as either an inline report or `{ reportPath: … }`, so the iterative workflow becomes:
 
