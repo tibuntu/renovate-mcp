@@ -25,7 +25,7 @@ Runtime code never imports the `renovate` package — only the `scripts/generate
 
 **Dependency review** (`.github/workflows/dependency-review.yml`) runs [`actions/dependency-review-action`](https://github.com/actions/dependency-review-action) on every PR and fails the check when a newly introduced dependency carries a CVE of `high` severity or above. Findings also render inline in the PR's "Files changed" / Conversation tabs.
 
-**Maintainer tooling** (`.github/workflows/claude.yml`) lets the repo owner trigger [`anthropics/claude-code-action`](https://github.com/anthropics/claude-code-action) by mentioning `@claude` in an issue, comment, or review. Gated on `sender.login == repository_owner`, so mentions from anyone else are ignored. Needs the `CLAUDE_CODE_OAUTH_TOKEN` secret on the repo; outside contributors and forks do not need any Anthropic credentials to work on this project.
+**Maintainer tooling** (`.github/workflows/claude.yml`) lets the repo owner trigger [`anthropics/claude-code-action`](https://github.com/anthropics/claude-code-action) by mentioning `@claude` in an issue, comment, or review. Gated on `sender.login == repository_owner`, so mentions from anyone else are ignored. Needs the `CLAUDE_CODE_OAUTH_TOKEN` secret on the repo; outside contributors and forks do not need any Anthropic credentials to work on this project. `.github/workflows/claude-code-review.yml` is a manual (`workflow_dispatch`) run that takes a PR number and runs the `code-review` plugin against that PR, using the same secret.
 
 ## Integration testing
 
