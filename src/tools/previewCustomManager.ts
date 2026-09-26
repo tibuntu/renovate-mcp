@@ -9,7 +9,8 @@ import { pathString } from "../lib/inputLimits.js";
 const managerSchema = z
   .object({
     customType: z.string(),
-    fileMatch: z.array(z.string()).min(1),
+    managerFilePatterns: z.array(z.string()).min(1).optional(),
+    fileMatch: z.array(z.string()).min(1).optional(),
     matchStrings: z.array(z.string()).min(1),
     matchStringsStrategy: z.string().optional(),
     fileFormat: z.enum(["json", "yaml", "toml"]).optional(),
@@ -24,7 +25,10 @@ const managerSchema = z
     extractVersionTemplate: z.string().optional(),
     autoReplaceStringTemplate: z.string().optional(),
   })
-  .passthrough();
+  .passthrough()
+  .refine((m) => m.managerFilePatterns !== undefined || m.fileMatch !== undefined, {
+    message: "manager requires managerFilePatterns (or the deprecated fileMatch)",
+  });
 
 export function registerPreviewCustomManager(server: McpServer): void {
   server.registerTool(
@@ -32,7 +36,7 @@ export function registerPreviewCustomManager(server: McpServer): void {
     {
       title: "Preview a Renovate custom manager (regex or jsonata)",
       description: [
-        "Preview a Renovate `customManagers` entry against a local repo — fast, offline, no `renovate` invocation. Designed for iterating on a regex or JSONata customManager: shows which files match `fileMatch`, what each `matchStrings` entry extracts, and what dep info the template fields produce.",
+        "Preview a Renovate `customManagers` entry against a local repo — fast, offline, no `renovate` invocation. Designed for iterating on a regex or JSONata customManager: shows which files match `managerFilePatterns`, what each `matchStrings` entry extracts, and what dep info the template fields produce.",
         "",
         "Limitations vs. a real Renovate run:",
         "  - Supports `customType: \"regex\"` and `customType: \"jsonata\"` (the latter requires `fileFormat` to be \"json\", \"yaml\", or \"toml\").",
@@ -46,7 +50,7 @@ export function registerPreviewCustomManager(server: McpServer): void {
       inputSchema: {
         repoPath: pathString("Absolute path to the repository root"),
         manager: managerSchema.describe(
-          "A single Renovate customManagers entry. NOTE: `fileMatch` is an array of REGEX strings matched against POSIX-style relative paths (not globs).",
+          "A single Renovate customManagers entry. `managerFilePatterns` entries are matched against POSIX-style relative paths with Renovate's semantics: a glob (minimatch, dot + case-insensitive) or a `/regex/` (optionally `/regex/i`); a leading `!` negates; `*` matches everything. The deprecated `fileMatch` (bare regex strings) is still accepted — each entry is converted to `/…/` and a warning is emitted.",
         ),
         maxFilesWalked: z
           .number()
@@ -55,7 +59,7 @@ export function registerPreviewCustomManager(server: McpServer): void {
           .max(100_000)
           .optional()
           .describe(
-            "Safety cap on files visited during the directory walk before any fileMatch testing (default 2000). Raise this when the repo is large; prefer narrowing via `.gitignore` first.",
+            "Safety cap on files visited during the directory walk before any managerFilePatterns testing (default 2000). Raise this when the repo is large; prefer narrowing via `.gitignore` first.",
           ),
         maxFilesMatched: z
           .number()
@@ -64,7 +68,7 @@ export function registerPreviewCustomManager(server: McpServer): void {
           .max(100_000)
           .optional()
           .describe(
-            "Safety cap on the number of files included in the result after fileMatch is applied (default 500). Raise this only if the fileMatch regex is intentionally broad.",
+            "Safety cap on the number of files included in the result after managerFilePatterns is applied (default 500). Raise this only if the patterns are intentionally broad.",
           ),
         maxHitsPerFile: z
           .number()
@@ -89,7 +93,7 @@ export function registerPreviewCustomManager(server: McpServer): void {
           .max(1024 * 1024 * 1024)
           .optional()
           .describe(
-            "Per-file size cap in bytes (default 5242880 = 5 MiB). Files whose size exceeds this are skipped with a warning instead of being read into memory — protects against OOM when fileMatch catches a lockfile, generated artifact, or other oversized file.",
+            "Per-file size cap in bytes (default 5242880 = 5 MiB). Files whose size exceeds this are skipped with a warning instead of being read into memory — protects against OOM when managerFilePatterns catches a lockfile, generated artifact, or other oversized file.",
           ),
       },
     },
