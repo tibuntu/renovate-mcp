@@ -76,6 +76,16 @@ describe("renovate://preset/{name} template", () => {
     expect(res.error).toBeDefined();
     expect(res.error?.message ?? "").toMatch(/unknown preset/i);
   });
+
+  it("treats malformed percent-encoding like an unknown name, not a raw URIError", async () => {
+    session = await startServer();
+    const res = await session.request("resources/read", {
+      uri: "renovate://preset/%E0%A4%A",
+    });
+    expect(res.error).toBeDefined();
+    expect(res.error?.message ?? "").toMatch(/unknown preset/i);
+    expect(res.error?.message ?? "").not.toMatch(/URIError|malformed/i);
+  });
 });
 
 describe("resources/list", () => {
