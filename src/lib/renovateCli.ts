@@ -26,6 +26,36 @@ export interface RunResult {
 
 /** Per-stream cap on captured output; only the tail is kept beyond it. */
 export const MAX_CAPTURE_BYTES = 4 * 1024 * 1024;
+/** Cap on a partial (newline-free) line held for the line observers. */
+const MAX_LINE_BYTES = 1024 * 1024;
+
+/**
+ * Bounded capture of one stream: chunks are appended as they arrive and whole
+ * chunks are dropped from the front once the total passes the cap, so nothing
+ * is copied per chunk. Joined once on close.
+ */
+class TailBuffer {
+  private chunks: string[] = [];
+  private length = 0;
+  truncated = false;
+
+  push(chunk: string): void {
+    this.chunks.push(chunk);
+    this.length += chunk.length;
+    while (this.length > MAX_CAPTURE_BYTES && this.chunks.length > 1) {
+      this.length -= this.chunks.shift()!.length;
+      this.truncated = true;
+    }
+  }
+
+  join(): string {
+    const s = this.chunks.join("");
+    // A single oversized chunk can still exceed the cap; trim once here.
+    if (s.length <= MAX_CAPTURE_BYTES) return s;
+    this.truncated = true;
+    return s.slice(-MAX_CAPTURE_BYTES);
+  }
+}
 
 /** Thrown by `run()` when the child exceeded `timeoutMs` and was killed. */
 export class CommandTimeoutError extends Error {
@@ -69,9 +99,8 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
       detached: true,
     });
 
-    let stdout = "";
-    let stderr = "";
-    let truncated = false;
+    const stdoutBuf = new TailBuffer();
+    const stderrBuf = new TailBuffer();
     let stdoutLineBuf = "";
     let stderrLineBuf = "";
     let timer: NodeJS.Timeout | undefined;
@@ -87,14 +116,6 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
         }
       }, opts.timeoutMs);
     }
-
-    // Keep only the tail once a stream exceeds the cap; callers use the tail
-    // and line observers, never the whole log.
-    const cap = (s: string): string => {
-      if (s.length <= MAX_CAPTURE_BYTES) return s;
-      truncated = true;
-      return s.slice(-MAX_CAPTURE_BYTES);
-    };
 
     const emitLines = (
       chunk: string,
@@ -112,17 +133,18 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
           // never let an observer crash the pipeline
         }
       }
-      return trailing;
+      // A newline-free stream must not grow the partial-line buffer unbounded.
+      return trailing.length > MAX_LINE_BYTES ? trailing.slice(-MAX_LINE_BYTES) : trailing;
     };
 
     child.stdout.on("data", (d) => {
       const chunk = d.toString();
-      stdout = cap(stdout + chunk);
+      stdoutBuf.push(chunk);
       stdoutLineBuf = emitLines(chunk, stdoutLineBuf, opts.onStdoutLine);
     });
     child.stderr.on("data", (d) => {
       const chunk = d.toString();
-      stderr = cap(stderr + chunk);
+      stderrBuf.push(chunk);
       stderrLineBuf = emitLines(chunk, stderrLineBuf, opts.onStderrLine);
     });
     child.on("error", (err) => {
@@ -150,12 +172,14 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
         reject(new CommandTimeoutError(opts.timeoutMs!, cmd, args));
         return;
       }
+      const stdout = stdoutBuf.join();
+      const stderr = stderrBuf.join();
       resolve({
         stdout,
         stderr,
         exitCode: code ?? -1,
         runtimeWarnings: detectRuntimeWarnings(stderr),
-        truncated,
+        truncated: stdoutBuf.truncated || stderrBuf.truncated,
       });
     });
 
