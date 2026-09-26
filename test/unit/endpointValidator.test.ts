@@ -1,12 +1,8 @@
 import { describe, expect, it } from "vitest";
-import {
-  EndpointValidationError,
-  validateEndpoint,
-} from "../../src/lib/endpointValidator.js";
+import { validateEndpoint } from "../../src/lib/endpointValidator.js";
 
 function expectReject(endpoint: string, match: RegExp): void {
-  expect(() => validateEndpoint(endpoint)).toThrow(EndpointValidationError);
-  expect(() => validateEndpoint(endpoint)).toThrow(match);
+  expect(validateEndpoint(endpoint)).toMatch(match);
 }
 
 describe("validateEndpoint — accepts public https endpoints", () => {
@@ -18,7 +14,7 @@ describe("validateEndpoint — accepts public https endpoints", () => {
     "https://gitlab.example.com/api/v4/",
     "https://gitlab.example.com:8443/api/v4",
   ])("accepts %s", (endpoint) => {
-    expect(() => validateEndpoint(endpoint)).not.toThrow();
+    expect(validateEndpoint(endpoint)).toBeNull();
   });
 });
 
@@ -71,12 +67,7 @@ describe("validateEndpoint — rejects userinfo", () => {
     ["https://alice:hunter2@/api/v3", /not a parseable URL/, "https://<redacted>@/api/v3"], // empty host: WHATWG rejects it
     ["https://alice:hunter2@127.0.0.1/", /userinfo .* not allowed/, "https://<redacted>@127.0.0.1/"],
   ])("never echoes the credential in the refusal message for %s", (endpoint, refusal, shown) => {
-    let message = "";
-    try {
-      validateEndpoint(endpoint);
-    } catch (err) {
-      message = (err as Error).message;
-    }
+    const message = validateEndpoint(endpoint) ?? "";
     expect(message).toMatch(refusal);
     expect(message).not.toContain("hunter2");
     expect(message).not.toContain("alice");
@@ -122,6 +113,6 @@ describe("validateEndpoint — does not over-reject neighbouring ranges", () => 
     "https://[2001:db8::1]/", // documentation range — public
     "https://[fec0::1]/", // not fe80::/10
   ])("accepts %s", (endpoint) => {
-    expect(() => validateEndpoint(endpoint)).not.toThrow();
+    expect(validateEndpoint(endpoint)).toBeNull();
   });
 });
