@@ -26,9 +26,12 @@ export async function loadConfigSource(input: {
   configContent?: Record<string, unknown>;
 }): Promise<ConfigSource | { error: string }> {
   const { repoPath, configContent } = input;
-  if (repoPath && configContent) return { error: "Pass either repoPath or configContent, not both." };
-  if (configContent) return { config: configContent };
-  if (!repoPath) return { error: "Provide either repoPath or configContent." };
+  // Presence, not truthiness: an empty repoPath is a bad path, not a missing one.
+  if (repoPath !== undefined && configContent !== undefined) {
+    return { error: "Pass either repoPath or configContent, not both." };
+  }
+  if (configContent !== undefined) return { config: configContent };
+  if (repoPath === undefined) return { error: "Provide either repoPath or configContent." };
   const repoError = await assertRepoDir(repoPath);
   if (repoError) return { error: repoError };
   const located = await locateConfig(repoPath);

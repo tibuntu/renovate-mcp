@@ -59,6 +59,10 @@ describe("loadConfigSource", () => {
     });
   });
 
+  it("treats an empty repoPath as given, not absent", async () => {
+    expect(await loadConfigSource({ repoPath: "" })).toEqual({ error: guardMessage("") });
+  });
+
   it("reports a repo without config", async () => {
     expect(await loadConfigSource({ repoPath: repo })).toEqual({
       error: `No Renovate configuration found in ${repo}.`,
