@@ -50,7 +50,7 @@ export function registerPreviewCustomManager(server: McpServer): void {
       inputSchema: {
         repoPath: pathString("Absolute path to the repository root"),
         manager: managerSchema.describe(
-          "A single Renovate customManagers entry. `managerFilePatterns` entries are matched against POSIX-style relative paths with Renovate's semantics: a glob (minimatch, dot + case-insensitive) or a `/regex/` (optionally `/regex/i`); a leading `!` negates; `*` matches everything. The deprecated `fileMatch` (bare regex strings) is still accepted — each entry is converted to `/…/` and a warning is emitted.",
+          "A single Renovate customManagers entry. `managerFilePatterns` entries are matched against POSIX-style relative paths with Renovate's semantics: a glob (minimatch, dot + case-insensitive) or a `/regex/` (optionally `/regex/i`); `*` matches everything; entries are unioned like Renovate's extract phase, so a leading `!` adds the files the entry does NOT match rather than excluding them. The deprecated `fileMatch` (bare regex strings) is still accepted — each entry is converted to `/…/` and a warning is emitted.",
         ),
         maxFilesWalked: z
           .number()

@@ -581,21 +581,31 @@ describe("managerFilePatterns", () => {
     expect(result.filesMatched).toEqual(["Dockerfile"]);
   });
 
-  it("!**/vendor/** excludes everything under a vendor directory", async () => {
+  it("entries are unioned like Renovate's extract phase: a !glob adds its complement instead of excluding", async () => {
+    // Renovate's `getMatchingFiles` evaluates each entry on its own and
+    // concatenates the results, so `!**/vendor/**` does NOT subtract the
+    // vendor files that `**/*.yaml` selected — it adds every non-vendor file.
     await mkdir(path.join(repo, "vendor"), { recursive: true });
     await mkdir(path.join(repo, "sub/vendor"), { recursive: true });
     await writeFile(path.join(repo, "a.yaml"), "a=1");
+    await writeFile(path.join(repo, "notes.txt"), "n=1");
     await writeFile(path.join(repo, "vendor/b.yaml"), "b=2");
-    await writeFile(path.join(repo, "sub/vendor/c.yaml"), "c=3");
+    await writeFile(path.join(repo, "vendor/c.txt"), "c=3");
+    await writeFile(path.join(repo, "sub/vendor/d.yaml"), "d=4");
     const result = await previewCustomManager(repo, {
       customType: "regex",
       managerFilePatterns: ["**/*.yaml", "!**/vendor/**"],
       matchStrings,
     });
-    expect(result.filesMatched).toEqual(["a.yaml"]);
+    expect([...result.filesMatched].sort()).toEqual([
+      "a.yaml",
+      "notes.txt",
+      "sub/vendor/d.yaml",
+      "vendor/b.yaml",
+    ]);
   });
 
-  it("a negative-only list matches everything the negatives don't exclude", async () => {
+  it("a !glob on its own matches every file the glob does not match", async () => {
     await mkdir(path.join(repo, "vendor"), { recursive: true });
     await writeFile(path.join(repo, "a.yaml"), "a=1");
     await writeFile(path.join(repo, "vendor/b.yaml"), "b=2");
@@ -631,26 +641,46 @@ describe("managerFilePatterns", () => {
     expect(result.filesMatched).toEqual(["Dockerfile"]);
   });
 
-  it("/…/i regexes are case-insensitive and !/…/ regexes exclude", async () => {
+  it("/…/i regexes are case-insensitive", async () => {
     await mkdir(path.join(repo, "vendor"), { recursive: true });
     await writeFile(path.join(repo, "Dockerfile"), "a=1");
     await writeFile(path.join(repo, "vendor/Dockerfile"), "b=2");
     const result = await previewCustomManager(repo, {
       customType: "regex",
+      managerFilePatterns: ["/dockerfile$/i"],
+      matchStrings,
+    });
+    expect([...result.filesMatched].sort()).toEqual(["Dockerfile", "vendor/Dockerfile"]);
+  });
+
+  it("!/…/ matches the files the regex does NOT match, and unions with the other entries", async () => {
+    await mkdir(path.join(repo, "vendor"), { recursive: true });
+    await writeFile(path.join(repo, "Dockerfile"), "a=1");
+    await writeFile(path.join(repo, "vendor/Dockerfile"), "b=2");
+    const alone = await previewCustomManager(repo, {
+      customType: "regex",
+      managerFilePatterns: ["!/^vendor\\//"],
+      matchStrings,
+    });
+    expect(alone.filesMatched).toEqual(["Dockerfile"]);
+    const unioned = await previewCustomManager(repo, {
+      customType: "regex",
       managerFilePatterns: ["/dockerfile$/i", "!/^vendor\\//"],
       matchStrings,
     });
-    expect(result.filesMatched).toEqual(["Dockerfile"]);
+    expect([...unioned.filesMatched].sort()).toEqual(["Dockerfile", "vendor/Dockerfile"]);
   });
 
-  it("reports an invalid /…/ regex as an error instead of silently matching nothing", async () => {
+  it("reports an invalid /…/ regex as an error and says what Renovate would do instead", async () => {
     await expect(
       previewCustomManager(repo, {
         customType: "regex",
-        managerFilePatterns: ["/[/"],
+        managerFilePatterns: ["**/*.yaml", "/[/"],
         matchStrings,
       }),
-    ).rejects.toThrow(/Invalid regex/);
+    ).rejects.toThrow(
+      /^Invalid regex in managerFilePatterns\[1\] \/\[\/: .+\. Renovate would silently fall back to treating this entry as a glob, which almost certainly matches nothing\.$/,
+    );
   });
 
   it("bare fileMatch still works as /…/ regexes and emits the deprecation warning", async () => {
