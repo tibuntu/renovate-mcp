@@ -80,7 +80,7 @@ Seventeen tools, six resources, and three workflow prompts. Each tool name below
 - **Linux or macOS.** Windows is not supported — `package.json` declares `"os": ["darwin", "linux"]`, so `npm i` surfaces an `EBADPLATFORM` warning on Windows and the server exits with a clear stderr message at startup. Use WSL2 or a Linux/macOS host instead.
 - **Node.js ≥ 24** (aligns with Renovate's own engine requirement).
 
-Renovate ships bundled — the `renovate` package is a runtime dependency, so `validate_config`, `dry_run`, and `write_config` work out of the box with no separate install. The offline tools (`read_config`, `suggest_presets`, `resolve_config`, `explain_config`, `resolve_config_diff`, `preview_custom_manager`, `lint_config`, `explain_dependency`) never spawn Renovate at all.
+Renovate ships bundled — the `renovate` package is a runtime dependency, so `validate_config`, `dry_run`, and `write_config` work out of the box with no separate install. The offline tools (`read_config`, `suggest_presets`, `resolve_config`, `explain_config`, `resolve_config_diff`, `test_package_rules`, `preview_custom_manager`, `lint_config`, `dry_run_diff`, `annotate_dry_run`, `explain_dependency`, `migrate_config`) never spawn Renovate at all — nor do `check_setup` (by default it reads version metadata from the bundled install instead of spawning) or `get_version` (it only reports the renovate-mcp server's own version).
 
 **Optional env vars:**
 
@@ -208,6 +208,7 @@ npm run generate:presets        # regenerate src/data/presets.generated.ts
 npm run generate:managers       # regenerate src/data/managers.generated.ts
 npm run generate:migrations     # regenerate src/data/migrations.generated.ts
 npm run generate:options        # regenerate src/data/options.generated.ts
+npm run sync:jsonata-pin        # sync package.json's jsonata pin to Renovate's own
 npm run check:snapshot-versions # fail if any src/data/*.generated.ts is stale vs installed renovate
 ```
 
@@ -227,4 +228,4 @@ See [`docs/development.md`](docs/development.md) for snapshot-file mechanics, CI
 - **Not a Renovate replacement.** This server doesn't open PRs, run scheduled updates, or execute in CI — it's a design-time companion for a local `renovate.json`. Use the real Renovate for the actual dependency-update pipeline.
 - **`resolve_config` merges faithfully.** Preset expansion runs offline against a committed snapshot, then folds with Renovate's real `mergeChildConfig` in a worker thread — `mergeQuality: "faithful"` (it falls back to an approximate in-process merge as `"preview"` only if the worker is unavailable). Template substitution still implements only positional `{{argN}}` placeholders — non-positional tokens and Handlebars helpers are flagged in `warnings` and pass through verbatim. For full config resolution (datasource lookups, etc.), run `dry_run`.
 - **`preview_custom_manager` is a subset of Renovate's custom managers.** It covers `customType: "regex"` (with `matchStringsStrategy` of `any` / `combination` / `recursive`) and `customType: "jsonata"` (with `fileFormat: "json" | "yaml" | "toml"`). File selection follows Renovate's `managerFilePatterns` semantics (globs or `/regex/`, entries unioned like Renovate's extract phase); the deprecated `fileMatch` is still accepted with a warning. Template substitution is `{{groupName}}` only — full Handlebars helpers/conditionals are not implemented. Other custom types (e.g. `html`) are out of scope. Use it for fast iteration; confirm with `dry_run`. Full coverage matrix in [`docs/tools.md#preview_custom_manager`](docs/tools.md#preview_custom_manager).
-- **`validate_config` / `dry_run` aren't exercised end-to-end in CI.** The bundled Renovate is available (it's a runtime dep), but the integration tests use fake binaries via `RENOVATE_BIN` / `RENOVATE_CONFIG_VALIDATOR_BIN` env overrides for determinism and speed. Run the tools locally against a real config to validate behaviour.
+- **`dry_run` still uses fake binaries in CI.** The bundled Renovate is available (it's a runtime dependency), and `validate_config` / `write_config` now have one real-validator integration test (`test/integration/realValidator.test.ts`) exercising the actual bundled `renovate-config-validator` — but `dry_run` itself still runs per-PR against fake binaries via `RENOVATE_BIN` / `RENOVATE_CONFIG_VALIDATOR_BIN` env overrides, for determinism and speed. A separate nightly workflow re-runs the full suite against `renovate@latest` end-to-end. Run `dry_run` locally against a real config to validate behaviour.
