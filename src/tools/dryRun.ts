@@ -4,7 +4,13 @@ import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { run, resolveRenovateTool, formatMissingBinaryError } from "../lib/renovateCli.js";
+import {
+  run,
+  resolveRenovateTool,
+  formatMissingBinaryError,
+  formatTimeoutError,
+  CommandTimeoutError,
+} from "../lib/renovateCli.js";
 import { resolveCredential } from "../lib/credentialResolver.js";
 import { EndpointValidationError, validateEndpoint } from "../lib/endpointValidator.js";
 import { locateConfig } from "../lib/configLocations.js";
@@ -667,7 +673,9 @@ export function registerDryRun(server: McpServer): void {
             {
               type: "text",
               text: scrubSecrets(
-                formatMissingBinaryError("renovate", err as Error),
+                err instanceof CommandTimeoutError
+                  ? formatTimeoutError("renovate", err)
+                  : formatMissingBinaryError("renovate", err as Error),
                 secrets,
               ),
             },

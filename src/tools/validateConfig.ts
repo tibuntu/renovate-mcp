@@ -4,7 +4,13 @@ import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { run, resolveRenovateTool, formatMissingBinaryError } from "../lib/renovateCli.js";
+import {
+  run,
+  resolveRenovateTool,
+  formatMissingBinaryError,
+  formatTimeoutError,
+  CommandTimeoutError,
+} from "../lib/renovateCli.js";
 import { configRecord, pathString } from "../lib/inputLimits.js";
 
 export function registerValidateConfig(server: McpServer): void {
@@ -80,7 +86,10 @@ export function registerValidateConfig(server: McpServer): void {
           content: [
             {
               type: "text",
-              text: formatMissingBinaryError("renovate-config-validator", err as Error),
+              text:
+                err instanceof CommandTimeoutError
+                  ? formatTimeoutError("renovate-config-validator", err)
+                  : formatMissingBinaryError("renovate-config-validator", err as Error),
             },
           ],
         };

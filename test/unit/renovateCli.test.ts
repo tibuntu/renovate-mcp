@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   resolveRenovateTool,
   formatMissingBinaryError,
+  formatTimeoutError,
   run,
   CommandTimeoutError,
   MAX_CAPTURE_BYTES,
@@ -241,6 +242,25 @@ describe("run() timeout and capture cap", () => {
     expect(res.stdout.length).toBeLessThanOrEqual(MAX_CAPTURE_BYTES);
     expect(res.stdout.endsWith("x\n")).toBe(true);
     expect(lines).toBe(6144);
+  });
+});
+
+describe("formatTimeoutError", () => {
+  it("names the tool and the budget, and points dry_run callers at timeoutMs", () => {
+    const msg = formatTimeoutError("renovate", new CommandTimeoutError(300_000, "renovate", []));
+    expect(msg).toContain("timed out after 300000 ms");
+    expect(msg).toContain("timeoutMs");
+    expect(msg).not.toContain("check_setup");
+  });
+
+  it("does not suggest a timeout input for the validator (there is none)", () => {
+    const msg = formatTimeoutError(
+      "renovate-config-validator",
+      new CommandTimeoutError(30_000, "renovate-config-validator", []),
+    );
+    expect(msg).toContain("renovate-config-validator");
+    expect(msg).toContain("timed out after 30000 ms");
+    expect(msg).not.toContain("timeoutMs");
   });
 });
 
