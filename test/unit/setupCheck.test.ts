@@ -1,5 +1,9 @@
 import { describe, it, expect, afterEach } from "vitest";
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
+  OFFLINE_TOOLS,
   checkRenovateEnginesMatch,
   checkSetup,
   describeSetup,
@@ -188,6 +192,24 @@ describe("unavailableTools", () => {
       ok: false,
     });
     expect(unavailableTools(status)).toEqual(["validate_config", "dry_run", "write_config"]);
+  });
+});
+
+describe("OFFLINE_TOOLS drift guard", () => {
+  it("OFFLINE_TOOLS ∪ the CLI-backed tools equals every tool src/tools registers", () => {
+    const toolsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../src/tools");
+    const registered = readdirSync(toolsDir)
+      .filter((f) => f.endsWith(".ts"))
+      .flatMap((f) => {
+        const src = readFileSync(path.join(toolsDir, f), "utf8");
+        return [...src.matchAll(/registerTool\(\s*"([a-z_]+)"/g)].map((m) => m[1]!);
+      })
+      .sort();
+    expect(registered).toHaveLength(17);
+
+    const cliBacked = ["validate_config", "dry_run", "write_config"];
+    const union = [...OFFLINE_TOOLS, ...cliBacked].sort();
+    expect(union).toEqual(registered);
   });
 });
 
