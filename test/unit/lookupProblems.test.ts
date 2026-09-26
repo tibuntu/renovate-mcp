@@ -88,6 +88,27 @@ describe("detectLookupProblems", () => {
     expect(detectLookupProblems(log)).toEqual([]);
   });
 
+  it("ignores 401/403 inside dotted version strings", () => {
+    const log = [
+      '{"msg":"found 1.403.0 as latest"}',
+      '{"msg":"skipping 2.401.7-beta"}',
+      "Upgrading foo from 1.401 to 1.403",
+    ].join("\n");
+    expect(detectLookupProblems(log)).toEqual([]);
+  });
+
+  it("still flags the common 401/403 phrasings", () => {
+    const cases = [
+      '{"msg":"lookup failed","err":{"statusCode":401,"message":"statusCode: 401"}}',
+      "HTTP 403 from registry.acme.corp",
+      "403 Forbidden",
+      "request rejected (401)",
+    ];
+    for (const line of cases) {
+      expect(detectLookupProblems(line), line).toHaveLength(1);
+    }
+  });
+
   it("ignores malformed JSON lines that don't match auth patterns", () => {
     const log = "{not json";
     expect(detectLookupProblems(log)).toEqual([]);

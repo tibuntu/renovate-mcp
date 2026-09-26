@@ -14,7 +14,9 @@
  */
 
 const AUTH_PATTERNS: RegExp[] = [
-  /(?:^|[^\d])(401|403)(?:[^\d]|$)/,
+  // A bare status code: not glued to other digits, and not a segment of a
+  // dotted version like `1.403.0` (a trailing sentence period is still fine).
+  /(?<![\d.])(?:401|403)(?!\d|\.\d)/,
   /\bunauthori[sz]ed\b/i,
   /\bauthentication (?:required|failed)\b/i,
   /\brequires authentication\b/i,
