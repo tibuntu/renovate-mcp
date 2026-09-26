@@ -103,6 +103,11 @@ describe("config source not found", () => {
 
 describe("path and inline inputs passed together", () => {
   const bothCases: Array<[string, Record<string, unknown>, string]> = [
+    ["validate_config", { configPath: file, configContent: {} }, "configPath or configContent"],
+    ["lint_config", { configPath: file, configContent: {} }, "configPath or configContent"],
+    ["migrate_config", { configPath: file, configContent: {} }, "configPath or configContent"],
+    ["annotate_dry_run", { report, reportPath: file, configContent: {} }, "report or reportPath"],
+    ["explain_dependency", { report, reportPath: file, depName: "x" }, "report or reportPath"],
     ["resolve_config", { repoPath: tmp, configContent: {} }, "repoPath or configContent"],
     ["explain_config", { repoPath: tmp, configContent: {} }, "repoPath or configContent"],
     ["test_package_rules", { repoPath: tmp, configContent: {} }, "repoPath or configContent"],

@@ -27,6 +27,12 @@ export function registerLintConfig(server: McpServer): void {
           ],
         };
       }
+      if (configPath && configContent) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: "Pass either configPath or configContent, not both." }],
+        };
+      }
 
       let config: unknown;
       if (configContent) {

@@ -30,10 +30,16 @@ export function registerMigrateConfig(server: McpServer): void {
           ],
         };
       }
+      if (configPath && configContent) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: "Pass either configPath or configContent, not both." }],
+        };
+      }
 
       let input: Record<string, unknown>;
       if (configContent) {
-        input = configContent as Record<string, unknown>;
+        input = configContent;
       } else {
         try {
           const raw = await fs.readFile(configPath!, "utf8");
