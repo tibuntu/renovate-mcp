@@ -105,7 +105,7 @@ export function registerWorkflowPrompts(server: McpServer): void {
           "",
           `1. Call check_setup with repoPath "${repoPath}" first to surface any token/CLI setup problems.`,
           "2. Draft a customManagers entry (customType \"regex\" or \"jsonata\") matching the description above.",
-          "3. Call preview_custom_manager with repoPath and the draft manager. Iterate on fileMatch/matchStrings until the file/line hits and extracted dep info look right.",
+          "3. Call preview_custom_manager with repoPath and the draft manager. Iterate on managerFilePatterns/matchStrings until the file/line hits and extracted dep info look right.",
           "4. Call validate_config and lint_config against the full config (existing config plus the new customManagers entry).",
           "5. Call dry_run against the repo to confirm the manager behaves as expected end to end.",
           "6. Summarize the entry and the dry-run result, and ask the user to confirm.",

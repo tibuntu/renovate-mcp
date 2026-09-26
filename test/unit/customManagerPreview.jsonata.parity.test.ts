@@ -111,7 +111,7 @@ describe("customManagerPreview jsonata parity against Renovate's extractPackageF
     const manager = {
       customType: "jsonata" as const,
       fileFormat: "json" as const,
-      fileMatch: ["^package\\.json$"],
+      managerFilePatterns: ["/^package\\.json$/"],
       matchStrings,
     };
 
@@ -155,7 +155,7 @@ describe("customManagerPreview jsonata parity against Renovate's extractPackageF
     const manager = {
       customType: "jsonata" as const,
       fileFormat: "yaml" as const,
-      fileMatch: ["^Chart\\.yaml$"],
+      managerFilePatterns: ["/^Chart\\.yaml$/"],
       matchStrings,
     };
 
@@ -191,7 +191,7 @@ describe("customManagerPreview jsonata parity against Renovate's extractPackageF
     const manager = {
       customType: "jsonata" as const,
       fileFormat: "toml" as const,
-      fileMatch: ["^Cargo\\.toml$"],
+      managerFilePatterns: ["/^Cargo\\.toml$/"],
       matchStrings,
     };
 
@@ -245,7 +245,7 @@ describe("customManagerPreview jsonata parity against Renovate's extractPackageF
     const config = {
       customType: "jsonata" as const,
       fileFormat: "json" as const,
-      fileMatch: ["^data\\.json$"],
+      managerFilePatterns: ["/^data\\.json$/"],
       matchStrings,
       currentValueTemplate: "{{currentValue}}-pinned",
     };

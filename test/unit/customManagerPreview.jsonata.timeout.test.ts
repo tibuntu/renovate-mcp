@@ -60,7 +60,7 @@ describe("customManagerPreview jsonata pathological-expression timeout", () => {
       const manager = {
         customType: "jsonata" as const,
         fileFormat: "json" as const,
-        fileMatch: ["^data\\.json$"],
+        managerFilePatterns: ["/^data\\.json$/"],
         matchStrings: [
           "$reduce(items, function($acc, $v) { $acc + $v }, 0)",
         ],

@@ -413,7 +413,7 @@ describe("previewCustomManager", () => {
     expect(elapsed).toBeLessThan(5_000);
     expect(result.filesMatched).toEqual([]);
     expect(
-      result.warnings.some((w) => /fileMatch\[0\].*exceeded 300ms/.test(w)),
+      result.warnings.some((w) => /managerFilePatterns\[0\].*exceeded 300ms/.test(w)),
     ).toBe(true);
   });
 
@@ -471,7 +471,7 @@ describe("previewCustomManager", () => {
     expect(result.filesMatched).toHaveLength(5);
     expect(
       result.warnings.some(
-        (w) => /fileMatch matched 30 files/.test(w) && /maxFilesMatched=5/.test(w),
+        (w) => /managerFilePatterns matched 30 files/.test(w) && /maxFilesMatched=5/.test(w),
       ),
     ).toBe(true);
     expect(result.warnings.some((w) => /Stopped walking/.test(w))).toBe(false);
@@ -523,5 +523,163 @@ describe("previewCustomManager", () => {
     );
     expect(result.hits).toHaveLength(5);
     expect(result.warnings.some((w) => /capped at 5/.test(w))).toBe(true);
+  });
+});
+
+describe("managerFilePatterns", () => {
+  // Semantics mirror Renovate's `matchRegexOrGlobList`
+  // (node_modules/renovate/dist/util/string-match.js): `*` matches everything,
+  // `/…/` (optionally `/…/i`, optionally `!`-negated) is a regex, anything else
+  // is a minimatch glob with { dot: true, nocase: true }; a path must match at
+  // least one positive pattern (if any) and every negative pattern.
+  const matchStrings = ["(?<depName>\\w+)=(?<currentValue>\\S+)"];
+
+  it("glob **/Chart.yaml matches at the root and in subdirectories", async () => {
+    await mkdir(path.join(repo, "sub"), { recursive: true });
+    await writeFile(path.join(repo, "Chart.yaml"), "a=1");
+    await writeFile(path.join(repo, "sub/Chart.yaml"), "b=2");
+    await writeFile(path.join(repo, "sub/values.yaml"), "c=3");
+    const result = await previewCustomManager(repo, {
+      customType: "regex",
+      managerFilePatterns: ["**/Chart.yaml"],
+      matchStrings,
+    });
+    expect([...result.filesMatched].sort()).toEqual(["Chart.yaml", "sub/Chart.yaml"]);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("glob **/*.yml matches inside dot-directories (minimatch dot: true, like Renovate)", async () => {
+    await mkdir(path.join(repo, ".github/workflows"), { recursive: true });
+    await writeFile(path.join(repo, ".github/workflows/ci.yml"), "a=1");
+    const result = await previewCustomManager(repo, {
+      customType: "regex",
+      managerFilePatterns: ["**/*.yml"],
+      matchStrings,
+    });
+    expect(result.filesMatched).toEqual([".github/workflows/ci.yml"]);
+  });
+
+  it("glob Dockerfile matches only the root Dockerfile", async () => {
+    await mkdir(path.join(repo, "sub"), { recursive: true });
+    await writeFile(path.join(repo, "Dockerfile"), "a=1");
+    await writeFile(path.join(repo, "sub/Dockerfile"), "b=2");
+    const result = await previewCustomManager(repo, {
+      customType: "regex",
+      managerFilePatterns: ["Dockerfile"],
+      matchStrings,
+    });
+    expect(result.filesMatched).toEqual(["Dockerfile"]);
+  });
+
+  it("globs are case-insensitive (minimatch nocase: true, like Renovate)", async () => {
+    await writeFile(path.join(repo, "Dockerfile"), "a=1");
+    const result = await previewCustomManager(repo, {
+      customType: "regex",
+      managerFilePatterns: ["dockerfile"],
+      matchStrings,
+    });
+    expect(result.filesMatched).toEqual(["Dockerfile"]);
+  });
+
+  it("!**/vendor/** excludes everything under a vendor directory", async () => {
+    await mkdir(path.join(repo, "vendor"), { recursive: true });
+    await mkdir(path.join(repo, "sub/vendor"), { recursive: true });
+    await writeFile(path.join(repo, "a.yaml"), "a=1");
+    await writeFile(path.join(repo, "vendor/b.yaml"), "b=2");
+    await writeFile(path.join(repo, "sub/vendor/c.yaml"), "c=3");
+    const result = await previewCustomManager(repo, {
+      customType: "regex",
+      managerFilePatterns: ["**/*.yaml", "!**/vendor/**"],
+      matchStrings,
+    });
+    expect(result.filesMatched).toEqual(["a.yaml"]);
+  });
+
+  it("a negative-only list matches everything the negatives don't exclude", async () => {
+    await mkdir(path.join(repo, "vendor"), { recursive: true });
+    await writeFile(path.join(repo, "a.yaml"), "a=1");
+    await writeFile(path.join(repo, "vendor/b.yaml"), "b=2");
+    const result = await previewCustomManager(repo, {
+      customType: "regex",
+      managerFilePatterns: ["!**/vendor/**"],
+      matchStrings,
+    });
+    expect(result.filesMatched).toEqual(["a.yaml"]);
+  });
+
+  it("* matches every file", async () => {
+    await mkdir(path.join(repo, "sub"), { recursive: true });
+    await writeFile(path.join(repo, "a.txt"), "a=1");
+    await writeFile(path.join(repo, "sub/b.txt"), "b=2");
+    const result = await previewCustomManager(repo, {
+      customType: "regex",
+      managerFilePatterns: ["*"],
+      matchStrings,
+    });
+    expect([...result.filesMatched].sort()).toEqual(["a.txt", "sub/b.txt"]);
+  });
+
+  it("/^Dockerfile$/ is a regex, anchored like the user wrote it", async () => {
+    await mkdir(path.join(repo, "sub"), { recursive: true });
+    await writeFile(path.join(repo, "Dockerfile"), "a=1");
+    await writeFile(path.join(repo, "sub/Dockerfile"), "b=2");
+    const result = await previewCustomManager(repo, {
+      customType: "regex",
+      managerFilePatterns: ["/^Dockerfile$/"],
+      matchStrings,
+    });
+    expect(result.filesMatched).toEqual(["Dockerfile"]);
+  });
+
+  it("/…/i regexes are case-insensitive and !/…/ regexes exclude", async () => {
+    await mkdir(path.join(repo, "vendor"), { recursive: true });
+    await writeFile(path.join(repo, "Dockerfile"), "a=1");
+    await writeFile(path.join(repo, "vendor/Dockerfile"), "b=2");
+    const result = await previewCustomManager(repo, {
+      customType: "regex",
+      managerFilePatterns: ["/dockerfile$/i", "!/^vendor\\//"],
+      matchStrings,
+    });
+    expect(result.filesMatched).toEqual(["Dockerfile"]);
+  });
+
+  it("reports an invalid /…/ regex as an error instead of silently matching nothing", async () => {
+    await expect(
+      previewCustomManager(repo, {
+        customType: "regex",
+        managerFilePatterns: ["/[/"],
+        matchStrings,
+      }),
+    ).rejects.toThrow(/Invalid regex/);
+  });
+
+  it("bare fileMatch still works as /…/ regexes and emits the deprecation warning", async () => {
+    await mkdir(path.join(repo, "sub"), { recursive: true });
+    await writeFile(path.join(repo, "Dockerfile"), "a=1");
+    await writeFile(path.join(repo, "sub/Dockerfile"), "b=2");
+    const result = await previewCustomManager(repo, {
+      customType: "regex",
+      fileMatch: ["(^|/)Dockerfile$"],
+      matchStrings,
+    });
+    expect([...result.filesMatched].sort()).toEqual(["Dockerfile", "sub/Dockerfile"]);
+    expect(result.warnings).toEqual([
+      "fileMatch is deprecated in Renovate 44; use managerFilePatterns (each entry became /…/). Run migrate_config to convert the config.",
+    ]);
+  });
+
+  it("with both given, managerFilePatterns is used and fileMatch entries are appended as /…/", async () => {
+    // Mirrors Renovate's FileMatchMigration: managerFilePatterns.concat(fileMatch.map(m => `/${m}/`)).
+    await writeFile(path.join(repo, "Chart.yaml"), "a=1");
+    await writeFile(path.join(repo, "Dockerfile"), "b=2");
+    await writeFile(path.join(repo, "other.txt"), "c=3");
+    const result = await previewCustomManager(repo, {
+      customType: "regex",
+      managerFilePatterns: ["**/Chart.yaml"],
+      fileMatch: ["^Dockerfile$"],
+      matchStrings,
+    });
+    expect([...result.filesMatched].sort()).toEqual(["Chart.yaml", "Dockerfile"]);
+    expect(result.warnings.some((w) => /fileMatch is deprecated/.test(w))).toBe(true);
   });
 });

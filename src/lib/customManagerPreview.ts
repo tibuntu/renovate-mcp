@@ -2,10 +2,14 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { Worker } from "node:worker_threads";
 import ignore, { type Ignore } from "ignore";
+import { Minimatch } from "minimatch";
 
 export interface CustomManager {
   customType: string;
-  fileMatch: string[];
+  /** Renovate ≥ 44: globs or `/regex/` entries — see `matchFilePatterns`. */
+  managerFilePatterns?: string[];
+  /** Deprecated regex-only predecessor; converted to `/…/` entries with a warning. */
+  fileMatch?: string[];
   matchStrings: string[];
   matchStringsStrategy?: string;
   // Required when customType === "jsonata"; undefined for the regex path.
@@ -126,8 +130,6 @@ export async function previewCustomManager(
   }
 
   const warnings: string[] = [];
-  const maxFilesWalked = options.maxFilesWalked ?? DEFAULT_MAX_FILES_WALKED;
-  const maxFilesMatched = options.maxFilesMatched ?? DEFAULT_MAX_FILES_MATCHED;
   const maxHitsPerFile = options.maxHitsPerFile ?? DEFAULT_MAX_HITS_PER_FILE;
   const matchTimeoutMs = options.matchTimeoutMs ?? DEFAULT_MATCH_TIMEOUT_MS;
   const maxFileBytes = options.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
@@ -136,46 +138,14 @@ export async function previewCustomManager(
 
   // Surface malformed user regexes eagerly, before we do any filesystem work.
   // The Worker path otherwise reports these as generic worker errors.
-  for (const src of manager.fileMatch) validateRegex(src);
   for (const src of manager.matchStrings) validateRegex(src);
 
-  // Walk first, then run fileMatch regexes in a worker so a pathological
-  // pattern can't pin the event loop on the path-testing phase.
-  const allPaths: string[] = [];
-  for await (const rel of walk(repoPath)) {
-    if (allPaths.length >= maxFilesWalked) {
-      warnings.push(
-        `Stopped walking the repo after ${maxFilesWalked} files; remaining files were never tested against fileMatch. Add ignores (or a .gitignore) to prune irrelevant directories, or raise maxFilesWalked.`,
-      );
-      break;
-    }
-    allPaths.push(rel);
-  }
-  const filesWalked = allPaths.length;
-
-  const matchedSet = new Set<string>();
-  for (let i = 0; i < manager.fileMatch.length; i++) {
-    const source = manager.fileMatch[i]!;
-    const res = await runTestInWorker(source, "", allPaths, matchTimeoutMs);
-    if (res.timedOut) {
-      warnings.push(
-        `fileMatch[${i}] /${source}/ exceeded ${matchTimeoutMs}ms and was aborted; no paths were matched against this pattern. Simplify the regex (e.g. avoid nested quantifiers like (a+)+) or raise matchTimeoutMs.`,
-      );
-      continue;
-    }
-    for (const p of res.paths) matchedSet.add(p);
-  }
-  // Preserve walk order so output is stable.
-  const allFilesMatched = allPaths.filter((p) => matchedSet.has(p));
-  // Distinct from the walk cap: this caps the *result set*. A broad fileMatch
-  // regex over a large repo can produce thousands of hits; truncate with a
-  // dedicated warning so the user can tell which cap tripped.
-  const filesMatched = allFilesMatched.slice(0, maxFilesMatched);
-  if (allFilesMatched.length > maxFilesMatched) {
-    warnings.push(
-      `fileMatch matched ${allFilesMatched.length} files; capped result set at maxFilesMatched=${maxFilesMatched}. Narrow fileMatch to target the intended paths, or raise maxFilesMatched.`,
-    );
-  }
+  const { filesWalked, filesMatched } = await collectMatchedFiles(
+    repoPath,
+    manager,
+    options,
+    warnings,
+  );
 
   const hits: PreviewHit[] = [];
   const extractedDeps: ExtractedDep[] = [];
@@ -191,7 +161,7 @@ export async function previewCustomManager(
     }
     if (stat.size > maxFileBytes) {
       warnings.push(
-        `${rel}: skipped, ${stat.size} bytes exceeds maxFileBytes=${maxFileBytes}. Tighten fileMatch to exclude it, or raise maxFileBytes.`,
+        `${rel}: skipped, ${stat.size} bytes exceeds maxFileBytes=${maxFileBytes}. Tighten managerFilePatterns to exclude it, or raise maxFileBytes.`,
       );
       continue;
     }
@@ -219,9 +189,146 @@ export async function previewCustomManager(
   return { filesWalked, filesMatched, hits, extractedDeps, warnings };
 }
 
+export const FILE_MATCH_DEPRECATION_WARNING =
+  "fileMatch is deprecated in Renovate 44; use managerFilePatterns (each entry became /…/). Run migrate_config to convert the config.";
+
 /**
- * JSONata customType branch. Mirrors the regex path's walker + fileMatch +
- * caps; differs only in what runs per matched file: structured-format parse
+ * Normalise the deprecated regex-only `fileMatch` into `managerFilePatterns`
+ * exactly like Renovate's `FileMatchMigration`
+ * (node_modules/renovate/dist/config/migrations/custom/file-match-migration.js):
+ * `managerFilePatterns.concat(fileMatch.map((m) => `/${m}/`))`.
+ */
+function resolveFilePatterns(manager: CustomManager, warnings: string[]): string[] {
+  const patterns = [...(manager.managerFilePatterns ?? [])];
+  if (manager.fileMatch) {
+    warnings.push(FILE_MATCH_DEPRECATION_WARNING);
+    patterns.push(...manager.fileMatch.map((m) => `/${m}/`));
+  }
+  return patterns;
+}
+
+/**
+ * Renovate's `isRegexMatch` / `parseRegexMatch`
+ * (node_modules/renovate/dist/util/string-match.js): an entry is a regex only
+ * when wrapped as `/…/` or `/…/i`, optionally prefixed with `!`. Anything else
+ * is a glob.
+ */
+function parseRegexPattern(
+  pattern: string,
+): { source: string; flags: string; negated: boolean } | null {
+  if (!/^!?\//.test(pattern) || !/\/i?$/.test(pattern)) return null;
+  return {
+    source: pattern.replace(/^!?\//, "").replace(/\/i?$/, ""),
+    flags: pattern.endsWith("i") ? "i" : "",
+    negated: pattern.startsWith("!"),
+  };
+}
+
+/**
+ * Renovate's `matchRegexOrGlobList` (string-match.js), batched over all walked
+ * paths: `*` matches everything; `/…/` entries are regexes and run in the
+ * worker under the timeout budget; anything else is a minimatch glob with
+ * `{ dot: true, nocase: true }`, evaluated in-process (minimatch is not
+ * pathological). A `!`-prefixed entry is negative. A path matches when it
+ * matches at least one positive pattern (if any exist) and every negative
+ * pattern; an empty list matches nothing. Walk order is preserved.
+ */
+async function matchFilePatterns(
+  allPaths: string[],
+  patterns: string[],
+  matchTimeoutMs: number,
+  warnings: string[],
+): Promise<string[]> {
+  if (!patterns.length) return [];
+  const positive: Set<string>[] = [];
+  const negative: Set<string>[] = [];
+  for (let i = 0; i < patterns.length; i++) {
+    const pattern = patterns[i]!;
+    const negated = pattern.startsWith("!");
+    const re = parseRegexPattern(pattern);
+    let matched: Set<string>;
+    if (pattern === "*") {
+      matched = new Set(allPaths);
+    } else if (re) {
+      const res = await runTestInWorker(re.source, re.flags, allPaths, matchTimeoutMs);
+      if (res.timedOut) {
+        warnings.push(
+          `managerFilePatterns[${i}] ${pattern} exceeded ${matchTimeoutMs}ms and was aborted; no paths were tested against this pattern. Simplify the regex (e.g. avoid nested quantifiers like (a+)+) or raise matchTimeoutMs.`,
+        );
+        // A timed-out positive pattern contributes no paths; a timed-out
+        // negative pattern excludes none.
+        if (!negated) positive.push(new Set());
+        continue;
+      }
+      const hit = new Set(res.paths);
+      // Renovate negates the regex itself (`getRegexPredicate`): a negative
+      // regex "matches" the paths the regex does NOT match.
+      matched = negated ? new Set(allPaths.filter((p) => !hit.has(p))) : hit;
+    } else {
+      // minimatch handles the leading `!` natively, same as Renovate.
+      const mm = new Minimatch(pattern, { dot: true, nocase: true });
+      matched = new Set(allPaths.filter((p) => mm.match(p)));
+    }
+    (negated ? negative : positive).push(matched);
+  }
+  return allPaths.filter(
+    (p) =>
+      (!positive.length || positive.some((s) => s.has(p))) &&
+      (!negative.length || negative.every((s) => s.has(p))),
+  );
+}
+
+/**
+ * Walk the repo, apply `managerFilePatterns`, and cap the result set. Shared
+ * by the regex and JSONata paths.
+ */
+async function collectMatchedFiles(
+  repoPath: string,
+  manager: CustomManager,
+  options: PreviewOptions,
+  warnings: string[],
+): Promise<{ filesWalked: number; filesMatched: string[] }> {
+  const maxFilesWalked = options.maxFilesWalked ?? DEFAULT_MAX_FILES_WALKED;
+  const maxFilesMatched = options.maxFilesMatched ?? DEFAULT_MAX_FILES_MATCHED;
+  const matchTimeoutMs = options.matchTimeoutMs ?? DEFAULT_MATCH_TIMEOUT_MS;
+
+  const patterns = resolveFilePatterns(manager, warnings);
+  // Surface malformed user regexes eagerly, before we do any filesystem work.
+  // The Worker path otherwise reports these as generic worker errors.
+  for (const p of patterns) {
+    const re = parseRegexPattern(p);
+    if (re) validateRegex(re.source, re.flags);
+  }
+
+  // Walk first, then run the patterns — regexes in a worker — so a
+  // pathological pattern can't pin the event loop on the path-testing phase.
+  const allPaths: string[] = [];
+  for await (const rel of walk(repoPath)) {
+    if (allPaths.length >= maxFilesWalked) {
+      warnings.push(
+        `Stopped walking the repo after ${maxFilesWalked} files; remaining files were never tested against managerFilePatterns. Add ignores (or a .gitignore) to prune irrelevant directories, or raise maxFilesWalked.`,
+      );
+      break;
+    }
+    allPaths.push(rel);
+  }
+
+  const allFilesMatched = await matchFilePatterns(allPaths, patterns, matchTimeoutMs, warnings);
+  // Distinct from the walk cap: this caps the *result set*. A broad pattern
+  // over a large repo can produce thousands of hits; truncate with a
+  // dedicated warning so the user can tell which cap tripped.
+  const filesMatched = allFilesMatched.slice(0, maxFilesMatched);
+  if (allFilesMatched.length > maxFilesMatched) {
+    warnings.push(
+      `managerFilePatterns matched ${allFilesMatched.length} files; capped result set at maxFilesMatched=${maxFilesMatched}. Narrow managerFilePatterns to target the intended paths, or raise maxFilesMatched.`,
+    );
+  }
+  return { filesWalked: allPaths.length, filesMatched };
+}
+
+/**
+ * JSONata customType branch. Mirrors the regex path's walker +
+ * managerFilePatterns + caps; differs only in what runs per matched file: structured-format parse
  * via `parseStructured()`, then per-expression JSONata evaluation in the
  * worker via `runEvaluateJsonataInWorker()`. Output-shape normalization
  * mirrors Renovate's `QueryResultZod` (see `normalizeJsonataResult`).
@@ -232,8 +339,6 @@ async function previewJsonataManager(
   options: PreviewOptions,
 ): Promise<PreviewResult> {
   const warnings: string[] = [];
-  const maxFilesWalked = options.maxFilesWalked ?? DEFAULT_MAX_FILES_WALKED;
-  const maxFilesMatched = options.maxFilesMatched ?? DEFAULT_MAX_FILES_MATCHED;
   const matchTimeoutMs = options.matchTimeoutMs ?? DEFAULT_MATCH_TIMEOUT_MS;
   const maxFileBytes = options.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
 
@@ -250,42 +355,15 @@ async function previewJsonataManager(
     return { filesWalked: 0, filesMatched: [], hits: [], extractedDeps: [], warnings };
   }
 
-  // The fileMatch regexes still apply on the path level. matchStrings are
+  // managerFilePatterns still apply on the path level. matchStrings are
   // JSONata expressions — DO NOT validateRegex them; their compile errors
   // surface from the worker.
-  for (const src of manager.fileMatch) validateRegex(src);
-
-  const allPaths: string[] = [];
-  for await (const rel of walk(repoPath)) {
-    if (allPaths.length >= maxFilesWalked) {
-      warnings.push(
-        `Stopped walking the repo after ${maxFilesWalked} files; remaining files were never tested against fileMatch. Add ignores (or a .gitignore) to prune irrelevant directories, or raise maxFilesWalked.`,
-      );
-      break;
-    }
-    allPaths.push(rel);
-  }
-  const filesWalked = allPaths.length;
-
-  const matchedSet = new Set<string>();
-  for (let i = 0; i < manager.fileMatch.length; i++) {
-    const source = manager.fileMatch[i]!;
-    const res = await runTestInWorker(source, "", allPaths, matchTimeoutMs);
-    if (res.timedOut) {
-      warnings.push(
-        `fileMatch[${i}] /${source}/ exceeded ${matchTimeoutMs}ms and was aborted; no paths were matched against this pattern. Simplify the regex (e.g. avoid nested quantifiers like (a+)+) or raise matchTimeoutMs.`,
-      );
-      continue;
-    }
-    for (const p of res.paths) matchedSet.add(p);
-  }
-  const allFilesMatched = allPaths.filter((p) => matchedSet.has(p));
-  const filesMatched = allFilesMatched.slice(0, maxFilesMatched);
-  if (allFilesMatched.length > maxFilesMatched) {
-    warnings.push(
-      `fileMatch matched ${allFilesMatched.length} files; capped result set at maxFilesMatched=${maxFilesMatched}. Narrow fileMatch to target the intended paths, or raise maxFilesMatched.`,
-    );
-  }
+  const { filesWalked, filesMatched } = await collectMatchedFiles(
+    repoPath,
+    manager,
+    options,
+    warnings,
+  );
 
   const extractedDeps: ExtractedDep[] = [];
 
@@ -300,7 +378,7 @@ async function previewJsonataManager(
     }
     if (stat.size > maxFileBytes) {
       warnings.push(
-        `${rel}: skipped, ${stat.size} bytes exceeds maxFileBytes=${maxFileBytes}. Tighten fileMatch to exclude it, or raise maxFileBytes.`,
+        `${rel}: skipped, ${stat.size} bytes exceeds maxFileBytes=${maxFileBytes}. Tighten managerFilePatterns to exclude it, or raise maxFileBytes.`,
       );
       continue;
     }
@@ -708,11 +786,11 @@ function applyTemplate(tmpl: string, groups: Record<string, string>): string {
   );
 }
 
-function validateRegex(source: string): void {
+function validateRegex(source: string, flags = ""): void {
   try {
-    new RegExp(source);
+    new RegExp(source, flags);
   } catch (err) {
-    throw new Error(`Invalid regex /${source}/: ${(err as Error).message}`);
+    throw new Error(`Invalid regex /${source}/${flags}: ${(err as Error).message}`);
   }
 }
 
@@ -979,7 +1057,7 @@ async function* walkDir(
     } else if (entry.isFile()) {
       if (isIgnored(relPath, false, dirLevels)) continue;
       // Always emit POSIX-style paths so users on macOS/Linux/Windows write
-      // the same fileMatch regexes.
+      // the same managerFilePatterns.
       yield toPosix(relPath);
     }
   }

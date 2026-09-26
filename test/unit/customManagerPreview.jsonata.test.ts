@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -112,7 +112,7 @@ describe("previewCustomManager (jsonata branch — end-to-end)", () => {
     const result = await previewCustomManager(repo, {
       customType: "jsonata",
       fileFormat: "json",
-      fileMatch: ["^package\\.json$"],
+      managerFilePatterns: ["/^package\\.json$/"],
       matchStrings: [
         '$each(dependencies, function($v, $k) { { "depName": $k, "currentValue": $v, "datasource": "npm" } })',
       ],
@@ -147,7 +147,7 @@ describe("previewCustomManager (jsonata branch — end-to-end)", () => {
     const result = await previewCustomManager(repo, {
       customType: "jsonata",
       fileFormat: "yaml",
-      fileMatch: ["Chart\\.yaml$"],
+      managerFilePatterns: ["/Chart\\.yaml$/"],
       matchStrings: [
         'dependencies.{ "depName": name, "currentValue": version, "registryUrl": repository, "datasource": "helm" }',
       ],
@@ -179,7 +179,7 @@ describe("previewCustomManager (jsonata branch — end-to-end)", () => {
     const result = await previewCustomManager(repo, {
       customType: "jsonata",
       fileFormat: "toml",
-      fileMatch: ["Cargo\\.toml$"],
+      managerFilePatterns: ["/Cargo\\.toml$/"],
       matchStrings: [
         '$each(dependencies, function($v, $k) { { "depName": $k, "currentValue": $v, "datasource": "crate" } })',
       ],
@@ -198,7 +198,7 @@ describe("previewCustomManager (jsonata branch — end-to-end)", () => {
     const result = await previewCustomManager(repo, {
       customType: "jsonata",
       fileFormat: "json",
-      fileMatch: ["^package\\.json$"],
+      managerFilePatterns: ["/^package\\.json$/"],
       matchStrings: [
         '{ "depName": "lodash", "currentValue": dependencies.lodash, "datasource": "npm" }',
       ],
@@ -220,7 +220,7 @@ describe("previewCustomManager (jsonata branch — end-to-end)", () => {
     const result = await previewCustomManager(repo, {
       customType: "jsonata",
       fileFormat: "json",
-      fileMatch: ["^data\\.json$"],
+      managerFilePatterns: ["/^data\\.json$/"],
       matchStrings: [
         '{ "depName": "foo", "currentValue": 1.2, "datasource": "npm" }',
       ],
@@ -239,7 +239,7 @@ describe("previewCustomManager (jsonata branch — end-to-end)", () => {
     const result = await previewCustomManager(repo, {
       customType: "jsonata",
       fileFormat: "json",
-      fileMatch: ["^data\\.json$"],
+      managerFilePatterns: ["/^data\\.json$/"],
       matchStrings: [
         '{ "depName": "foo", "currentValue": 1.2, "datasource": "npm" }',
       ],
@@ -256,7 +256,7 @@ describe("previewCustomManager (jsonata branch — end-to-end)", () => {
     const result = await previewCustomManager(repo, {
       customType: "jsonata",
       fileFormat: "json",
-      fileMatch: ["^data\\.json$"],
+      managerFilePatterns: ["/^data\\.json$/"],
       matchStrings: [
         '{ "depName": "foo", "currentValue": "1.0.0", "meta": { "nested": true }, "datasource": "npm" }',
       ],
@@ -276,7 +276,7 @@ describe("previewCustomManager (jsonata branch — end-to-end)", () => {
     const result = await previewCustomManager(repo, {
       customType: "jsonata",
       fileFormat: "json",
-      fileMatch: ["^package\\.json$"],
+      managerFilePatterns: ["/^package\\.json$/"],
       matchStrings: [
         '$each(dependencies, function($v, $k) { { "depName": $k, "currentValue": $v } })',
       ],
@@ -297,7 +297,7 @@ describe("previewCustomManager (jsonata branch — end-to-end)", () => {
     const result = await previewCustomManager(repo, {
       customType: "jsonata",
       fileFormat: "json",
-      fileMatch: ["^package\\.json$"],
+      managerFilePatterns: ["/^package\\.json$/"],
       matchStrings: [
         '$each(dependencies, function($v, $k) { { "depName": $k, "currentValue": $v } })',
       ],
@@ -315,7 +315,7 @@ describe("previewCustomManager (jsonata branch — end-to-end)", () => {
     const result = await previewCustomManager(repo, {
       customType: "jsonata",
       fileFormat: "json",
-      fileMatch: ["^package\\.json$"],
+      managerFilePatterns: ["/^package\\.json$/"],
       matchStrings: ["dependencies.lodash"],
     });
     expect(result.extractedDeps).toEqual([]);
@@ -332,7 +332,7 @@ describe("previewCustomManager (jsonata branch — end-to-end)", () => {
     const result = await previewCustomManager(repo, {
       customType: "jsonata",
       fileFormat: "json",
-      fileMatch: ["^config\\.json$"],
+      managerFilePatterns: ["/^config\\.json$/"],
       matchStrings: ["names"],
     });
     expect(result.extractedDeps).toEqual([]);
@@ -348,7 +348,7 @@ describe("previewCustomManager (jsonata branch — end-to-end)", () => {
     const result = await previewCustomManager(repo, {
       customType: "jsonata",
       fileFormat: "json",
-      fileMatch: ["^data\\.json$"],
+      managerFilePatterns: ["/^data\\.json$/"],
       matchStrings: ['packages.{ "depName": name }'],
     });
     expect(result.warnings).toEqual([]);
@@ -363,7 +363,7 @@ describe("previewCustomManager (jsonata branch — end-to-end)", () => {
     const result = await previewCustomManager(repo, {
       customType: "jsonata",
       fileFormat: "json",
-      fileMatch: ["^data\\.json$"],
+      managerFilePatterns: ["/^data\\.json$/"],
       matchStrings: ["nonexistent.field"],
     });
     expect(result.warnings).toEqual([]);
@@ -378,7 +378,7 @@ describe("previewCustomManager (jsonata branch — end-to-end)", () => {
     const result = await previewCustomManager(repo, {
       customType: "jsonata",
       fileFormat: "json",
-      fileMatch: ["^data\\.json$"],
+      managerFilePatterns: ["/^data\\.json$/"],
       matchStrings: ["(("],
     });
     expect(result.extractedDeps).toEqual([]);
@@ -398,7 +398,7 @@ describe("previewCustomManager (jsonata branch — end-to-end)", () => {
     const result = await previewCustomManager(repo, {
       customType: "jsonata",
       fileFormat: "yaml",
-      fileMatch: ["\\.yaml$"],
+      managerFilePatterns: ["/\\.yaml$/"],
       matchStrings: ['packages.{ "depName": name, "currentValue": version }'],
     });
     expect(result.filesMatched.sort()).toEqual(["bad.yaml", "good.yaml"]);
@@ -415,7 +415,7 @@ describe("previewCustomManager (jsonata branch — end-to-end)", () => {
   it("missing fileFormat at the lib level returns a warning + empty result", async () => {
     const result = await previewCustomManager(repo, {
       customType: "jsonata",
-      fileMatch: ["x"],
+      managerFilePatterns: ["/x/"],
       matchStrings: ["$"],
       // fileFormat intentionally omitted
     });
@@ -427,6 +427,29 @@ describe("previewCustomManager (jsonata branch — end-to-end)", () => {
     expect(result.hits).toEqual([]);
   });
 
+  it("honours managerFilePatterns (glob) on the JSONata path", async () => {
+    await mkdir(path.join(repo, "charts/app"), { recursive: true });
+    await writeFile(
+      path.join(repo, "charts/app/Chart.yaml"),
+      "dependencies:\n  - name: redis\n    version: 17.0.0\n",
+    );
+    await writeFile(
+      path.join(repo, "charts/app/values.yaml"),
+      "dependencies:\n  - name: nope\n    version: 0.0.0\n",
+    );
+    const result = await previewCustomManager(repo, {
+      customType: "jsonata",
+      fileFormat: "yaml",
+      managerFilePatterns: ["**/Chart.yaml"],
+      matchStrings: ['dependencies.{ "depName": name, "currentValue": version }'],
+    });
+    expect(result.warnings).toEqual([]);
+    expect(result.filesMatched).toEqual(["charts/app/Chart.yaml"]);
+    expect(result.extractedDeps).toEqual([
+      expect.objectContaining({ depName: "redis", currentValue: "17.0.0" }),
+    ]);
+  });
+
   it("sanity check: regex path still works after refactor", async () => {
     await writeFile(
       path.join(repo, "Dockerfile"),
@@ -434,7 +457,7 @@ describe("previewCustomManager (jsonata branch — end-to-end)", () => {
     );
     const result = await previewCustomManager(repo, {
       customType: "regex",
-      fileMatch: ["(^|/)Dockerfile$"],
+      managerFilePatterns: ["/(^|/)Dockerfile$/"],
       matchStrings: ["FROM (?<depName>[^:\\s]+):(?<currentValue>\\S+)"],
       datasourceTemplate: "docker",
     });
