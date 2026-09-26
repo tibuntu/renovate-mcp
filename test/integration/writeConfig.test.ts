@@ -77,6 +77,9 @@ describe("write_config", () => {
     const payload = JSON.parse(res.result!.content[0]!.text);
     expect(payload.wrote).toBe(true);
     expect(payload.path).toBe("renovate.json");
+    // No prior file → the serializer's fresh-write branch; callers can tell
+    // it apart from a round-trip edit.
+    expect(payload.mode).toBe("fresh-write");
 
     const written = JSON.parse(await readFile(path.join(repo, "renovate.json"), "utf8"));
     expect(written).toMatchObject({ extends: ["config:recommended"] });
@@ -325,6 +328,7 @@ describe("write_config", () => {
     expect(res.result?.isError).toBeFalsy();
     const payload = JSON.parse(res.result!.content[0]!.text);
     expect(payload.wrote).toBe(true);
+    expect(payload.mode).toBe("round-trip");
 
     const written = await readFile(path.join(repo, "renovate.json"), "utf8");
     // The top-of-file comment survives the round-trip edit.
