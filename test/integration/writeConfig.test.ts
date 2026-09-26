@@ -556,4 +556,41 @@ describe("write_config", () => {
     expect(files).not.toContain("renovate.json");
     expect(files.some((f) => f.endsWith(".renovate-mcp-tmp"))).toBe(false);
   });
+
+  it("reports a validator that overruns its 30 s budget as validator-timeout, not validator-unavailable", async () => {
+    // Answers the startup --version probe, then idles until run() kills it.
+    // The validator budget is a fixed 30 s, so this test takes that long.
+    const validator = path.join(repo, "idle-validator.mjs");
+    await writeFile(
+      validator,
+      `#!/usr/bin/env node
+if (process.argv.includes("--version")) { console.log("0.0.0-fake"); process.exit(0); }
+setInterval(() => {}, 1000);
+`,
+    );
+    await chmod(validator, 0o755);
+    session = await startServer(
+      { RENOVATE_CONFIG_VALIDATOR_BIN: validator },
+      { requestTimeoutMs: 60_000 },
+    );
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "write_config",
+      arguments: { repoPath: repo, config: { extends: ["config:recommended"] } },
+    });
+
+    expect(res.result?.isError).toBe(true);
+    const payload = JSON.parse(res.result!.content[0]!.text);
+    expect(payload).toMatchObject({ wrote: false, reason: "validator-timeout" });
+    expect(payload.validationOutput).toContain("timed out after 30000 ms");
+    expect(payload.hint).toContain("NOT validated");
+    expect(payload.hint).not.toContain("Pass force=true");
+
+    const files = await readdir(repo);
+    expect(files).not.toContain("renovate.json");
+    expect(files.filter((f) => f.includes(".renovate-mcp-tmp-"))).toHaveLength(0);
+  }, 60_000);
 });

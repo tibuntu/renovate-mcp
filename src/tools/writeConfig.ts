@@ -167,6 +167,7 @@ export function registerWriteConfig(server: McpServer): void {
         let valid = false;
         let validationOutput = "";
         let validatorMissing = false;
+        let validatorTimedOut = false;
         let runtimeWarnings: RuntimeWarning[] = [];
         try {
           const tool = resolveRenovateTool("renovate-config-validator");
@@ -180,8 +181,9 @@ export function registerWriteConfig(server: McpServer): void {
           runtimeWarnings = v.runtimeWarnings;
         } catch (err) {
           if (err instanceof CommandTimeoutError) {
-            // The validator ran but overran its budget — a validation
-            // failure with a timeout message, not "validator-unavailable".
+            // The validator ran but overran its budget — its own refusal
+            // reason below, never "validator-unavailable".
+            validatorTimedOut = true;
             validationOutput = formatTimeoutError("renovate-config-validator", err);
           } else {
             validatorMissing = true;
@@ -190,14 +192,18 @@ export function registerWriteConfig(server: McpServer): void {
         }
 
         if (!valid && !force) {
-          const failPayload: Record<string, unknown> = {
-            wrote: false,
-            reason: validatorMissing ? "validator-unavailable" : "validation-failed",
-            validationOutput,
-            hint: validatorMissing
-              ? "The bundled renovate-config-validator failed to spawn. Set RENOVATE_CONFIG_VALIDATOR_BIN to a working binary or reinstall renovate-mcp, then retry. Pass force=true to skip validation entirely."
-              : "Pass force=true to write anyway.",
-          };
+          const [reason, hint] = validatorMissing
+            ? [
+                "validator-unavailable",
+                "The bundled renovate-config-validator failed to spawn. Set RENOVATE_CONFIG_VALIDATOR_BIN to a working binary or reinstall renovate-mcp, then retry. Pass force=true to skip validation entirely.",
+              ]
+            : validatorTimedOut
+              ? [
+                  "validator-timeout",
+                  "The validator timed out; the config was NOT validated. Retry, or check machine load. Do not use force=true to bypass a timeout.",
+                ]
+              : ["validation-failed", "Pass force=true to write anyway."];
+          const failPayload: Record<string, unknown> = { wrote: false, reason, validationOutput, hint };
           if (runtimeWarnings.length > 0) failPayload.warnings = runtimeWarnings;
           return {
             isError: true,
