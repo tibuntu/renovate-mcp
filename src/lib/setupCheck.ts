@@ -632,8 +632,25 @@ function looksLikeUiUrl(endpoint: string): boolean {
   return !/\/api\//.test(endpoint);
 }
 
-// Tools that do not depend on the Renovate CLI and are always callable.
-export const OFFLINE_TOOLS = ["read_config", "resolve_config", "preview_custom_manager"] as const;
+// Tools that do not depend on the Renovate CLI and are always callable. Every
+// registered tool is either here or in `unavailableTools` — a drift test in
+// test/unit/setupCheck.test.ts enforces that against src/tools/*.ts.
+export const OFFLINE_TOOLS = [
+  "check_setup",
+  "get_version",
+  "read_config",
+  "suggest_presets",
+  "resolve_config",
+  "explain_config",
+  "resolve_config_diff",
+  "test_package_rules",
+  "preview_custom_manager",
+  "lint_config",
+  "dry_run_diff",
+  "annotate_dry_run",
+  "explain_dependency",
+  "migrate_config",
+] as const;
 
 // Returns the tool names that cannot currently run because their backing
 // binary is missing. Order is workflow-ordered (validate → dry_run → write).
