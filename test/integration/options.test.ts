@@ -68,6 +68,12 @@ describe("renovate://option/{name} template", () => {
     expect(res.error).toBeDefined();
     expect(res.error?.message ?? "").toMatch(/unknown option/i);
   });
+
+  it("treats malformed percent-encoding like an unknown name, not a raw URIError", async () => {
+    session = await startServer();
+    const res = await session.request("resources/read", { uri: "renovate://option/%E0%A4%A" });
+    expect(res.error?.message ?? "").toMatch(/unknown option/i);
+  });
 });
 
 describe("renovate://managers", () => {
