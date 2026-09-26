@@ -105,11 +105,18 @@ describe("scrubSecrets", () => {
     expect(scrubSecrets(input, [""])).toBe(input);
   });
 
+  it("skips secrets shorter than 4 characters (a 1-char token must not redact every occurrence of that character)", () => {
+    const input = "abc a1b2c3 token=abc";
+    expect(scrubSecrets(input, ["a", "ab", "abc"])).toBe(input);
+    // Four characters is long enough to scrub.
+    expect(scrubSecrets("token=abcd end", ["abcd"])).toBe("token=[REDACTED] end");
+  });
+
   it("prefers the longer secret when one is a substring of another", () => {
-    // "tok" appears inside "tok-long". Without a length-desc sort, the shorter
-    // secret could chew a prefix out of the longer one and leave a stray
-    // suffix behind.
-    const out = scrubSecrets("value=tok-long and also tok alone", ["tok", "tok-long"]);
+    // "toke" appears inside "toke-long". Without a length-desc sort, the
+    // shorter secret could chew a prefix out of the longer one and leave a
+    // stray suffix behind.
+    const out = scrubSecrets("value=toke-long and also toke alone", ["toke", "toke-long"]);
     expect(out).toBe("value=[REDACTED] and also [REDACTED] alone");
   });
 
