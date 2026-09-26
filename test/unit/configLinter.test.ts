@@ -303,6 +303,41 @@ describe("lintConfig", () => {
       const paths = dep.map((f) => f.path).sort();
       expect(paths).toEqual(["masterIssue", "packageRules[0].versionScheme"]);
     });
+
+    it("flags keys handled by Renovate's deprecated custom migrations (fileMatch) without a rename", () => {
+      const findings = lintConfig({
+        customManagers: [
+          { customType: "regex", fileMatch: ["^Dockerfile$"], matchStrings: ["x"] },
+        ],
+      });
+      const dep = findings.filter((f) => f.ruleId === "deprecated-key");
+      expect(dep).toHaveLength(1);
+      expect(dep[0]).toMatchObject({
+        path: "customManagers[0].fileMatch",
+        value: "fileMatch",
+        severity: "warn",
+        message:
+          '"fileMatch" is deprecated; Renovate migrates it automatically — run migrate_config to see the replacement.',
+      });
+      expect(dep[0]!.suggestion).toBeUndefined();
+    });
+
+    it("flags stabilityDays (a value-coercion custom migration) at the top level", () => {
+      const findings = lintConfig({ stabilityDays: 3 });
+      const dep = findings.filter((f) => f.ruleId === "deprecated-key");
+      expect(dep).toHaveLength(1);
+      expect(dep[0]!.path).toBe("stabilityDays");
+      expect(dep[0]!.message).toContain("migrate_config");
+    });
+
+    it("does not flag managerFilePatterns", () => {
+      const findings = lintConfig({
+        customManagers: [
+          { customType: "regex", managerFilePatterns: ["**/Dockerfile"], matchStrings: ["x"] },
+        ],
+      });
+      expect(findings.filter((f) => f.ruleId === "deprecated-key")).toEqual([]);
+    });
   });
 
   describe("severity backfill", () => {
