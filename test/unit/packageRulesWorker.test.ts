@@ -2,10 +2,8 @@ import { resolve } from "node:path";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import matchers from "renovate/dist/util/package-rules/matchers.js";
 import { applyPackageRules } from "renovate/dist/util/package-rules/index.js";
-import {
-  runApplyPackageRules,
-  PackageRulesTimeoutError,
-} from "../../src/lib/packageRulesWorker.js";
+import { runApplyPackageRules } from "../../src/lib/packageRulesWorker.js";
+import { WorkerTimeoutError } from "../../src/lib/renovateWorker.js";
 
 /**
  * The worker entry (dist/lib/packageRulesWorkerImpl.js) is pointed at via
@@ -93,12 +91,12 @@ describe("runApplyPackageRules (worker-isolated faithful matching)", () => {
     expect(res!.mergedConfig.automerge).toBe(true);
   });
 
-  it("throws PackageRulesTimeoutError when the cold-load budget is exceeded", async () => {
+  it("throws WorkerTimeoutError when the cold-load budget is exceeded", async () => {
     await expect(
       runApplyPackageRules([{ matchPackageNames: ["lodash"] }], [BASE], {
         timeoutMs: 1,
       }),
-    ).rejects.toBeInstanceOf(PackageRulesTimeoutError);
+    ).rejects.toBeInstanceOf(WorkerTimeoutError);
   });
 
   it("rejects promptly when the worker exits non-zero without posting a result", async () => {

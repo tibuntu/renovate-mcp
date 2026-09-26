@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { runMerge, MergeTimeoutError } from "../../src/lib/mergeWorker.js";
+import { runMerge } from "../../src/lib/mergeWorker.js";
+import { WorkerTimeoutError } from "../../src/lib/renovateWorker.js";
 
 /**
  * The worker entry (dist/lib/mergeWorkerImpl.js) is pointed at via
@@ -58,17 +59,17 @@ describe("runMerge (worker-isolated faithful merge)", () => {
     expect(merged).toEqual({ a: 3, b: 2 });
   });
 
-  it("throws MergeTimeoutError when the cold-load budget is exceeded", async () => {
+  it("throws WorkerTimeoutError when the cold-load budget is exceeded", async () => {
     await expect(
       runMerge([{ a: 1 }, { b: 2 }], { timeoutMs: 1 }),
-    ).rejects.toBeInstanceOf(MergeTimeoutError);
+    ).rejects.toBeInstanceOf(WorkerTimeoutError);
   });
 
   it("rejects promptly when the worker exits non-zero without posting a result", async () => {
     // A worker that exits before posting (here a fixture that calls
     // process.exit(1), firing neither 'message' nor 'error') must not hang
     // until the timeout. The old handler swallowed exit code 1 and only threw
-    // MergeTimeoutError after the full budget.
+    // WorkerTimeoutError after the full budget.
     vi.stubEnv(
       "RENOVATE_MCP_MERGE_WORKER_ENTRY",
       resolve(process.cwd(), "test/fixtures/exit-one-worker.mjs"),
