@@ -240,6 +240,20 @@ describe("run() timeout and capture cap", () => {
     expect(res.stdout.endsWith("x\n")).toBe(true);
     expect(lines).toBe(6144);
   });
+
+  it("caps the partial-line buffer at 1 MiB when a stream never emits a newline", async () => {
+    // 3 MiB with no newline: the observer still gets the (capped) tail on close.
+    const script = await makeScript(`process.stdout.write("y".repeat(3 * 1024 * 1024));`);
+
+    const lines: string[] = [];
+    const res = await run(process.execPath, [script], {
+      onStdoutLine: (l) => lines.push(l),
+    });
+
+    expect(res.exitCode).toBe(0);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.length).toBe(1024 * 1024);
+  });
 });
 
 describe("formatTimeoutError", () => {
