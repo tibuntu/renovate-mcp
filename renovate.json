@@ -18,6 +18,12 @@
       "rangeStrategy": "bump"
     },
     {
+      "description": "The simple-git override is only a CVE floor for Renovate's transitive copy. Forcing a major Renovate itself doesn't pin breaks it (v4's env guard throws on the GIT_SSH_COMMAND / GIT_CONFIG_* vars Renovate passes via .env()). Hold majors until Renovate adopts them.",
+      "matchPackageNames": ["simple-git"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    },
+    {
       "description": "claude-code-action releases very frequently; propose its updates at most once per week to reduce PR churn.",
       "matchPackageNames": ["anthropics/claude-code-action"],
       "schedule": ["* * * * 0"]
