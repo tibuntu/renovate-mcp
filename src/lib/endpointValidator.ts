@@ -18,38 +18,47 @@ export class EndpointValidationError extends Error {
   }
 }
 
+/**
+ * Display form for every refusal message: userinfo (everything between the
+ * `//` and the last `@` before the path/query/fragment, mirroring WHATWG
+ * authority parsing) becomes `<redacted>@`. String-level so it also covers
+ * input that `new URL()` rejects. Over-redacts on exotic non-URL input, which
+ * is the safe direction — these messages land in logs and tool output.
+ */
+function redactUserinfo(endpoint: string): string {
+  return endpoint.replace(/^((?:[a-z][a-z0-9+.-]*:\/\/)?)[^/?#]*@/i, "$1<redacted>@");
+}
+
 export function validateEndpoint(endpoint: string): void {
+  const shown = redactUserinfo(endpoint);
   let url: URL;
   try {
     url = new URL(endpoint);
   } catch {
     throw new EndpointValidationError(
-      `Invalid endpoint \`${endpoint}\`: not a parseable URL.`,
+      `Invalid endpoint \`${shown}\`: not a parseable URL.`,
     );
   }
   if (url.protocol !== "https:") {
     throw new EndpointValidationError(
-      `Invalid endpoint \`${endpoint}\`: protocol must be https: (refused ${url.protocol}). ` +
+      `Invalid endpoint \`${shown}\`: protocol must be https: (refused ${url.protocol}). ` +
         "Plain http would expose the auth token in cleartext; non-network schemes are not endpoints.",
     );
   }
   if (!url.hostname) {
     throw new EndpointValidationError(
-      `Invalid endpoint \`${endpoint}\`: host is empty.`,
+      `Invalid endpoint \`${shown}\`: host is empty.`,
     );
   }
   if (url.username || url.password) {
-    // Never echo the credential back — this message can land in logs and
-    // tool output.
-    const redacted = `${url.protocol}//<redacted>@${url.host}${url.pathname}${url.search}`;
     throw new EndpointValidationError(
-      `Invalid endpoint \`${redacted}\`: userinfo (\`user:password@host\`) is not allowed — it can mask the real authority and override credentials.`,
+      `Invalid endpoint \`${shown}\`: userinfo (\`user:password@host\`) is not allowed — it can mask the real authority and override credentials.`,
     );
   }
   const host = stripIpv6Brackets(url.hostname).toLowerCase();
   if (isPrivateOrLoopbackHost(host)) {
     throw new EndpointValidationError(
-      `Invalid endpoint \`${endpoint}\`: host \`${host}\` is in a private, loopback, or link-local range. ` +
+      `Invalid endpoint \`${shown}\`: host \`${host}\` is in a private, loopback, or link-local range. ` +
         "Refused to prevent SSRF and accidental exposure of the attached auth token to internal services. " +
         "If you need a self-hosted GitHub/GitLab, use its public-DNS https URL.",
     );

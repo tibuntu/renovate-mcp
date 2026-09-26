@@ -62,16 +62,25 @@ describe("validateEndpoint — rejects userinfo", () => {
     );
   });
 
-  it("never echoes the credential in the refusal message", () => {
+  // Every refusal path must redact, not just the userinfo check — the
+  // protocol / parse / host checks run first and would otherwise echo the raw
+  // input. Each row pins which check fires and what the message shows.
+  it.each([
+    ["https://alice:hunter2@api.github.com/api/v3", /userinfo .* not allowed/, "https://<redacted>@api.github.com/api/v3"],
+    ["http://alice:hunter2@host.com/api/v3", /protocol must be https:/, "http://<redacted>@host.com/api/v3"],
+    ["https://alice:hunter2@/api/v3", /not a parseable URL/, "https://<redacted>@/api/v3"], // empty host: WHATWG rejects it
+    ["https://alice:hunter2@127.0.0.1/", /userinfo .* not allowed/, "https://<redacted>@127.0.0.1/"],
+  ])("never echoes the credential in the refusal message for %s", (endpoint, refusal, shown) => {
     let message = "";
     try {
-      validateEndpoint("https://attacker:hunter2@api.github.com/api/v3");
+      validateEndpoint(endpoint);
     } catch (err) {
       message = (err as Error).message;
     }
+    expect(message).toMatch(refusal);
     expect(message).not.toContain("hunter2");
-    expect(message).not.toContain("attacker");
-    expect(message).toContain("https://<redacted>@api.github.com/api/v3");
+    expect(message).not.toContain("alice");
+    expect(message).toContain(`\`${shown}\``);
   });
 });
 
