@@ -50,7 +50,11 @@ export function registerValidateConfig(server: McpServer): void {
         const tool = resolveRenovateTool("renovate-config-validator");
         const args: string[] = [];
         if (strict) args.push("--strict");
-        args.push(target);
+        // Positional files are treated as GLOBAL self-hosted config unless
+        // --no-global is passed — without it, repo-forbidden options like
+        // `token` validate clean. Kept after the file: fake validators in the
+        // tests read argv[2] as the path.
+        args.push(target, "--no-global");
         const result = await run(tool.cmd, [...tool.prefixArgs, ...args], { timeoutMs: 30_000 });
         const valid = result.exitCode === 0;
         const output = (result.stdout + result.stderr).trim();
