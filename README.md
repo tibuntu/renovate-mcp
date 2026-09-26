@@ -32,7 +32,7 @@ Restart your client and try the prompt: *"List the namespaces available under `r
 
 - **Read and explain configs** — locate the active `renovate.json*`, expand every `extends` preset offline, and trace which preset set each field.
 - **Discover presets from intent** — describe what you want ("automerge patches, group dev deps") and get ranked built-in (and your own local-repo) presets, plus a draft config skeleton when nothing fits.
-- **Preview custom managers** before running Renovate — regex and JSONata, with file/line hits and extracted dep info.
+- **Preview custom managers** before running Renovate — regex and JSONata, with Renovate's `managerFilePatterns` glob/regex file selection, file/line hits and extracted dep info.
 - **Validate and lint** — schema validation plus a semantic lint pass for Renovate-specific footguns (unwrapped regexes, unknown manager names, deprecated keys).
 - **Dry-run** against a local checkout or a remote GitHub/GitLab — see exactly which PRs Renovate would open.
 - **Save back atomically** — round-trip writes preserve comments and key order in existing JSON-with-comments files.
@@ -156,8 +156,9 @@ Once the server is wired up, try prompts like these. Written for Claude but work
 
 **Authoring a custom manager (regex or JSONata)**
 
-- "I have `# renovate: datasource=docker depName=...` comments above image tags in my Dockerfiles. Draft a `customManagers` regex entry and preview it against this repo so I can see what it extracts."
-- "Here's a `customManagers` entry — preview it and tell me which files match, which lines hit each `matchStrings` regex, and what dep info gets extracted."
+- "I have `# renovate: datasource=docker depName=...` comments above image tags in my Dockerfiles. Draft a `customManagers` regex entry with `managerFilePatterns: ["**/Dockerfile"]` and preview it against this repo so I can see what it extracts."
+- "Here's a `customManagers` entry — preview it and tell me which files match `managerFilePatterns`, which lines hit each `matchStrings` regex, and what dep info gets extracted."
+- "My custom manager still uses `fileMatch`. Lint the config, then run `migrate_config` so it becomes `managerFilePatterns`."
 - "Draft a `customType: \"jsonata\"` customManager with `fileFormat: \"yaml\"` to extract Helm chart dependencies (`name`, `version`, `repository`) from `Chart.yaml`, and preview it against this repo."
 
 **Validating, previewing, saving**
@@ -173,8 +174,8 @@ A transcript-style walkthrough: design a Dockerfile custom manager from scratch,
 
 > **You:** I've got `# renovate: datasource=docker depName=<image>` comments above `FROM` lines in my Dockerfiles. Draft a `customManagers` entry and preview it against this repo.
 >
-> **Claude** calls `preview_custom_manager` with a first-draft `fileMatch` + `matchStrings`.
-> → 4 Dockerfiles matched `fileMatch`, 0 lines matched `matchStrings`. The regex anchored on `ARG`, but the Dockerfiles use `FROM`.
+> **Claude** calls `preview_custom_manager` with a first-draft `managerFilePatterns` (`**/Dockerfile`) + `matchStrings`.
+> → 4 Dockerfiles matched `managerFilePatterns`, 0 lines matched `matchStrings`. The regex anchored on `ARG`, but the Dockerfiles use `FROM`.
 >
 > **You:** Rewrite `matchStrings` to anchor on the renovate comment, then `FROM <image>:<version>` on the next line.
 >
@@ -225,5 +226,5 @@ See [`docs/development.md`](docs/development.md) for snapshot-file mechanics, CI
 
 - **Not a Renovate replacement.** This server doesn't open PRs, run scheduled updates, or execute in CI — it's a design-time companion for a local `renovate.json`. Use the real Renovate for the actual dependency-update pipeline.
 - **`resolve_config` merges faithfully.** Preset expansion runs offline against a committed snapshot, then folds with Renovate's real `mergeChildConfig` in a worker thread — `mergeQuality: "faithful"` (it falls back to an approximate in-process merge as `"preview"` only if the worker is unavailable). Template substitution still implements only positional `{{argN}}` placeholders — non-positional tokens and Handlebars helpers are flagged in `warnings` and pass through verbatim. For full config resolution (datasource lookups, etc.), run `dry_run`.
-- **`preview_custom_manager` is a subset of Renovate's custom managers.** It covers `customType: "regex"` (with `matchStringsStrategy` of `any` / `combination` / `recursive`) and `customType: "jsonata"` (with `fileFormat: "json" | "yaml" | "toml"`). Template substitution is `{{groupName}}` only — full Handlebars helpers/conditionals are not implemented. Other custom types (e.g. `html`) are out of scope. Use it for fast iteration; confirm with `dry_run`. Full coverage matrix in [`docs/tools.md#preview_custom_manager`](docs/tools.md#preview_custom_manager).
+- **`preview_custom_manager` is a subset of Renovate's custom managers.** It covers `customType: "regex"` (with `matchStringsStrategy` of `any` / `combination` / `recursive`) and `customType: "jsonata"` (with `fileFormat: "json" | "yaml" | "toml"`). File selection follows Renovate's `managerFilePatterns` semantics (globs or `/regex/`, `!` negation); the deprecated `fileMatch` is still accepted with a warning. Template substitution is `{{groupName}}` only — full Handlebars helpers/conditionals are not implemented. Other custom types (e.g. `html`) are out of scope. Use it for fast iteration; confirm with `dry_run`. Full coverage matrix in [`docs/tools.md#preview_custom_manager`](docs/tools.md#preview_custom_manager).
 - **`validate_config` / `dry_run` aren't exercised end-to-end in CI.** The bundled Renovate is available (it's a runtime dep), but the integration tests use fake binaries via `RENOVATE_BIN` / `RENOVATE_CONFIG_VALIDATOR_BIN` env overrides for determinism and speed. Run the tools locally against a real config to validate behaviour.

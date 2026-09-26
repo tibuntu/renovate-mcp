@@ -170,6 +170,7 @@ The decisive factors:
 - Three new runtime dependencies: `jsonata`, `yaml`, `smol-toml`. Combined install footprint is small (~150 KB before transitive). All three are MIT, maintained, and stable.
 - One new lazy-import indirection inside the worker.
 - The snapshot-drift CI check (Phase 2) doesn't currently track these libraries, since they aren't `renovate`-generated snapshots. No action needed unless we later decide to pin behavior to a specific version of `jsonata` for exact parity with Renovate's pinned `2.1.0`. (Phase 5 plans should consider whether to pin `jsonata` exactly to Renovate's version.)
+  - **Update 2026-09-26:** `jsonata` is now pinned exactly to Renovate's pin and kept in sync by `npm run sync:jsonata-pin` (`scripts/sync-jsonata-pin.mjs`), guarded by the "jsonata pin matches Renovate's pin" unit test; the `2.1.0` above is the pin at the time of writing.
 - Slightly larger install size. Acceptable for a tool whose value depends on parser fidelity.
 
 **Migration steps:**
