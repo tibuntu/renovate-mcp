@@ -43,6 +43,7 @@ Rules every tool applies the same way (implemented once in `src/lib/toolInputs.t
 
 - **`repoPath` must be an absolute path to an existing directory.** A relative path, a nonexistent path, or a file returns `isError` with `repoPath must be an absolute path to an existing directory (got: <value>)` before the tool does anything else. No tool creates a missing `repoPath`. (`check_setup` is the one exception: a diagnostic never returns `isError`.)
 - **A config source is `repoPath` or `configContent`, never both.** The tools that read a config this way (`resolve_config`, `explain_config`, each side of `resolve_config_diff`, `test_package_rules`, `annotate_dry_run`, `explain_dependency`) return `isError` for both inputs together (`Pass either repoPath or configContent, not both.`), for neither (`Provide either repoPath or configContent.`), and for a repo with no Renovate config (`No Renovate configuration found in <repoPath>.`). `resolve_config_diff` prefixes the failing side (`before: …` / `after: …`). `read_config` is the exception on the last point: there, no config is an ordinary result that points at `write_config`.
+- **A path input and its inline twin are never passed together.** The same rule covers `validate_config`, `lint_config` and `migrate_config` (`configPath` / `configContent`) and the report of `annotate_dry_run` and `explain_dependency` (`reportPath` / `report`): both at once is `isError` with `Pass either <a> or <b>, not both.`; neither keeps each tool's existing `Provide either …` message.
 - **Symlinked config targets are written through.** When the file `write_config` targets is a symlink, the write lands on the link's real path — the link survives and the file it points at changes. The escape check runs against that real path, so a link pointing outside `repoPath` is refused with `filename escapes repoPath` and nothing is written.
 
 ---
@@ -184,7 +185,7 @@ See also: [Operational notes — `preview_custom_manager` caps & timeouts](opera
 
 Run `renovate-config-validator` against a file or inline object. Pair with [`lint_config`](#lint_config) for footguns the schema validator declares valid.
 
-**Inputs.** `configPath` (absolute path) **or** `configContent` (inline object, written to a mode-0600 temp file that is removed afterwards). `strict: true` passes `--strict` so warnings and pending migrations fail validation too.
+**Inputs.** `configPath` (absolute path) **or** `configContent` (inline object, written to a mode-0600 temp file that is removed afterwards) — never both, see [Common input rules](#common-input-rules). `strict: true` passes `--strict` so warnings and pending migrations fail validation too.
 
 **Validated as a repo config.** The validator treats a positional file as *global* self-hosted config by default, which silently accepts global-only options such as `token` or `platform`. The tool always passes `--no-global`, so those options are rejected the same way Renovate would reject them in a repository's `renovate.json`. (`write_config` validates the same way.)
 
@@ -192,7 +193,7 @@ Run `renovate-config-validator` against a file or inline object. Pair with [`lin
 
 ## `lint_config`
 
-Semantic lint pass that sits alongside `validate_config` rather than replacing it. Offline. A `configPath` file is parsed as JSON, JSONC or JSON5 regardless of extension, matching Renovate's own parser.
+Semantic lint pass that sits alongside `validate_config` rather than replacing it. Offline. A `configPath` file is parsed as JSON, JSONC or JSON5 regardless of extension, matching Renovate's own parser. `configPath` and `configContent` are exclusive — see [Common input rules](#common-input-rules).
 
 Schema validation catches structural bugs; the linter catches Renovate-specific footguns that schema validation declares valid — most commonly a pattern like `"matchPackageNames": ["/devops\\/pipelines\\/.+"]` where a trailing `/` is missing and Renovate silently degrades the value to an exact-string match that never hits, or a typo like `"matchManagers": ["npmm"]` that silently applies the rule to zero packages.
 
@@ -319,7 +320,7 @@ Takes a report (inline `report` — raw `{ repositories }` or a full `dry_run` s
 **Inputs:**
 
 - `report` (optional, object, max ~10,000,000 bytes serialized) — inline report (raw `{ repositories }` or a full `dry_run` summary with a `report` key). Use instead of `reportPath`.
-- `reportPath` (optional, string, max 4096 bytes) — absolute path to a JSON report file (pair with `dry_run`'s `reportOutputPath`). Use instead of `report`. (One of `report` / `reportPath` is required.)
+- `reportPath` (optional, string, max 4096 bytes) — absolute path to a JSON report file (pair with `dry_run`'s `reportOutputPath`). Use instead of `report`. (One of `report` / `reportPath` is required, never both — see [Common input rules](#common-input-rules).)
 - `repoPath` (optional, string, max 4096 bytes) — locates and expands the repo's config for its `packageRules`. Use instead of `configContent`.
 - `configContent` (optional, object, max ~1,000,000 bytes serialized) — inline config whose `packageRules` to attribute against. Use instead of `repoPath`. (One of `repoPath` / `configContent` is required, never both — see [Common input rules](#common-input-rules).)
 - `externalPresets` (optional boolean, default `false`), `endpoint` (optional, string, max 2048 bytes), `platform` (optional, enum `"github"` | `"gitlab"`) — same semantics as [`resolve_config`](#resolve_config).
@@ -337,7 +338,7 @@ Answer the most common Renovate support question — "why was/wasn't dependency 
 
 The report already carries the answer: every extracted dependency under `repositories[*].packageFiles[manager][*].deps[]` has a `skipReason` / `skipStage`, an `updates` array, and `warnings`. `dry_run` either inlines the whole report (large, often truncated by clients) or collapses it to a path plus counts with `reportOutputPath`, so this tool walks it for you.
 
-**Inputs.** A report — inline `report` (raw `{ repositories }` or a full `dry_run` summary with a `report` key) **or** `reportPath` (absolute path; pair with `dry_run`'s `reportOutputPath`), the same shapes as [`annotate_dry_run`](#annotate_dry_run) — plus `depName` (required). Matching is case-insensitive against both `depName` and `packageName`; exact by default, `partial: true` for substring matching. Optional `manager` restricts hits to one manager. Optionally add a config source — `repoPath` (same discovery as [`read_config`](#read_config)) or `configContent`, never both (see [Common input rules](#common-input-rules)) — to attach `matchedRules` per hit.
+**Inputs.** A report — inline `report` (raw `{ repositories }` or a full `dry_run` summary with a `report` key) **or** `reportPath` (absolute path; pair with `dry_run`'s `reportOutputPath`), the same shapes as [`annotate_dry_run`](#annotate_dry_run), never both (see [Common input rules](#common-input-rules)) — plus `depName` (required). Matching is case-insensitive against both `depName` and `packageName`; exact by default, `partial: true` for substring matching. Optional `manager` restricts hits to one manager. Optionally add a config source — `repoPath` (same discovery as [`read_config`](#read_config)) or `configContent`, never both (see [Common input rules](#common-input-rules)) — to attach `matchedRules` per hit.
 
 **Output.**
 
@@ -356,7 +357,7 @@ Does **not** write — chain with [`write_config`](#write_config) to persist.
 **Inputs:**
 
 - `configPath` (optional, string, max 4096 bytes) — absolute path to a JSON or JSON5 config file to migrate. Use instead of `configContent`.
-- `configContent` (optional, object, max ~1,000,000 bytes serialized) — inline config object to migrate. Use instead of `configPath`. (One of the two is required.)
+- `configContent` (optional, object, max ~1,000,000 bytes serialized) — inline config object to migrate. Use instead of `configPath`. (One of the two is required, never both — see [Common input rules](#common-input-rules).)
 
 Runs in an isolated worker thread so the main MCP server process never imports the `renovate` package; first call carries a one-time cold-load cost of a few seconds. See [Architecture — worker isolation for migration](architecture.md#worker-isolation-for-migration).
 

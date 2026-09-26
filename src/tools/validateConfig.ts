@@ -41,6 +41,12 @@ export function registerValidateConfig(server: McpServer): void {
           ],
         };
       }
+      if (configPath && configContent) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: "Pass either configPath or configContent, not both." }],
+        };
+      }
 
       let target = configPath;
       let cleanup: (() => Promise<void>) | undefined;

@@ -58,6 +58,12 @@ export function registerExplainDependency(server: McpServer): void {
           content: [{ type: "text", text: "Provide either report or reportPath (run dry_run first)." }],
         };
       }
+      if (report && reportPath) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: "Pass either report or reportPath, not both." }],
+        };
+      }
 
       let reportValue: unknown = report;
       let reportSource: "inline" | "reportPath" = "inline";
