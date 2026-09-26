@@ -302,10 +302,11 @@ Validate, then atomically write a config to disk. A failed validation must never
 - `reason: "json5-not-jsonc-compatible"` — `.json5` files that lean on JSON5-only syntax (unquoted keys, single-quoted strings, hex literals, etc.) cannot round-trip safely.
 - `reason: "existing-file-unparseable"` — the file on disk doesn't parse as JSON / JSONC.
 - `reason: "package-json-missing"` — `filename` is `package.json` but no such file exists; write `renovate.json` instead.
+- `reason: "validator-timeout"` — the validator ran but overran its fixed 30 s budget, so the config was **not** validated. `validationOutput` says `timed out after`; the hint is to retry or check machine load, not to reach for `force: true`.
 
-The first two hint at `force: true` as the escape hatch (except for an unparseable `package.json`, which `force` never rewrites — fix it by hand). `package-json-missing` has no `force` escape hatch.
+The first two hint at `force: true` as the escape hatch (except for an unparseable `package.json`, which `force` never rewrites — fix it by hand). `package-json-missing` and `validator-timeout` suggest no `force` escape hatch.
 
-A validator that cannot be spawned yields `reason: "validator-unavailable"`; a validator that runs but overruns its fixed 30 s budget yields `reason: "validation-failed"` with a `validationOutput` that says `timed out after` — it is never reported as unavailable.
+A validator that cannot be spawned yields `reason: "validator-unavailable"` (fix `RENOVATE_CONFIG_VALIDATOR_BIN` or reinstall); a timeout is never reported as unavailable, and `validation-failed` is reserved for a config the validator actually rejected.
 
 **`force: true` is destructive.** Pair it with `confirmForce: "YES_OVERRIDE_VALIDATION"` (the literal sentinel makes accidental overrides under prompt-injected tool calls harder). `force: true` skips both validation AND the round-trip path and rewrites the file with a clean `JSON.stringify` rendering — the user has accepted a clean rewrite. **Exception: `package.json`.** There `force: true` skips validation only; the nested round-trip at the `renovate` key still runs, because a whole-file rewrite would destroy the rest of the manifest.
 
