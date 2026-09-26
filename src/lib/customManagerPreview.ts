@@ -225,13 +225,17 @@ function parseRegexPattern(
 }
 
 /**
- * Renovate's `matchRegexOrGlobList` (string-match.js), batched over all walked
- * paths: `*` matches everything; `/…/` entries are regexes and run in the
- * worker under the timeout budget; anything else is a minimatch glob with
+ * Renovate's extract phase (`getMatchingFiles` in
+ * node_modules/renovate/dist/workers/repository/extract/file-match.js): every
+ * entry is evaluated on its own with `matchRegexOrGlob` and the results are
+ * unioned, so a path matches when ANY entry matches it. Per entry: `*`
+ * matches everything; `/…/` or `/…/i` is a regex and runs in the worker under
+ * the timeout budget, where `!/…/` matches the paths the regex does NOT match
+ * (`getRegexPredicate`); anything else is a minimatch glob with
  * `{ dot: true, nocase: true }`, evaluated in-process (minimatch is not
- * pathological). A `!`-prefixed entry is negative. A path matches when it
- * matches at least one positive pattern (if any exist) and every negative
- * pattern; an empty list matches nothing. Walk order is preserved.
+ * pathological) with minimatch's own leading-`!` negation. A `!` entry
+ * therefore ADDS its complement rather than excluding — Renovate's
+ * `ignorePaths` is the exclusion mechanism. Walk order is preserved.
  */
 async function matchFilePatterns(
   allPaths: string[],
@@ -239,43 +243,30 @@ async function matchFilePatterns(
   matchTimeoutMs: number,
   warnings: string[],
 ): Promise<string[]> {
-  if (!patterns.length) return [];
-  const positive: Set<string>[] = [];
-  const negative: Set<string>[] = [];
+  const matched = new Set<string>();
   for (let i = 0; i < patterns.length; i++) {
     const pattern = patterns[i]!;
-    const negated = pattern.startsWith("!");
-    const re = parseRegexPattern(pattern);
-    let matched: Set<string>;
     if (pattern === "*") {
-      matched = new Set(allPaths);
-    } else if (re) {
+      for (const p of allPaths) matched.add(p);
+      continue;
+    }
+    const re = parseRegexPattern(pattern);
+    if (re) {
       const res = await runTestInWorker(re.source, re.flags, allPaths, matchTimeoutMs);
       if (res.timedOut) {
         warnings.push(
-          `managerFilePatterns[${i}] ${pattern} exceeded ${matchTimeoutMs}ms and was aborted; no paths were tested against this pattern. Simplify the regex (e.g. avoid nested quantifiers like (a+)+) or raise matchTimeoutMs.`,
+          `managerFilePatterns[${i}] ${pattern} exceeded ${matchTimeoutMs}ms and was aborted; no paths were matched by this pattern. Simplify the regex (e.g. avoid nested quantifiers like (a+)+) or raise matchTimeoutMs.`,
         );
-        // A timed-out positive pattern contributes no paths; a timed-out
-        // negative pattern excludes none.
-        if (!negated) positive.push(new Set());
         continue;
       }
       const hit = new Set(res.paths);
-      // Renovate negates the regex itself (`getRegexPredicate`): a negative
-      // regex "matches" the paths the regex does NOT match.
-      matched = negated ? new Set(allPaths.filter((p) => !hit.has(p))) : hit;
+      for (const p of allPaths) if (hit.has(p) !== re.negated) matched.add(p);
     } else {
-      // minimatch handles the leading `!` natively, same as Renovate.
       const mm = new Minimatch(pattern, { dot: true, nocase: true });
-      matched = new Set(allPaths.filter((p) => mm.match(p)));
+      for (const p of allPaths) if (mm.match(p)) matched.add(p);
     }
-    (negated ? negative : positive).push(matched);
   }
-  return allPaths.filter(
-    (p) =>
-      (!positive.length || positive.some((s) => s.has(p))) &&
-      (!negative.length || negative.every((s) => s.has(p))),
-  );
+  return allPaths.filter((p) => matched.has(p));
 }
 
 /**
@@ -294,11 +285,20 @@ async function collectMatchedFiles(
 
   const patterns = resolveFilePatterns(manager, warnings);
   // Surface malformed user regexes eagerly, before we do any filesystem work.
-  // The Worker path otherwise reports these as generic worker errors.
-  for (const p of patterns) {
+  // The Worker path otherwise reports these as generic worker errors, and
+  // Renovate itself (`parseRegexMatch` returning null) would silently treat
+  // the entry as a glob.
+  patterns.forEach((p, i) => {
     const re = parseRegexPattern(p);
-    if (re) validateRegex(re.source, re.flags);
-  }
+    if (!re) return;
+    try {
+      new RegExp(re.source, re.flags);
+    } catch (err) {
+      throw new Error(
+        `Invalid regex in managerFilePatterns[${i}] /${re.source}/${re.flags}: ${(err as Error).message}. Renovate would silently fall back to treating this entry as a glob, which almost certainly matches nothing.`,
+      );
+    }
+  });
 
   // Walk first, then run the patterns — regexes in a worker — so a
   // pathological pattern can't pin the event loop on the path-testing phase.
@@ -786,11 +786,11 @@ function applyTemplate(tmpl: string, groups: Record<string, string>): string {
   );
 }
 
-function validateRegex(source: string, flags = ""): void {
+function validateRegex(source: string): void {
   try {
-    new RegExp(source, flags);
+    new RegExp(source);
   } catch (err) {
-    throw new Error(`Invalid regex /${source}/${flags}: ${(err as Error).message}`);
+    throw new Error(`Invalid regex /${source}/: ${(err as Error).message}`);
   }
 }
 
