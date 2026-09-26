@@ -326,6 +326,19 @@ export function registerDryRun(server: McpServer): void {
           };
         }
       }
+      // Per-call hostRules ride on RENOVATE_CONFIG_FILE; if the operator
+      // already points that at a global config, we'd silently replace it.
+      if (hostRules?.length && process.env.RENOVATE_CONFIG_FILE) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text: `\`hostRules\` cannot be used while \`RENOVATE_CONFIG_FILE\` is set on the MCP server (\`${process.env.RENOVATE_CONFIG_FILE}\`): the tool passes per-call hostRules through that same variable and would silently replace the operator's config for this run. Add the hostRules to that file instead, or unset the variable.`,
+            },
+          ],
+        };
+      }
 
       const reportPath = path.join(tmpdir(), `renovate-mcp-report-${randomUUID()}.json`);
       const tool = resolveRenovateTool("renovate");
