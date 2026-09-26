@@ -9,6 +9,7 @@ import {
   run,
   CommandTimeoutError,
   MAX_CAPTURE_BYTES,
+  killLiveChildren,
 } from "../../src/lib/renovateCli.js";
 
 const originalEnv = { ...process.env };
@@ -81,6 +82,30 @@ async function makeScript(contents: string): Promise<string> {
   await writeFile(file, `#!/usr/bin/env node\n${contents}\n`);
   await chmod(file, 0o755);
   return file;
+}
+
+// Spawns a long-lived grandchild (stdio ignored so it doesn't hold our pipes
+// open), prints its pid, then idles until killed.
+const GRANDCHILD_SCRIPT = `
+  import { spawn } from "node:child_process";
+  const gc = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+  process.stdout.write(String(gc.pid) + "\\n");
+  setInterval(() => {}, 1000);
+`;
+
+/** Poll up to 2 s for `pid` to disappear (signal 0 = probe). */
+async function expectGone(pid: number): Promise<void> {
+  const deadline = Date.now() + 2000;
+  while (Date.now() < deadline) {
+    try {
+      process.kill(pid, 0);
+    } catch (e) {
+      expect((e as NodeJS.ErrnoException).code).toBe("ESRCH");
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  throw new Error(`pid ${pid} still alive after 2 s`);
 }
 
 describe("run() streaming observers", () => {
@@ -178,14 +203,7 @@ describe("run() timeout and capture cap", () => {
   });
 
   it("kills the whole process group on timeout, not just the direct child", async () => {
-    // The fake spawns a long-lived grandchild (stdio ignored so it doesn't
-    // hold our pipes open), prints its pid, then idles until killed.
-    const script = await makeScript(`
-      import { spawn } from "node:child_process";
-      const gc = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
-      process.stdout.write(String(gc.pid) + "\\n");
-      setInterval(() => {}, 1000);
-    `);
+    const script = await makeScript(GRANDCHILD_SCRIPT);
 
     let grandchildPid = 0;
     const err = await run(process.execPath, [script], {
@@ -197,20 +215,7 @@ describe("run() timeout and capture cap", () => {
     try {
       expect(err).toBeInstanceOf(CommandTimeoutError);
       expect(grandchildPid).toBeGreaterThan(0);
-
-      // Poll up to 2 s for the grandchild to disappear (signal 0 = probe).
-      const deadline = Date.now() + 2000;
-      let alive = true;
-      while (alive && Date.now() < deadline) {
-        try {
-          process.kill(grandchildPid, 0);
-          await new Promise((r) => setTimeout(r, 50));
-        } catch (e) {
-          expect((e as NodeJS.ErrnoException).code).toBe("ESRCH");
-          alive = false;
-        }
-      }
-      expect(alive).toBe(false);
+      await expectGone(grandchildPid);
     } finally {
       try {
         process.kill(grandchildPid, "SIGKILL");
@@ -253,6 +258,38 @@ describe("run() timeout and capture cap", () => {
     expect(res.exitCode).toBe(0);
     expect(lines).toHaveLength(1);
     expect(lines[0]!.length).toBe(1024 * 1024);
+  });
+});
+
+describe("killLiveChildren", () => {
+  it("takes down a running child's whole process group and lets the pending run() settle", async () => {
+    const script = await makeScript(GRANDCHILD_SCRIPT);
+
+    let gotPid: (pid: number) => void = () => {};
+    const grandchildPid = new Promise<number>((r) => {
+      gotPid = r;
+    });
+    // No timeout: only killLiveChildren() can end this run.
+    const pending = run(process.execPath, [script], {
+      onStdoutLine: (l) => gotPid(Number(l)),
+    });
+    const pid = await grandchildPid;
+    try {
+      expect(pid).toBeGreaterThan(0);
+      killLiveChildren();
+
+      // Signal death, not a timeout: run() resolves (exit code -1 for a
+      // null status) instead of rejecting.
+      const res = await pending;
+      expect(res.exitCode).toBe(-1);
+      await expectGone(pid);
+    } finally {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        // already gone — the expected outcome
+      }
+    }
   });
 });
 
