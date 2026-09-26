@@ -235,6 +235,21 @@ export function resolveRenovateTool(
 }
 
 /**
+ * Message for a `CommandTimeoutError`: the binary ran but exceeded its budget,
+ * so the missing-binary hints (env override, check_setup) would mislead.
+ */
+export function formatTimeoutError(
+  tool: "renovate" | "renovate-config-validator",
+  err: CommandTimeoutError,
+): string {
+  const hint =
+    tool === "renovate"
+      ? "Raise `timeoutMs` (max 15 minutes) or narrow the run with `dryRunMode: \"extract\"`."
+      : "Retry; if it keeps timing out, the config may be extremely large or the machine overloaded.";
+  return `\`${tool}\` timed out after ${err.timeoutMs} ms and was killed. ${hint}`;
+}
+
+/**
  * Centralized message for when a Renovate CLI binary can't be spawned (ENOENT,
  * permission denied, etc.). Used by all tools that shell out so users get
  * consistent, actionable hints instead of raw spawn errors. Renovate ships

@@ -3,7 +3,13 @@ import path from "node:path";
 import { promises as fs } from "node:fs";
 import { randomUUID } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { run, resolveRenovateTool, formatMissingBinaryError } from "../lib/renovateCli.js";
+import {
+  run,
+  resolveRenovateTool,
+  formatMissingBinaryError,
+  formatTimeoutError,
+  CommandTimeoutError,
+} from "../lib/renovateCli.js";
 import type { RuntimeWarning } from "../lib/runtimeWarnings.js";
 import { configRecord, filenameString, pathString } from "../lib/inputLimits.js";
 import { serializeConfig, isPackageJsonTarget } from "../lib/configWriter.js";
@@ -173,8 +179,14 @@ export function registerWriteConfig(server: McpServer): void {
           valid = v.exitCode === 0;
           runtimeWarnings = v.runtimeWarnings;
         } catch (err) {
-          validatorMissing = true;
-          validationOutput = formatMissingBinaryError("renovate-config-validator", err as Error);
+          if (err instanceof CommandTimeoutError) {
+            // The validator ran but overran its budget — a validation
+            // failure with a timeout message, not "validator-unavailable".
+            validationOutput = formatTimeoutError("renovate-config-validator", err);
+          } else {
+            validatorMissing = true;
+            validationOutput = formatMissingBinaryError("renovate-config-validator", err as Error);
+          }
         }
 
         if (!valid && !force) {

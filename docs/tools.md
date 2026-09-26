@@ -158,6 +158,8 @@ Run `renovate-config-validator` against a file or inline object. Pair with [`lin
 
 **Validated as a repo config.** The validator treats a positional file as *global* self-hosted config by default, which silently accepts global-only options such as `token` or `platform`. The tool always passes `--no-global`, so those options are rejected the same way Renovate would reject them in a repository's `renovate.json`. (`write_config` validates the same way.)
 
+**Timeout.** The validator has a fixed 30 s budget. Overrunning it returns an `isError` that says `timed out after` — distinct from the missing-binary error, which points at `check_setup`.
+
 ## `lint_config`
 
 Semantic lint pass that sits alongside `validate_config` rather than replacing it. Offline. A `configPath` file is parsed as JSON, JSONC or JSON5 regardless of extension, matching Renovate's own parser.
@@ -296,6 +298,8 @@ Validate, then atomically write a config to disk. A failed validation must never
 - `reason: "package-json-missing"` — `filename` is `package.json` but no such file exists; write `renovate.json` instead.
 
 The first two hint at `force: true` as the escape hatch (except for an unparseable `package.json`, which `force` never rewrites — fix it by hand). `package-json-missing` has no `force` escape hatch.
+
+A validator that cannot be spawned yields `reason: "validator-unavailable"`; a validator that runs but overruns its fixed 30 s budget yields `reason: "validation-failed"` with a `validationOutput` that says `timed out after` — it is never reported as unavailable.
 
 **`force: true` is destructive.** Pair it with `confirmForce: "YES_OVERRIDE_VALIDATION"` (the literal sentinel makes accidental overrides under prompt-injected tool calls harder). `force: true` skips both validation AND the round-trip path and rewrites the file with a clean `JSON.stringify` rendering — the user has accepted a clean rewrite. **Exception: `package.json`.** There `force: true` skips validation only; the nested round-trip at the `renovate` key still runs, because a whole-file rewrite would destroy the rest of the manifest.
 

@@ -1568,3 +1568,34 @@ process.exit(0);
     expect(dumped.useBaseBranchConfig).toBeNull();
   });
 });
+
+describe("dry_run hardening", () => {
+  async function call(args: Record<string, unknown>) {
+    return session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", { name: "dry_run", arguments: { repoPath: repo, ...args } });
+  }
+
+  it("reports a timeout as a timeout, not as a missing binary", async () => {
+    // Answers the startup `--version` probe, then idles until killed.
+    const fakeBin = path.join(repo, "idle-renovate.mjs");
+    await writeFile(
+      fakeBin,
+      `#!/usr/bin/env node
+if (process.argv.includes("--version")) { console.log("0.0.0-fake"); process.exit(0); }
+setInterval(() => {}, 1000);
+`,
+    );
+    await chmod(fakeBin, 0o755);
+    session = await startServer({ RENOVATE_BIN: fakeBin });
+
+    const res = await call({ timeoutMs: 500 });
+
+    expect(res.result?.isError).toBe(true);
+    const text = res.result!.content[0]!.text;
+    expect(text).toContain("timed out after 500 ms");
+    expect(text).toContain("timeoutMs");
+    expect(text).not.toContain("check_setup");
+  });
+});
