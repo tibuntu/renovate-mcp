@@ -220,24 +220,25 @@ fi
 
 if [ "$HAS_CLAUDE" = "1" ] && [ -z "$NO_MCP_ADD" ]; then
   step "Registering with Claude Code (scope: ${MCP_SCOPE})..."
+  MCP_ADD_ERR="$(mktemp)"
   if [ "$MODE" = "global" ]; then
-    if claude mcp add renovate -s "$MCP_SCOPE" -- renovate-mcp 2>/tmp/claude-mcp-add.err; then
+    if claude mcp add renovate -s "$MCP_SCOPE" -- renovate-mcp 2>"$MCP_ADD_ERR"; then
       ok "Registered as 'renovate' in Claude Code (${MCP_SCOPE} scope)"
     else
       warn "claude mcp add failed (entry may already exist)."
-      tail -n 5 /tmp/claude-mcp-add.err >&2 || true
+      tail -n 5 "$MCP_ADD_ERR" >&2 || true
       info "To replace it: claude mcp remove renovate -s ${MCP_SCOPE} && re-run this installer"
     fi
   else
-    if claude mcp add renovate -s "$MCP_SCOPE" -- npx -y renovate-mcp 2>/tmp/claude-mcp-add.err; then
+    if claude mcp add renovate -s "$MCP_SCOPE" -- npx -y renovate-mcp 2>"$MCP_ADD_ERR"; then
       ok "Registered as 'renovate' in Claude Code (${MCP_SCOPE} scope)"
     else
       warn "claude mcp add failed (entry may already exist)."
-      tail -n 5 /tmp/claude-mcp-add.err >&2 || true
+      tail -n 5 "$MCP_ADD_ERR" >&2 || true
       info "To replace it: claude mcp remove renovate -s ${MCP_SCOPE} && re-run this installer"
     fi
   fi
-  rm -f /tmp/claude-mcp-add.err
+  rm -f "$MCP_ADD_ERR"
   echo
 else
   if [ "$HAS_CLAUDE" = "1" ]; then
