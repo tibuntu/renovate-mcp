@@ -26,7 +26,7 @@ There is direct precedent: **ADR-0001** (migration) and **ADR-0004** (faithful m
 
 ## Considered Options
 
-### Option 1: Reimplement the 18 matchers offline in `src/`
+### Option 1: Reimplement the 19 matchers offline in `src/`
 
 Port each matcher's logic (glob-vs-regex disambiguation, `satisfiesDateRange`, the versioning subsystem, async JSONata) into our own code, reading snapshots of Renovate's behavior.
 
