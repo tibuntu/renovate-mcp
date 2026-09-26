@@ -39,8 +39,11 @@ export function validateEndpoint(endpoint: string): void {
     );
   }
   if (url.username || url.password) {
+    // Never echo the credential back — this message can land in logs and
+    // tool output.
+    const redacted = `${url.protocol}//<redacted>@${url.host}${url.pathname}${url.search}`;
     throw new EndpointValidationError(
-      `Invalid endpoint \`${endpoint}\`: userinfo (\`user:password@host\`) is not allowed — it can mask the real authority and override credentials.`,
+      `Invalid endpoint \`${redacted}\`: userinfo (\`user:password@host\`) is not allowed — it can mask the real authority and override credentials.`,
     );
   }
   const host = stripIpv6Brackets(url.hostname).toLowerCase();

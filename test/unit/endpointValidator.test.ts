@@ -61,6 +61,18 @@ describe("validateEndpoint — rejects userinfo", () => {
       /userinfo .* not allowed/,
     );
   });
+
+  it("never echoes the credential in the refusal message", () => {
+    let message = "";
+    try {
+      validateEndpoint("https://attacker:hunter2@api.github.com/api/v3");
+    } catch (err) {
+      message = (err as Error).message;
+    }
+    expect(message).not.toContain("hunter2");
+    expect(message).not.toContain("attacker");
+    expect(message).toContain("https://<redacted>@api.github.com/api/v3");
+  });
 });
 
 describe("validateEndpoint — rejects loopback / link-local / private literals", () => {
