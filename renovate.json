@@ -10,18 +10,16 @@
     "github>tibuntu/renovate-presets:githubActionsCommitType",
     "helpers:pinGitHubActionDigests"
   ],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "description": "Keeps transitive dependencies current between direct bumps, so transitive CVE fixes land on their own schedule instead of requiring a hand-written override in package.json every time."
+  },
   "packageRules": [
     {
       "description": "npm rejects lockfile-only updates for packages listed in `overrides` (EOVERRIDE: override spec must equal the requested spec). Bump the override range in package.json instead.",
       "matchManagers": ["npm"],
       "matchDepTypes": ["overrides"],
       "rangeStrategy": "bump"
-    },
-    {
-      "description": "The simple-git override is only a CVE floor for Renovate's transitive copy. Forcing a major Renovate itself doesn't pin breaks it (v4's env guard throws on the GIT_SSH_COMMAND / GIT_CONFIG_* vars Renovate passes via .env()). Hold majors until Renovate adopts them.",
-      "matchPackageNames": ["simple-git"],
-      "matchUpdateTypes": ["major"],
-      "enabled": false
     },
     {
       "description": "claude-code-action releases very frequently; propose its updates at most once per week to reduce PR churn.",
