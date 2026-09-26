@@ -150,6 +150,10 @@ See also: [Operational notes — `preview_custom_manager` caps & timeouts](opera
 
 Run `renovate-config-validator` against a file or inline object. Pair with [`lint_config`](#lint_config) for footguns the schema validator declares valid.
 
+**Inputs.** `configPath` (absolute path) **or** `configContent` (inline object, written to a mode-0600 temp file that is removed afterwards). `strict: true` passes `--strict` so warnings and pending migrations fail validation too.
+
+**Validated as a repo config.** The validator treats a positional file as *global* self-hosted config by default, which silently accepts global-only options such as `token` or `platform`. The tool always passes `--no-global`, so those options are rejected the same way Renovate would reject them in a repository's `renovate.json`. (`write_config` validates the same way.)
+
 ## `lint_config`
 
 Semantic lint pass that sits alongside `validate_config` rather than replacing it. Offline.

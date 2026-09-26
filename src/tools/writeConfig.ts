@@ -164,7 +164,9 @@ export function registerWriteConfig(server: McpServer): void {
         let runtimeWarnings: RuntimeWarning[] = [];
         try {
           const tool = resolveRenovateTool("renovate-config-validator");
-          const v = await run(tool.cmd, [...tool.prefixArgs, sliceTmp ?? tmp], {
+          // --no-global (after the file): validate as a repo config, not as
+          // global self-hosted config — see validateConfig.ts.
+          const v = await run(tool.cmd, [...tool.prefixArgs, sliceTmp ?? tmp, "--no-global"], {
             timeoutMs: 30_000,
           });
           validationOutput = (v.stdout + v.stderr).trim();
