@@ -130,50 +130,17 @@ export async function previewCustomManager(
     return previewJsonataManager(repoPath, manager, options);
   }
 
-  const warnings: string[] = [];
+  const result = emptyResult();
   const maxHitsPerFile = options.maxHitsPerFile ?? DEFAULT_MAX_HITS_PER_FILE;
   const matchTimeoutMs = options.matchTimeoutMs ?? DEFAULT_MATCH_TIMEOUT_MS;
-  const maxFileBytes = options.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
 
-  const strategy = resolveStrategy(manager.matchStringsStrategy, warnings);
+  const strategy = resolveStrategy(manager.matchStringsStrategy, result.warnings);
 
   // Surface malformed user regexes eagerly, before we do any filesystem work.
   // The Worker path otherwise reports these as generic worker errors.
   for (const src of manager.matchStrings) validateRegex(src);
 
-  const { filesWalked, filesMatched } = await collectMatchedFiles(
-    repoPath,
-    manager,
-    options,
-    warnings,
-  );
-
-  const hits: PreviewHit[] = [];
-  const extractedDeps: ExtractedDep[] = [];
-
-  for (const rel of filesMatched) {
-    const abs = path.join(repoPath, rel);
-    let stat;
-    try {
-      stat = await fs.stat(abs);
-    } catch (err) {
-      warnings.push(`Could not stat ${rel}: ${(err as Error).message}`);
-      continue;
-    }
-    if (stat.size > maxFileBytes) {
-      warnings.push(
-        `${rel}: skipped, ${stat.size} bytes exceeds maxFileBytes=${maxFileBytes}. Tighten managerFilePatterns to exclude it, or raise maxFileBytes.`,
-      );
-      continue;
-    }
-    let content: string;
-    try {
-      content = await fs.readFile(abs, "utf8");
-    } catch (err) {
-      warnings.push(`Could not read ${rel}: ${(err as Error).message}`);
-      continue;
-    }
-
+  for await (const { rel, content } of matchedFiles(repoPath, manager, options, result)) {
     const fileResult = await applyMatchStrings(
       rel,
       content,
@@ -182,12 +149,16 @@ export async function previewCustomManager(
       matchTimeoutMs,
       maxHitsPerFile,
     );
-    hits.push(...fileResult.hits);
-    extractedDeps.push(...fileResult.deps);
-    warnings.push(...fileResult.warnings);
+    result.hits.push(...fileResult.hits);
+    result.extractedDeps.push(...fileResult.deps);
+    result.warnings.push(...fileResult.warnings);
   }
 
-  return { filesWalked, filesMatched, hits, extractedDeps, warnings };
+  return result;
+}
+
+function emptyResult(): PreviewResult {
+  return { filesWalked: 0, filesMatched: [], hits: [], extractedDeps: [], warnings: [] };
 }
 
 export const FILE_MATCH_DEPRECATION_WARNING =
@@ -253,13 +224,17 @@ async function matchFilePatterns(
     }
     const re = parseRegexPattern(pattern);
     if (re) {
-      const res = await runTestInWorker(re.source, re.flags, allPaths, matchTimeoutMs);
+      const res = await callWorker(
+        { mode: "test", pattern: re.source, flags: re.flags, paths: allPaths },
+        matchTimeoutMs,
+      );
       if (res.timedOut) {
         warnings.push(
           `managerFilePatterns[${i}] ${pattern} exceeded ${matchTimeoutMs}ms and was aborted; no paths were matched by this pattern. Simplify the regex (e.g. avoid nested quantifiers like (a+)+) or raise matchTimeoutMs.`,
         );
         continue;
       }
+      if (!res.ok) throw new Error(`Regex worker error: ${res.error}`);
       const hit = new Set(res.paths);
       for (const p of allPaths) if (hit.has(p) !== re.negated) matched.add(p);
     } else {
@@ -328,8 +303,57 @@ async function collectMatchedFiles(
 }
 
 /**
- * JSONata customType branch. Mirrors the regex path's walker +
- * managerFilePatterns + caps; differs only in what runs per matched file: structured-format parse
+ * The per-file pipeline shared by the regex and JSONata paths: walk →
+ * managerFilePatterns → caps (`collectMatchedFiles`), then stat / size cap /
+ * read for each surviving file. `result.filesWalked` and `filesMatched` are
+ * filled in before the first file is yielded; skipped files land in
+ * `result.warnings`.
+ */
+async function* matchedFiles(
+  repoPath: string,
+  manager: CustomManager,
+  options: PreviewOptions,
+  result: PreviewResult,
+): AsyncGenerator<{ rel: string; content: string }> {
+  const maxFileBytes = options.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
+  const { filesWalked, filesMatched } = await collectMatchedFiles(
+    repoPath,
+    manager,
+    options,
+    result.warnings,
+  );
+  result.filesWalked = filesWalked;
+  result.filesMatched = filesMatched;
+
+  for (const rel of filesMatched) {
+    const abs = path.join(repoPath, rel);
+    let stat;
+    try {
+      stat = await fs.stat(abs);
+    } catch (err) {
+      result.warnings.push(`Could not stat ${rel}: ${(err as Error).message}`);
+      continue;
+    }
+    if (stat.size > maxFileBytes) {
+      result.warnings.push(
+        `${rel}: skipped, ${stat.size} bytes exceeds maxFileBytes=${maxFileBytes}. Tighten managerFilePatterns to exclude it, or raise maxFileBytes.`,
+      );
+      continue;
+    }
+    let content: string;
+    try {
+      content = await fs.readFile(abs, "utf8");
+    } catch (err) {
+      result.warnings.push(`Could not read ${rel}: ${(err as Error).message}`);
+      continue;
+    }
+    yield { rel, content };
+  }
+}
+
+/**
+ * JSONata customType branch. Shares the regex path's per-file pipeline
+ * (`matchedFiles`); differs only in what runs per matched file: structured-format parse
  * via `parseStructured()`, then per-expression JSONata evaluation in the
  * worker via `runEvaluateJsonataInWorker()`. Output-shape normalization
  * mirrors Renovate's `QueryResultZod` (see `normalizeJsonataResult`).
@@ -339,58 +363,27 @@ async function previewJsonataManager(
   manager: CustomManager,
   options: PreviewOptions,
 ): Promise<PreviewResult> {
-  const warnings: string[] = [];
+  const result = emptyResult();
   const matchTimeoutMs = options.matchTimeoutMs ?? DEFAULT_MATCH_TIMEOUT_MS;
-  const maxFileBytes = options.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
 
   // Defense-in-depth: the tool layer (`src/tools/previewCustomManager.ts`)
   // catches missing fileFormat with a cleaner error message earlier. This
   // branch handles direct callers of the lib who skipped that guard.
   const fileFormat = manager.fileFormat;
   if (fileFormat !== "json" && fileFormat !== "yaml" && fileFormat !== "toml") {
-    warnings.push(
+    result.warnings.push(
       `customType=jsonata requires a fileFormat of 'json', 'yaml', or 'toml' (got ${
         fileFormat === undefined ? "undefined" : `'${String(fileFormat)}'`
       })`,
     );
-    return { filesWalked: 0, filesMatched: [], hits: [], extractedDeps: [], warnings };
+    return result;
   }
 
   // managerFilePatterns still apply on the path level. matchStrings are
   // JSONata expressions — DO NOT validateRegex them; their compile errors
   // surface from the worker.
-  const { filesWalked, filesMatched } = await collectMatchedFiles(
-    repoPath,
-    manager,
-    options,
-    warnings,
-  );
-
-  const extractedDeps: ExtractedDep[] = [];
-
-  for (const rel of filesMatched) {
-    const abs = path.join(repoPath, rel);
-    let stat;
-    try {
-      stat = await fs.stat(abs);
-    } catch (err) {
-      warnings.push(`Could not stat ${rel}: ${(err as Error).message}`);
-      continue;
-    }
-    if (stat.size > maxFileBytes) {
-      warnings.push(
-        `${rel}: skipped, ${stat.size} bytes exceeds maxFileBytes=${maxFileBytes}. Tighten managerFilePatterns to exclude it, or raise maxFileBytes.`,
-      );
-      continue;
-    }
-    let content: string;
-    try {
-      content = await fs.readFile(abs, "utf8");
-    } catch (err) {
-      warnings.push(`Could not read ${rel}: ${(err as Error).message}`);
-      continue;
-    }
-
+  const { extractedDeps, warnings } = result;
+  for await (const { rel, content } of matchedFiles(repoPath, manager, options, result)) {
     const parsed = await parseStructured(content, fileFormat);
     if (!parsed.ok) {
       warnings.push(
@@ -435,7 +428,7 @@ async function previewJsonataManager(
   // JSONata path has no per-line concept; `hits` stays empty by design.
   // The regex `hits` shape (line, match string, named groups) doesn't map to
   // structured data, so we don't synthesize fake hits.
-  return { filesWalked, filesMatched, hits: [], extractedDeps, warnings };
+  return result;
 }
 
 /**
@@ -574,16 +567,21 @@ async function applyAny(
   const hits: PreviewHit[] = [];
   const deps: ExtractedDep[] = [];
   const warnings: string[] = [];
+  const lineAt = lineLocator(content);
   let perFileHits = 0;
   for (let i = 0; i < manager.matchStrings.length; i++) {
     const source = manager.matchStrings[i]!;
-    const res = await runMatchAllInWorker(source, "gm", content, matchTimeoutMs);
+    const res = await callWorker(
+      { mode: "matchAll", pattern: source, flags: "gm", content },
+      matchTimeoutMs,
+    );
     if (res.timedOut) {
       warnings.push(
         `${rel}: matchStrings[${i}] /${source}/ exceeded ${matchTimeoutMs}ms and was aborted; any matches in this file for this pattern were skipped. Simplify the regex (e.g. avoid nested quantifiers like (.*)*) or raise matchTimeoutMs.`,
       );
       continue;
     }
+    if (!res.ok) throw new Error(`Regex worker error: ${res.error}`);
     for (const m of res.matches) {
       if (perFileHits >= maxHitsPerFile) {
         warnings.push(
@@ -591,7 +589,7 @@ async function applyAny(
         );
         break;
       }
-      const line = lineNumberAt(content, m.index);
+      const line = lineAt(m.index);
       hits.push({
         file: rel,
         matchStringIndex: i,
@@ -623,16 +621,21 @@ async function applyCombination(
   const hits: PreviewHit[] = [];
   const warnings: string[] = [];
   const perStringMatches: MatchResult[][] = [];
+  const lineAt = lineLocator(content);
 
   for (let i = 0; i < manager.matchStrings.length; i++) {
     const source = manager.matchStrings[i]!;
-    const res = await runMatchAllInWorker(source, "gm", content, matchTimeoutMs);
+    const res = await callWorker(
+      { mode: "matchAll", pattern: source, flags: "gm", content },
+      matchTimeoutMs,
+    );
     if (res.timedOut) {
       warnings.push(
         `${rel}: matchStrings[${i}] /${source}/ exceeded ${matchTimeoutMs}ms and was aborted; combination strategy could not produce a dep for this file. Simplify the regex or raise matchTimeoutMs.`,
       );
       return { hits: [], deps: [], warnings };
     }
+    if (!res.ok) throw new Error(`Regex worker error: ${res.error}`);
     if (res.matches.length === 0) {
       // Combination requires every matchString to hit at least once.
       return { hits: [], deps: [], warnings };
@@ -642,7 +645,7 @@ async function applyCombination(
       hits.push({
         file: rel,
         matchStringIndex: i,
-        line: lineNumberAt(content, m.index),
+        line: lineAt(m.index),
         match: m.match,
         groups: m.groups,
       });
@@ -678,7 +681,7 @@ async function applyRecursive(
   const state: RecursiveState = {
     rel,
     manager,
-    originalContent: content,
+    lineAt: lineLocator(content),
     matchTimeoutMs,
     maxHitsPerFile,
     hits: [],
@@ -693,7 +696,8 @@ async function applyRecursive(
 interface RecursiveState {
   rel: string;
   manager: CustomManager;
-  originalContent: string;
+  /** Line lookup over the original file content (leaf offsets are absolute). */
+  lineAt: (index: number) => number;
   matchTimeoutMs: number;
   maxHitsPerFile: number;
   hits: PreviewHit[];
@@ -719,7 +723,7 @@ async function recurse(
       state.capped = true;
       return;
     }
-    const line = lineNumberAt(state.originalContent, baseOffset);
+    const line = state.lineAt(baseOffset);
     state.hits.push({
       file: rel,
       matchStringIndex: manager.matchStrings.length - 1,
@@ -731,13 +735,17 @@ async function recurse(
     return;
   }
   const source = manager.matchStrings[index]!;
-  const res = await runMatchAllInWorker(source, "gm", content, state.matchTimeoutMs);
+  const res = await callWorker(
+    { mode: "matchAll", pattern: source, flags: "gm", content },
+    state.matchTimeoutMs,
+  );
   if (res.timedOut) {
     state.warnings.push(
       `${rel}: matchStrings[${index}] /${source}/ exceeded ${state.matchTimeoutMs}ms and was aborted; any matches in this file for this pattern were skipped. Simplify the regex or raise matchTimeoutMs.`,
     );
     return;
   }
+  if (!res.ok) throw new Error(`Regex worker error: ${res.error}`);
   for (const m of res.matches) {
     if (state.capped) return;
     await recurse(
@@ -795,12 +803,26 @@ function validateRegex(source: string): void {
   }
 }
 
-function lineNumberAt(content: string, index: number): number {
-  let line = 1;
-  for (let i = 0; i < index && i < content.length; i++) {
-    if (content.charCodeAt(i) === 10 /* \n */) line++;
+/**
+ * 1-based line number lookup for `content`, built once per file: the newline
+ * offsets are collected up front and each query is a binary search (the line
+ * of `index` is one more than the number of newlines before it).
+ */
+function lineLocator(content: string): (index: number) => number {
+  const newlines: number[] = [];
+  for (let i = content.indexOf("\n"); i !== -1; i = content.indexOf("\n", i + 1)) {
+    newlines.push(i);
   }
-  return line;
+  return (index) => {
+    let lo = 0;
+    let hi = newlines.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (newlines[mid]! < index) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo + 1;
+  };
 }
 
 /**
@@ -919,64 +941,37 @@ export async function runWorker(
   }
 }
 
-async function runTestInWorker(
-  pattern: string,
-  flags: string,
-  paths: string[],
+type WorkerReply<M extends WorkerRequest["mode"]> =
+  | { timedOut: true }
+  | { timedOut: false; ok: false; error: string }
+  | ({ timedOut: false; ok: true } & Omit<Extract<WorkerResponse, { mode: M }>, "ok" | "mode">);
+
+/**
+ * Typed round-trip for one worker request: the reply's payload is keyed by
+ * the request's `mode`. A worker error comes back as `{ ok: false, error }` —
+ * the regex callers treat that as an internal failure and throw; the JSONata
+ * caller surfaces it as a per-expression warning.
+ */
+async function callWorker<M extends WorkerRequest["mode"]>(
+  request: Extract<WorkerRequest, { mode: M }>,
   timeoutMs: number,
-): Promise<{ timedOut: true } | { timedOut: false; paths: string[] }> {
-  const response = await runWorker(
-    { mode: "test", pattern, flags, paths },
-    timeoutMs,
-  );
+): Promise<WorkerReply<M>> {
+  const response = await runWorker(request, timeoutMs);
   if (response === "timeout") return { timedOut: true };
-  if (!response.ok) throw new Error(`Regex worker error: ${response.error}`);
-  if (response.mode !== "test") {
+  if (!response.ok) return { timedOut: false, ok: false, error: response.error };
+  if (response.mode !== request.mode) {
     throw new Error(`Regex worker returned wrong mode: ${response.mode}`);
   }
-  return { timedOut: false, paths: response.paths };
+  const { ok: _ok, mode: _mode, ...payload } = response;
+  return { timedOut: false, ok: true, ...payload } as WorkerReply<M>;
 }
 
-async function runMatchAllInWorker(
-  pattern: string,
-  flags: string,
-  content: string,
-  timeoutMs: number,
-): Promise<{ timedOut: true } | { timedOut: false; matches: MatchResult[] }> {
-  const response = await runWorker(
-    { mode: "matchAll", pattern, flags, content },
-    timeoutMs,
-  );
-  if (response === "timeout") return { timedOut: true };
-  if (!response.ok) throw new Error(`Regex worker error: ${response.error}`);
-  if (response.mode !== "matchAll") {
-    throw new Error(`Regex worker returned wrong mode: ${response.mode}`);
-  }
-  return { timedOut: false, matches: response.matches };
-}
-
-// Unlike the regex helpers (runTestInWorker / runMatchAllInWorker), JSONata
-// compile/eval errors are surfaced as { ok: false, error } rather than thrown —
-// the main flow treats them as per-expression warnings, not internal failures.
-export async function runEvaluateJsonataInWorker(
+export function runEvaluateJsonataInWorker(
   expression: string,
   json: unknown,
   timeoutMs: number,
-): Promise<
-  | { timedOut: true }
-  | { timedOut: false; ok: true; result: unknown }
-  | { timedOut: false; ok: false; error: string }
-> {
-  const response = await runWorker(
-    { mode: "evaluateJsonata", expression, json },
-    timeoutMs,
-  );
-  if (response === "timeout") return { timedOut: true };
-  if (!response.ok) return { timedOut: false, ok: false, error: response.error };
-  if (response.mode !== "evaluateJsonata") {
-    throw new Error(`Regex worker returned wrong mode: ${response.mode}`);
-  }
-  return { timedOut: false, ok: true, result: response.result };
+): Promise<WorkerReply<"evaluateJsonata">> {
+  return callWorker({ mode: "evaluateJsonata", expression, json }, timeoutMs);
 }
 
 /**
