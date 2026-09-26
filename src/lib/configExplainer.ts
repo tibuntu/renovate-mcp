@@ -8,6 +8,8 @@ import {
   type UnresolvedPreset,
 } from "./presetResolver.js";
 import { runMerge } from "./mergeWorker.js";
+import { isRecord } from "./util.js";
+import { isDeepStrictEqual } from "node:util";
 
 // Re-exported for callers that historically imported the sentinel from here.
 export { OWN_SOURCE };
@@ -173,9 +175,9 @@ function diffLeaves(
     const beforeVal = before[key];
     const childPath = [...path, key];
 
-    if (isPlainObject(afterVal)) {
+    if (isRecord(afterVal)) {
       diffLeaves(
-        isPlainObject(beforeVal) ? beforeVal : {},
+        isRecord(beforeVal) ? beforeVal : {},
         afterVal,
         childPath,
         onContribution,
@@ -183,13 +185,13 @@ function diffLeaves(
       continue;
     }
 
-    if (jsonEqual(beforeVal, afterVal)) continue;
+    if (isDeepStrictEqual(beforeVal, afterVal)) continue;
 
     if (
       Array.isArray(beforeVal) &&
       Array.isArray(afterVal) &&
       afterVal.length > beforeVal.length &&
-      jsonEqual(afterVal.slice(0, beforeVal.length), beforeVal)
+      isDeepStrictEqual(afterVal.slice(0, beforeVal.length), beforeVal)
     ) {
       // Mergeable-array concatenation: record only the tail this step appended.
       onContribution(childPath, afterVal.slice(beforeVal.length));
@@ -209,7 +211,7 @@ function buildAnnotated(
   path: string[],
   contribByPath: Map<string, Contribution[]>,
 ): AnnotatedNode {
-  if (isPlainObject(node)) {
+  if (isRecord(node)) {
     const out: AnnotatedObject = {};
     for (const [key, child] of Object.entries(node)) {
       out[key] = buildAnnotated(child, [...path, key], contribByPath);
@@ -217,10 +219,6 @@ function buildAnnotated(
     return out;
   }
   return { value: node, setBy: contribByPath.get(JSON.stringify(path)) ?? [] };
-}
-
-function jsonEqual(a: unknown, b: unknown): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 /**
@@ -235,7 +233,7 @@ function annotateValue(
   source: string,
   via: string[],
 ): AnnotatedNode {
-  if (isPlainObject(value)) {
+  if (isRecord(value)) {
     const out: AnnotatedObject = {};
     for (const [k, v] of Object.entries(value)) {
       out[k] = annotateValue(v, source, via);
@@ -279,8 +277,4 @@ function isAnnotatedLeaf(node: AnnotatedNode): node is AnnotatedLeaf {
   if (typeof node !== "object" || node === null) return false;
   if (!("value" in node) || !("setBy" in node)) return false;
   return Array.isArray((node as AnnotatedLeaf).setBy);
-}
-
-function isPlainObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
 }

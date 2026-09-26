@@ -3,6 +3,7 @@ import {
   type PerContextResult,
 } from "./packageRulesWorker.js";
 import { resolveConfig, type ResolveOptions } from "./presetResolver.js";
+import { isRecord } from "./util.js";
 
 /**
  * Shared analysis layer for `test_package_rules` and `annotate_dry_run`. Wraps
@@ -162,9 +163,7 @@ export async function resolvePackageRules(
 ): Promise<{ packageRules: Record<string, unknown>[]; warnings: string[] }> {
   const { resolved, warnings, presetsUnresolved } = await resolveConfig(source, options);
   const packageRules = Array.isArray(resolved.packageRules)
-    ? resolved.packageRules.filter(
-        (r): r is Record<string, unknown> => !!r && typeof r === "object" && !Array.isArray(r),
-      )
+    ? resolved.packageRules.filter(isRecord)
     : [];
   const out = warnings.map((w) => `${w.preset}: ${w.message}`);
   if (presetsUnresolved.length > 0) {
@@ -314,13 +313,9 @@ const PREVIEW_SUPPORTED: Record<string, { field: string; array?: boolean }> = {
   matchCategories: { field: "categories", array: true },
 };
 
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 function globEquals(pattern: string, value: string): boolean {
   if (!pattern.includes("*")) return pattern === value;
-  const re = new RegExp(`^${pattern.split("*").map(escapeRegex).join(".*")}$`);
+  const re = new RegExp(`^${pattern.split("*").map((s) => RegExp.escape(s)).join(".*")}$`);
   return re.test(value);
 }
 

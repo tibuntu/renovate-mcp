@@ -7,6 +7,7 @@ import {
   type GeneratedOption,
 } from "../data/options.generated.js";
 import { decodeUriVariable } from "../lib/uriVariable.js";
+import { truncate } from "../lib/util.js";
 import {
   ALL_MANAGERS,
   CUSTOM_MANAGERS,
@@ -111,11 +112,6 @@ export function getOptionEntry(
 }
 
 const DESCRIPTION_TRUNCATE_LENGTH = 120;
-
-function truncate(text: string, maxLength: number): string {
-  if (text.length <= maxLength) return text;
-  return `${text.slice(0, maxLength - 1).trimEnd()}…`;
-}
 
 function renderOptionLine(name: string): string {
   const opt = OPTIONS[name]!;

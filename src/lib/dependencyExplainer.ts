@@ -1,4 +1,5 @@
 import { extractReport, readArray, readRecord } from "./dryRunDiff.js";
+import { isRecord } from "./util.js";
 
 /**
  * Pure walk over a Renovate dry_run report answering "why was/wasn't
@@ -204,7 +205,6 @@ function mentions(problem: Record<string, unknown>, needle: string, partial: boo
 
 function collectRelatedProblems(report: unknown, needle: string, partial: boolean): Record<string, unknown>[] {
   const out: Record<string, unknown>[] = [];
-  const isRecord = (p: unknown): p is Record<string, unknown> => !!p && typeof p === "object" && !Array.isArray(p);
   for (const p of readArray(report, "problems") ?? []) {
     if (isRecord(p) && mentions(p, needle, partial)) out.push(p);
   }

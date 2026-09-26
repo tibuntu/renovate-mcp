@@ -3,6 +3,7 @@ import {
   DEPRECATED_KEYS,
   type DeprecatedKeyEntry,
 } from "../data/migrations.generated.js";
+import { isRecord } from "./util.js";
 
 export type LintRuleId =
   | "dead-regex-missing-slash"
@@ -294,11 +295,11 @@ function checkPackageRuleWithoutAction(
   config: unknown,
   findings: LintFinding[],
 ): void {
-  if (!isPlainObject(config)) return;
+  if (!isRecord(config)) return;
   if (!Array.isArray(config.packageRules)) return;
 
   config.packageRules.forEach((entry, i) => {
-    if (!isPlainObject(entry)) return;
+    if (!isRecord(entry)) return;
     const keys = Object.keys(entry);
     const selectors: string[] = [];
     let actionCount = 0;
@@ -328,12 +329,12 @@ function checkContradictoryDisabled(
   config: unknown,
   findings: LintFinding[],
 ): void {
-  if (!isPlainObject(config)) return;
+  if (!isRecord(config)) return;
   if (config.enabled !== false) return;
   if (!Array.isArray(config.packageRules)) return;
 
   config.packageRules.forEach((entry, i) => {
-    if (!isPlainObject(entry)) return;
+    if (!isRecord(entry)) return;
     if (entry.enabled !== true) return;
     findings.push({
       ruleId: "contradictory-disabled-with-package-rules",
@@ -360,7 +361,7 @@ function makeAutomergeFinding(path: string): LintFinding {
 }
 
 function checkAutomergeWithoutType(config: unknown, findings: LintFinding[]): void {
-  if (!isPlainObject(config)) return;
+  if (!isRecord(config)) return;
 
   if (config.automerge === true && !("automergeType" in config)) {
     findings.push(makeAutomergeFinding("automerge"));
@@ -369,7 +370,7 @@ function checkAutomergeWithoutType(config: unknown, findings: LintFinding[]): vo
   const pkgRules = config.packageRules;
   if (Array.isArray(pkgRules)) {
     pkgRules.forEach((entry, i) => {
-      if (!isPlainObject(entry)) return;
+      if (!isRecord(entry)) return;
       if (entry.automerge === true && !("automergeType" in entry)) {
         findings.push(makeAutomergeFinding(`packageRules[${i}].automerge`));
       }
@@ -381,7 +382,7 @@ function checkAutomergeIncludesMajor(
   config: unknown,
   findings: LintFinding[],
 ): void {
-  if (!isPlainObject(config)) return;
+  if (!isRecord(config)) return;
   const pkgRules = config.packageRules;
   if (!Array.isArray(pkgRules)) return;
 
@@ -392,7 +393,7 @@ function checkAutomergeIncludesMajor(
   // findings for unrelated entries. Upgrade path: track guard ordering /
   // selector overlap per-entry if false negatives show up in practice.
   const hasLaterMajorGuard = pkgRules.some((entry) => {
-    if (!isPlainObject(entry)) return false;
+    if (!isRecord(entry)) return false;
     if (entry.automerge !== false) return false;
     return (
       Array.isArray(entry.matchUpdateTypes) &&
@@ -402,7 +403,7 @@ function checkAutomergeIncludesMajor(
   if (hasLaterMajorGuard) return;
 
   pkgRules.forEach((entry, i) => {
-    if (!isPlainObject(entry)) return;
+    if (!isRecord(entry)) return;
     if (entry.automerge !== true) return;
     const updateTypes = entry.matchUpdateTypes;
     const includesMajor =
@@ -448,12 +449,12 @@ function checkDuplicatePackageRuleMatchers(
   config: unknown,
   findings: LintFinding[],
 ): void {
-  if (!isPlainObject(config)) return;
+  if (!isRecord(config)) return;
   const pkgRules = config.packageRules;
   if (!Array.isArray(pkgRules)) return;
 
   const signatures: (string | null)[] = pkgRules.map((entry) =>
-    isPlainObject(entry) ? selectorSignature(entry) : null,
+    isRecord(entry) ? selectorSignature(entry) : null,
   );
 
   for (let i = 0; i < signatures.length; i++) {
@@ -484,12 +485,12 @@ function checkHostRuleInlineSecret(
   config: unknown,
   findings: LintFinding[],
 ): void {
-  if (!isPlainObject(config)) return;
+  if (!isRecord(config)) return;
   const hostRules = config.hostRules;
   if (!Array.isArray(hostRules)) return;
 
   hostRules.forEach((entry, i) => {
-    if (!isPlainObject(entry)) return;
+    if (!isRecord(entry)) return;
     for (const field of HOST_RULE_SECRET_FIELDS) {
       const value = entry[field];
       if (typeof value !== "string" || value.length === 0) continue;
@@ -508,10 +509,6 @@ function checkHostRuleInlineSecret(
       });
     }
   });
-}
-
-function isPlainObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
 function makeDeprecatedKeyFinding(
@@ -540,7 +537,7 @@ function makeDeprecatedKeyFinding(
 }
 
 function checkDeprecatedKeys(config: unknown, findings: LintFinding[]): void {
-  if (!isPlainObject(config)) return;
+  if (!isRecord(config)) return;
 
   for (const key of Object.keys(config)) {
     const entry = DEPRECATED_KEY_LOOKUP.get(key);
@@ -551,7 +548,7 @@ function checkDeprecatedKeys(config: unknown, findings: LintFinding[]): void {
     const arr = (config as Record<string, unknown>)[container];
     if (!Array.isArray(arr)) continue;
     arr.forEach((item, i) => {
-      if (!isPlainObject(item)) return;
+      if (!isRecord(item)) return;
       for (const key of Object.keys(item)) {
         const entry = DEPRECATED_KEY_LOOKUP.get(key);
         if (entry) {

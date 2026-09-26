@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import JSON5 from "json5";
+import { isRecord } from "./util.js";
 
 export type ConfigFormat = "json" | "json5" | "package.json";
 
@@ -33,7 +34,7 @@ export async function locateConfig(repoPath: string): Promise<LocatedConfig | nu
       // extension (and write_config round-trips comments into renovate.json);
       // JSON5 is a superset of JSONC, so one parser covers all of them.
       const config: unknown = JSON5.parse(raw);
-      if (!isPlainObject(config)) {
+      if (!isRecord(config)) {
         throw new Error(`${candidate.path} does not contain a JSON object`);
       }
       return {
@@ -53,9 +54,9 @@ export async function locateConfig(repoPath: string): Promise<LocatedConfig | nu
     const raw = await fs.readFile(pkgAbs, "utf8");
     const pkg: unknown = JSON.parse(raw);
     if (
-      isPlainObject(pkg) &&
+      isRecord(pkg) &&
       "renovate" in pkg &&
-      isPlainObject(pkg.renovate)
+      isRecord(pkg.renovate)
     ) {
       return {
         absPath: pkgAbs,
@@ -70,8 +71,4 @@ export async function locateConfig(repoPath: string): Promise<LocatedConfig | nu
   }
 
   return null;
-}
-
-function isPlainObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
 }

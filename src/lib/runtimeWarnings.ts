@@ -15,6 +15,8 @@
  * them into our responses.
  */
 
+import { truncate } from "./util.js";
+
 export type RuntimeWarningKind = "re2-unusable";
 
 export interface RuntimeWarning {
@@ -32,11 +34,6 @@ const RE2_FIX_HINT =
 
 const RE2_MESSAGE = "Renovate's RE2 native module is unusable; falling back to JavaScript `RegExp` (slower).";
 
-function truncate(s: string): string {
-  if (s.length <= MAX_DETAIL_LENGTH) return s;
-  return `${s.slice(0, MAX_DETAIL_LENGTH - 1)}…`;
-}
-
 function isRe2DlopenFailure(err: unknown): { detail?: string } | null {
   if (!err || typeof err !== "object") return null;
   const obj = err as Record<string, unknown>;
@@ -44,7 +41,7 @@ function isRe2DlopenFailure(err: unknown): { detail?: string } | null {
   const message = typeof obj.message === "string" ? obj.message : undefined;
   if (code !== "ERR_DLOPEN_FAILED") return null;
   if (!message || !/re2\.node/.test(message)) return null;
-  return { detail: truncate(message) };
+  return { detail: truncate(message, MAX_DETAIL_LENGTH) };
 }
 
 export function detectRuntimeWarnings(stderr: string): RuntimeWarning[] {
@@ -76,7 +73,7 @@ export function detectRuntimeWarnings(stderr: string): RuntimeWarning[] {
             const detail =
               parsed.err && typeof parsed.err === "object" && parsed.err !== null
                 ? typeof (parsed.err as Record<string, unknown>).message === "string"
-                  ? truncate((parsed.err as Record<string, unknown>).message as string)
+                  ? truncate((parsed.err as Record<string, unknown>).message as string, MAX_DETAIL_LENGTH)
                   : undefined
                 : undefined;
             pushRe2(detail);
@@ -98,7 +95,7 @@ export function detectRuntimeWarnings(stderr: string): RuntimeWarning[] {
       continue;
     }
     if (/\bERR_DLOPEN_FAILED\b/.test(line) && /re2\.node/.test(line)) {
-      pushRe2(truncate(line));
+      pushRe2(truncate(line, MAX_DETAIL_LENGTH));
       continue;
     }
   }
