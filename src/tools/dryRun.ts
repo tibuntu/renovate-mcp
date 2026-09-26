@@ -237,7 +237,7 @@ export function registerDryRun(server: McpServer): void {
             "Optional per-invocation Renovate hostRules for private registry auth. Written to a mode-0600 temp file that is passed via the RENOVATE_CONFIG_FILE env var and deleted after the run. Token/password values are scrubbed from any log output this tool returns. Appended to (not replacing) any hostRules declared in the repo's own config.",
           ),
         reportOutputPath: pathString(
-          "Optional absolute path to copy the structured Renovate report to (mode 0600) after the run completes. When set, `summary.report` is replaced by `{ reportPath, repoCount, updateCount }` so the inline response stays under MCP response-content caps. Use this — together with `dry_run_diff`'s `{ reportPath }` input — when the full inline report would exceed the harness truncation threshold (≈75 KB on Claude Desktop). `warnings`/`problems`/`reportErrors`/`environmentWarnings` always stay inline regardless.",
+          "Optional absolute path to copy the structured Renovate report to (created fresh with mode 0600 — the path must not already exist, or the call fails with `already exists` rather than overwriting). When set, `summary.report` is replaced by `{ reportPath, repoCount, updateCount }` so the inline response stays under MCP response-content caps. Use this — together with `dry_run_diff`'s `{ reportPath }` input — when the full inline report would exceed the harness truncation threshold (≈75 KB on Claude Desktop). `warnings`/`problems`/`reportErrors`/`environmentWarnings` always stay inline regardless.",
         ).optional(),
         baseBranches: z
           .array(z.string().min(1).max(BRANCH_NAME_MAX_BYTES))
