@@ -6,16 +6,18 @@ Timeouts, caps, escape hatches, and runtime behavior that power users need to kn
 
 **Walk vs match caps (two separate budgets).** `preview_custom_manager` exposes two safety caps so the warning text can name which one tripped:
 
-- `maxFilesWalked` (default 2000) — bounds the directory walk before any `fileMatch` testing.
-- `maxFilesMatched` (default 500) — bounds the result set after `fileMatch` is applied.
+- `maxFilesWalked` (default 2000) — bounds the directory walk before any `managerFilePatterns` testing.
+- `maxFilesMatched` (default 500) — bounds the result set after `managerFilePatterns` is applied.
 
-Splitting the two lets the warning text say which one to raise — a single combined cap couldn't tell the user whether to narrow `fileMatch` or widen the walk.
+(`managerFilePatterns` is the input name; the older `fileMatch` name is still accepted as a deprecated alias and converted to `/…/`-wrapped `managerFilePatterns` entries.)
 
-**File size cap.** `maxFileBytes` (default 5 MiB) — each matched file is `stat`'d before reading; anything larger is skipped with a warning. A stray lockfile, generated artifact, or SQL dump caught by a loose `fileMatch` can't OOM the server.
+Splitting the two lets the warning text say which one to raise — a single combined cap couldn't tell the user whether to narrow `managerFilePatterns` or widen the walk.
+
+**File size cap.** `maxFileBytes` (default 5 MiB) — each matched file is `stat`'d before reading; anything larger is skipped with a warning. A stray lockfile, generated artifact, or SQL dump caught by a loose `managerFilePatterns` entry can't OOM the server.
 
 **Per-file output cap.** `maxHitsPerFile` (default 100) bounds output size separately from input size.
 
-**Regex / JSONata timeout.** `matchTimeoutMs` (default 2 s) — every user-supplied regex and every JSONata expression runs inside a `worker_threads` worker with this wall-clock budget. Pathological patterns (catastrophic backtracking like `^(a+)+b$` against `aaaa…c`, or runaway JSONata) would otherwise pin the MCP server's event loop indefinitely. On timeout the worker is terminated and a warning is appended identifying which `fileMatch[i]` or `matchStrings[i]` was aborted, so the user can simplify the pattern or raise the budget. The budget clocks the work itself: it starts when the worker thread comes online, so `worker_threads` spin-up and module compilation are not charged against it — a trivial pattern won't spuriously time out from bootstrap latency on a slow host, even at a tight `matchTimeoutMs`.
+**Regex / JSONata timeout.** `matchTimeoutMs` (default 2 s) — every user-supplied regex and every JSONata expression runs inside a `worker_threads` worker with this wall-clock budget. Pathological patterns (catastrophic backtracking like `^(a+)+b$` against `aaaa…c`, or runaway JSONata) would otherwise pin the MCP server's event loop indefinitely. On timeout the worker is terminated and a warning is appended identifying which `managerFilePatterns[i]` or `matchStrings[i]` was aborted (e.g. `managerFilePatterns[i] /…/ exceeded …`), so the user can simplify the pattern or raise the budget. The budget clocks the work itself: it starts when the worker thread comes online, so `worker_threads` spin-up and module compilation are not charged against it — a trivial pattern won't spuriously time out from bootstrap latency on a slow host, even at a tight `matchTimeoutMs`.
 
 **`.gitignore` honoring.** The walk honors `.gitignore` (including nested `.gitignore`s and `.git/info/exclude`), so generated/vendored directories like `dist/`, `.next/`, `target/`, `__pycache__/` don't crowd out real hits against the `maxFilesWalked` cap. `node_modules/` and `.git/` are always skipped as a safety net even when no `.gitignore` is present.
 
