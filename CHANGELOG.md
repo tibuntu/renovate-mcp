@@ -1,5 +1,51 @@
 # Changelog
 
+## [1.6.0](https://github.com/tibuntu/renovate-mcp/compare/v1.5.6...v1.6.0) (2026-09-26)
+
+
+### Features
+
+* **lint:** flag keys handled by Renovate's deprecated custom migrations ([0069eaf](https://github.com/tibuntu/renovate-mcp/commit/0069eafec3b61048a804afaed0d969ec5f21ba4f))
+* **preview_custom_manager:** support managerFilePatterns (globs and /regex/), deprecate fileMatch ([6bd5926](https://github.com/tibuntu/renovate-mcp/commit/6bd59261aec8cdfd6c621e8e71cbed2ec0da1d6d))
+* **write_config:** report the serializer mode in the result ([743182c](https://github.com/tibuntu/renovate-mcp/commit/743182c8545c22d0804995db8c80b9af614220c6))
+
+
+### Bug Fixes
+
+* **check_setup:** a completed diagnostic is not a tool error ([4774488](https://github.com/tibuntu/renovate-mcp/commit/4774488595780d789ce8898da2ead51de430ef02))
+* **check_setup:** list every offline tool in the partial-availability banner ([e679d7b](https://github.com/tibuntu/renovate-mcp/commit/e679d7bc243a133ad24dde36014ce5800057165a))
+* **deps:** keep simple-git override on v3 and hold majors ([a529ccb](https://github.com/tibuntu/renovate-mcp/commit/a529ccbe92069ae63013d9bd986017582c8e459e))
+* **deps:** update dependency simple-git to v4 ([abad9c2](https://github.com/tibuntu/renovate-mcp/commit/abad9c29ca45b0a1984386bab67b6510eb3ae3f5))
+* **dry_run_diff:** follow reportPath inputs instead of diffing the summary ([4286d5a](https://github.com/tibuntu/renovate-mcp/commit/4286d5ad46aa2163fab1ce2780df2d836feecc7d))
+* **dry_run:** do not scrub tokens shorter than 4 characters ([267cb59](https://github.com/tibuntu/renovate-mcp/commit/267cb59810d9f09a335f3057b1b8f81c3d3bf775))
+* **dry_run:** drop the no-op summaryOnly input ([d544108](https://github.com/tibuntu/renovate-mcp/commit/d544108adee889b3045525e052066127e01db1e2))
+* **dry_run:** never override an operator's RENOVATE_CONFIG_FILE ([c5c9d17](https://github.com/tibuntu/renovate-mcp/commit/c5c9d172196cb36a655b2b8a73e8aeaa5fd592fa))
+* **dry_run:** reject a reportOutputPath whose parent directory is missing ([101930c](https://github.com/tibuntu/renovate-mcp/commit/101930c18a606f408c915efc9bc2ae96c0a923b5))
+* **dry_run:** stop flagging dotted versions as 401/403 auth failures ([6411094](https://github.com/tibuntu/renovate-mcp/commit/64110940933d83a4b0e8df9ddae1d06f8c399cca))
+* **dry_run:** surface logTail on every non-zero exit ([21aa69c](https://github.com/tibuntu/renovate-mcp/commit/21aa69c47bf29fd8f68454e905ded6125f5aa231))
+* **dry_run:** validate repoPath and refuse to overwrite reportOutputPath ([596274f](https://github.com/tibuntu/renovate-mcp/commit/596274f9f38a093c367a87b96030334fcc497487))
+* **endpoint:** redact credentials in every validateEndpoint refusal message ([2bf6560](https://github.com/tibuntu/renovate-mcp/commit/2bf656057d803560fd74da0f531e23a70341a92a))
+* **endpoint:** redact credentials in the userinfo refusal message ([2f4d95c](https://github.com/tibuntu/renovate-mcp/commit/2f4d95cea337262c4da0c35e1dcb9a4de77005e1))
+* **install:** use mktemp for the claude mcp add error capture ([606bd21](https://github.com/tibuntu/renovate-mcp/commit/606bd217b116599a2ab4a720a59cab89bf66661e))
+* **lint:** align the deprecated-key message style ([36a4ef1](https://github.com/tibuntu/renovate-mcp/commit/36a4ef173c89b2654df39cc3059f7dfd406ecfc7))
+* **preview_custom_manager:** resolve jsonata from the package, not cwd ([e9b77f7](https://github.com/tibuntu/renovate-mcp/commit/e9b77f7450155a2129beb69d1c227165d679eae3))
+* **preview_custom_manager:** union managerFilePatterns entries like Renovate's extract phase ([97b1145](https://github.com/tibuntu/renovate-mcp/commit/97b114599ee15c78929728d60987fc7e66f086b4))
+* **read_config:** accept JSONC/JSON5 in every config file like Renovate does ([f5b0590](https://github.com/tibuntu/renovate-mcp/commit/f5b059034b274dd1cbf6c56c2fceb5ec06a5ad9f))
+* **renovate-cli:** kill live Renovate process groups when the server exits ([6c37599](https://github.com/tibuntu/renovate-mcp/commit/6c37599e4e14e3010b817ca81beb5ae5e2052a6e))
+* **renovate-cli:** typed timeout, process-group kill, bounded output capture ([efdda10](https://github.com/tibuntu/renovate-mcp/commit/efdda104416bf7df7c83bd07c55758dce1150883))
+* **resources:** reject malformed percent-encoding without a raw URIError ([61195f9](https://github.com/tibuntu/renovate-mcp/commit/61195f9818061c00c4bfafbfcf3313af7b711ba9))
+* **test-package-rules:** support matchIsBreaking matcher from Renovate 44.115 ([8d83421](https://github.com/tibuntu/renovate-mcp/commit/8d834216b3b187c2cb130a846f063a1946287f06))
+* **test:** use managerFilePatterns in the JSONata cwd test ([3bfdb16](https://github.com/tibuntu/renovate-mcp/commit/3bfdb168bfe992e075211f996f4139cde214977c))
+* **tools:** reject path and inline inputs passed together ([32ea84d](https://github.com/tibuntu/renovate-mcp/commit/32ea84d0f3f3913528dbbb67e9e93e4f280c7ed7))
+* **tools:** report Renovate timeouts as timeouts, not missing binaries ([86c8347](https://github.com/tibuntu/renovate-mcp/commit/86c834733f4b9d2cfcba9970ddcadbee0b3f8667))
+* **tools:** treat an empty repoPath as given in loadConfigSource ([8440fa4](https://github.com/tibuntu/renovate-mcp/commit/8440fa493bc6a97c7614bdd2a1a145fd4c6a4e74))
+* **validate_config:** create the inline temp file with wx and mode 0600 ([b28ee2a](https://github.com/tibuntu/renovate-mcp/commit/b28ee2af74094138300b1ab382ea2ac7c8b0644c))
+* **validate_config:** validate repo configs as repo config, not global ([bc06629](https://github.com/tibuntu/renovate-mcp/commit/bc066290b7d5fffb8715683b076eae3c9b969429))
+* **write_config:** decide package.json/json5 handling from the requested filename, not the symlink target ([e5e7787](https://github.com/tibuntu/renovate-mcp/commit/e5e778745d86f126143bfc9615d1107fe6b94333))
+* **write_config:** report validator timeouts with their own refusal reason ([c9b35f2](https://github.com/tibuntu/renovate-mcp/commit/c9b35f20c5726281eef11266e718ef173c9ef40d))
+* **write_config:** treat an empty existing file as a fresh write ([12f4c0c](https://github.com/tibuntu/renovate-mcp/commit/12f4c0cacf4c4bc192e6f195004b0e6b9fece473))
+* **write_config:** write through symlinked config files ([79f1682](https://github.com/tibuntu/renovate-mcp/commit/79f1682b503e4e1eb8e29eb1fc6d8fb20e921f30))
+
 ## [1.5.6](https://github.com/tibuntu/renovate-mcp/compare/v1.5.5...v1.5.6) (2026-09-23)
 
 
