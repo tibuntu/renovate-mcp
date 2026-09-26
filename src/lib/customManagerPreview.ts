@@ -1,4 +1,5 @@
 import { promises as fs } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { Worker } from "node:worker_threads";
 import ignore, { type Ignore } from "ignore";
@@ -849,7 +850,9 @@ const { parentPort, workerData } = require('node:worker_threads');
       }
       parentPort.postMessage({ ok: true, mode: 'matchAll', matches: out });
     } else if (mode === 'evaluateJsonata') {
-      const jsonata = require('jsonata');
+      // Eval workers resolve bare specifiers from process.cwd(), so the main
+      // module hands us the absolute path it resolved from the package.
+      const jsonata = require(workerData.jsonataPath);
       const expr = jsonata(workerData.expression);
       const result = await expr.evaluate(workerData.json);
       parentPort.postMessage({ ok: true, mode: 'evaluateJsonata', result });
@@ -860,13 +863,21 @@ const { parentPort, workerData } = require('node:worker_threads');
 })();
 `;
 
-async function runWorker(
+// `require.resolve` only locates the module — the main process never loads
+// jsonata (ADR-0003). Resolved once, on the first JSONata request.
+let jsonataPath: string | undefined;
+
+// Exported for the exit-before-message regression test only.
+export async function runWorker(
   request: WorkerRequest,
   timeoutMs: number,
 ): Promise<WorkerResponse | "timeout"> {
+  if (request.mode === "evaluateJsonata") {
+    jsonataPath ??= createRequire(import.meta.url).resolve("jsonata");
+  }
   const worker = new Worker(WORKER_SOURCE, {
     eval: true,
-    workerData: request,
+    workerData: { ...request, jsonataPath },
   });
 
   let timer: NodeJS.Timeout | undefined;
@@ -881,18 +892,25 @@ async function runWorker(
       // still killed `timeoutMs` after the thread is live, so the kill-on-budget
       // safety posture (ADR-0003) is unchanged. If the worker never comes online
       // it surfaces via the 'error'/'exit' handlers below.
+      // First event wins. `exit` must reject when it fires before a
+      // message/error/timeout — a worker that exits without posting would
+      // otherwise sit pending until the timer and be misreported as a timeout.
+      let settled = false;
+      const settle = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        fn();
+      };
       worker.once("online", () => {
-        timer = setTimeout(() => resolve("timeout"), timeoutMs);
+        timer = setTimeout(() => settle(() => resolve("timeout")), timeoutMs);
       });
-      worker.once("message", (msg: WorkerResponse) => resolve(msg));
-      worker.once("error", (err) => reject(err));
-      worker.once("exit", (code) => {
-        if (code !== 0 && code !== 1) {
-          // code 1 is the normal exit after terminate(); anything else is a
-          // crash we haven't already captured via 'error'.
-          reject(new Error(`Regex worker exited unexpectedly with code ${code}`));
-        }
-      });
+      worker.once("message", (msg: WorkerResponse) => settle(() => resolve(msg)));
+      worker.once("error", (err) => settle(() => reject(err)));
+      worker.once("exit", (code) =>
+        settle(() =>
+          reject(new Error(`Regex worker exited (code ${code}) before returning a result`)),
+        ),
+      );
     });
   } finally {
     if (timer) clearTimeout(timer);
