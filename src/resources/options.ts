@@ -6,6 +6,7 @@ import {
   RENOVATE_VERSION as OPTIONS_RENOVATE_VERSION,
   type GeneratedOption,
 } from "../data/options.generated.js";
+import { decodeUriVariable } from "../lib/uriVariable.js";
 import {
   ALL_MANAGERS,
   CUSTOM_MANAGERS,
@@ -61,8 +62,7 @@ export function registerOptionResources(server: McpServer): void {
       mimeType: "application/json",
     },
     async (uri, variables) => {
-      const raw = variables.name;
-      const name = typeof raw === "string" ? decodeURIComponent(raw) : "";
+      const name = decodeUriVariable(variables.name);
       const entry = getOptionEntry(name);
       if (!entry) {
         throw new Error(

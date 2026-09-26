@@ -5,6 +5,7 @@ import {
   PRESET_NAMES,
   RENOVATE_VERSION,
 } from "../data/presets.generated.js";
+import { decodeUriVariable } from "../lib/uriVariable.js";
 
 interface NamespaceEntry {
   name: string;
@@ -63,8 +64,7 @@ export function registerPresetResources(server: McpServer): void {
       mimeType: "text/markdown",
     },
     async (uri, variables) => {
-      const raw = variables.namespace;
-      const ns = typeof raw === "string" ? decodeURIComponent(raw) : "";
+      const ns = decodeUriVariable(variables.namespace);
       const bucket = BY_NAMESPACE.get(ns);
       if (!bucket) {
         throw new Error(
@@ -105,8 +105,7 @@ export function registerPresetResources(server: McpServer): void {
       mimeType: "application/json",
     },
     async (uri, variables) => {
-      const raw = variables.name;
-      const name = typeof raw === "string" ? decodeURIComponent(raw) : "";
+      const name = decodeUriVariable(variables.name);
       const preset = PRESETS[name];
       if (!preset) {
         throw new Error(
