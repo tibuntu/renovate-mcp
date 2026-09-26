@@ -22,7 +22,7 @@ First call carries a one-time cold-load latency (a few seconds) for the worker's
 
 ## JSONata worker isolation
 
-The same worker pattern protects `preview_custom_manager`'s JSONata path. The `jsonata` package is `require()`'d **only** inside the worker source string; the main MCP process never resolves `jsonata` and never carries the JSONata parser in its heap. The same `matchTimeoutMs` budget (default 2 s) and `worker.terminate()` safety posture applies to both regex and JSONata evaluation.
+The same worker pattern protects `preview_custom_manager`'s JSONata path. The `jsonata` package is `require()`'d **only** inside the worker source string; the main MCP process never loads `jsonata` and never carries the JSONata parser in its heap (it does resolve the package's absolute path via `createRequire(import.meta.url).resolve("jsonata")` to hand the worker a path — locating the file is not loading the module). The same `matchTimeoutMs` budget (default 2 s) and `worker.terminate()` safety posture applies to both regex and JSONata evaluation.
 
 ## Worker isolation for packageRules
 
