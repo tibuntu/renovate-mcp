@@ -62,6 +62,7 @@ export function registerTestPackageRules(server: McpServer): void {
         newValue: optString("Proposed new version constraint (matchNewValue; post-lookup)."),
         updateType: optString("Update type: major/minor/patch/pin/digest/… (matchUpdateTypes; post-lookup)."),
         isBump: z.boolean().optional().describe("Whether this is a range bump (matchUpdateTypes; post-lookup)."),
+        isBreaking: z.boolean().optional().describe("Whether the update is breaking per its versioning (matchIsBreaking; post-lookup)."),
         currentVersionTimestamp: optString("Release timestamp of the current version (matchCurrentAge; post-lookup)."),
         mergeConfidenceLevel: optString("Merge-confidence level (matchConfidence; needs the merge-confidence API — unevaluatable offline)."),
       },

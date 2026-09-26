@@ -45,8 +45,8 @@ describe("runApplyPackageRules (worker-isolated faithful matching)", () => {
     expect(res!.rules[0]!.matched).toBe(true);
     expect(res!.rules[0]!.contributedConfig).toEqual({ automerge: true });
     expect(res!.mergedConfig.automerge).toBe(true);
-    // Every rule reports the full 18-matcher verdict vector.
-    expect(res!.rules[0]!.matchers).toHaveLength(18);
+    // Every rule reports the full 19-matcher verdict vector.
+    expect(res!.rules[0]!.matchers).toHaveLength(19);
   });
 
   it("distinguishes a vacuous match (all matchers null) from a real non-match (a matcher returns false)", async () => {
@@ -120,7 +120,7 @@ describe("matcher-registry drift sentinel", () => {
   // adds/removes/reorders/renames a matcher fails loudly in PR CI — not only in
   // the nightly real-Renovate run. Update deliberately alongside ADR-0006 when
   // Renovate's matcher set genuinely changes.
-  it("has exactly the 18 expected matchers in the expected order", () => {
+  it("has exactly the 19 expected matchers in the expected order", () => {
     expect(matchers.map((m) => m.constructor.name)).toEqual([
       "MergeConfidenceMatcher",
       "RepositoriesMatcher",
@@ -135,6 +135,7 @@ describe("matcher-registry drift sentinel", () => {
       "CurrentValueMatcher",
       "CurrentVersionMatcher",
       "UpdateTypesMatcher",
+      "IsBreakingMatcher",
       "SourceUrlsMatcher",
       "RegistryUrlsMatcher",
       "NewValueMatcher",

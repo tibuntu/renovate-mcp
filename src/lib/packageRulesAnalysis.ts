@@ -56,6 +56,7 @@ export const MATCHER_META: Record<string, MatcherMeta> = {
   CurrentValueMatcher: { key: "matchCurrentValue", requiredAnyOf: ["currentValue"], kind: "static" },
   CurrentVersionMatcher: { key: "matchCurrentVersion", requiredAnyOf: ["currentVersion", "lockedVersion"], kind: "computed" },
   UpdateTypesMatcher: { key: "matchUpdateTypes", requiredAnyOf: ["updateType", "isBump"], kind: "computed" },
+  IsBreakingMatcher: { key: "matchIsBreaking", requiredAnyOf: ["isBreaking"], kind: "computed" },
   SourceUrlsMatcher: { key: "matchSourceUrls", requiredAnyOf: ["sourceUrl"], kind: "static" },
   RegistryUrlsMatcher: { key: "matchRegistryUrls", requiredAnyOf: ["registryUrls"], kind: "static" },
   NewValueMatcher: { key: "matchNewValue", requiredAnyOf: ["newValue"], kind: "computed" },
