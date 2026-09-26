@@ -39,7 +39,10 @@ export function registerValidateConfig(server: McpServer): void {
       let cleanup: (() => Promise<void>) | undefined;
       if (!target) {
         const tmp = path.join(tmpdir(), `renovate-mcp-${randomUUID()}.json`);
-        await fs.writeFile(tmp, JSON.stringify(configContent, null, 2));
+        await fs.writeFile(tmp, JSON.stringify(configContent, null, 2), {
+          flag: "wx",
+          mode: 0o600,
+        });
         target = tmp;
         cleanup = async () => {
           await fs.unlink(tmp).catch(() => undefined);
