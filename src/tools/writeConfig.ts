@@ -214,6 +214,7 @@ export function registerWriteConfig(server: McpServer): void {
         const okPayload: Record<string, unknown> = {
           wrote: true,
           path: rel,
+          mode: writeResult.mode,
           bytes: payload.length,
           valid,
           validationOutput: valid ? undefined : validationOutput,
