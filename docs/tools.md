@@ -203,7 +203,9 @@ Run Renovate with `--dry-run` and return the structured JSON report. No PRs, no 
 
 **Per-call `hostRules`.** Written to a mode-0600 temp file that is handed to Renovate via `RENOVATE_CONFIG_FILE` and removed after the run; appended to whatever `hostRules` the repo's own config declares. If `RENOVATE_CONFIG_FILE` is already set on the MCP server's env, the tool refuses `hostRules` with an `isError` naming that file instead of silently replacing the operator's global config for the run — put the hostRules in that file instead.
 
-**`ok` semantics and benign-noise filtering.** RE2 native-fallback noise and `Unsupported node environment` notices are filtered out of `reportErrors` — the former still surfaces under `warnings`, the latter under a separate `environmentWarnings` array — so `ok` reflects whether the run actually failed, not benign degradation. See [Operational notes](operations.md#ok-semantics-and-benign-noise-filtering).
+**`ok` semantics and benign-noise filtering.** RE2 native-fallback noise and `Unsupported node environment` notices are filtered out of `reportErrors` — the former still surfaces under `warnings`, the latter under a separate `environmentWarnings` array — so `ok` reflects whether the run actually failed, not benign degradation. See [Operational notes](operations.md#dry_run--ok-semantics-and-benign-noise-filtering).
+
+**Diagnostics on failure.** Whenever Renovate exits non-zero (or produced no report at all) the result carries `logTail` — the last 40 non-empty log lines, secrets scrubbed. Captured output is capped at 4 MiB per stream (tail kept); when that cap was hit the result carries `outputTruncated: true`, meaning `logTail` and `problems` were derived from a truncated log. See [Operational notes](operations.md#dry_run--timeouts-and-output-capture).
 
 ## `dry_run_diff`
 

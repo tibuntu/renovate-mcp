@@ -67,6 +67,12 @@ Two specific kinds of in-report problems are **filtered out** of `reportErrors` 
 
 For the nodeEnv case, `ok` also stays `true` even when Renovate exits non-zero, because the report is intact.
 
+## `dry_run` — timeouts and output capture
+
+**Timeout.** `timeoutMs` defaults to 5 minutes (300 000 ms) and is capped at 15 minutes. On overrun the Renovate child is killed together with its whole process group (`git`, package-manager helpers) and the tool returns an `isError` that says `timed out after` and points at `timeoutMs` — never the missing-binary error, which is reserved for spawn failures. `validate_config` / `write_config` have a fixed 30 s validator budget with the same timeout-vs-missing distinction.
+
+**Capture cap.** The child's stdout and stderr are each capped at 4 MiB in memory; beyond that only the tail is kept (line observers driving progress notifications still see every line). When the cap was hit the `dry_run` result carries `outputTruncated: true`. `logTail` (last 40 non-empty lines, secrets scrubbed) is included whenever the exit code is non-zero or no report was produced.
+
 ## `dry_run` — local-mode preflight
 
 `dry_run` defaults to `--platform=local` so no host token is required, but that mode can't resolve `local>` presets (they have no platform context to expand against) and silently hides non-default-host GitHub/GitLab setups.

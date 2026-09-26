@@ -688,9 +688,16 @@ export function registerDryRun(server: McpServer): void {
           summary.warnings = combinedWarnings;
         }
 
-        // If no structured report, surface the last bit of stderr so Claude can
-        // debug without blowing up the context with Renovate's verbose logs.
-        if (!report) {
+        // run() keeps only the last 4 MiB per stream; tell the caller when
+        // `logTail` / `problems` were derived from a capped log.
+        if (result.truncated) {
+          summary.outputTruncated = true;
+        }
+
+        // On a failed run (no report, or a non-zero exit even with one),
+        // surface the last bit of stderr so Claude can debug without blowing
+        // up the context with Renovate's verbose logs.
+        if (!report || result.exitCode !== 0) {
           const tail = (scrubbedStderr || scrubbedStdout)
             .split(/\r?\n/)
             .filter(Boolean)

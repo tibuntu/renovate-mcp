@@ -1740,4 +1740,57 @@ process.exit(0);
       expect(dumped.configFileEnv).toBe(operatorConfig);
     });
   });
+
+  it("includes logTail on a non-zero exit even when a report was written", async () => {
+    const fakeBin = path.join(repo, "exit1-with-report.mjs");
+    await writeFile(
+      fakeBin,
+      `#!/usr/bin/env node
+import { writeFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+const reportArg = args.find(a => a.startsWith('--report-path='));
+if (reportArg) writeFileSync(reportArg.slice('--report-path='.length), JSON.stringify({ repositories: [] }));
+process.stderr.write("FATAL: registry down\\n");
+process.exit(1);
+`,
+    );
+    await chmod(fakeBin, 0o755);
+    session = await startServer({ RENOVATE_BIN: fakeBin });
+
+    const res = await call({});
+    expect(res.result?.isError).toBe(true);
+    const body = JSON.parse(res.result!.content[0]!.text) as {
+      ok: boolean;
+      exitCode: number;
+      hasReport: boolean;
+      logTail?: string;
+      outputTruncated?: boolean;
+    };
+    expect(body.exitCode).toBe(1);
+    expect(body.hasReport).toBe(true);
+    expect(body.logTail).toContain("registry down");
+    expect(body.outputTruncated).toBeUndefined();
+  });
+
+  it("flags outputTruncated when Renovate's output exceeded the capture cap", async () => {
+    // 5 MiB of stdout > the 4 MiB per-stream cap in run().
+    const fakeBin = path.join(repo, "chatty-renovate.mjs");
+    await writeFile(
+      fakeBin,
+      `#!/usr/bin/env node
+import { writeFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+const reportArg = args.find(a => a.startsWith('--report-path='));
+if (reportArg) writeFileSync(reportArg.slice('--report-path='.length), JSON.stringify({ repositories: [] }));
+process.stdout.write(("x".repeat(1023) + "\\n").repeat(5120), () => process.exit(0));
+`,
+    );
+    await chmod(fakeBin, 0o755);
+    session = await startServer({ RENOVATE_BIN: fakeBin });
+
+    const res = await call({});
+    expect(res.result?.isError).toBeFalsy();
+    const body = JSON.parse(res.result!.content[0]!.text) as { outputTruncated?: boolean };
+    expect(body.outputTruncated).toBe(true);
+  });
 });
