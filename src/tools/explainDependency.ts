@@ -1,7 +1,10 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { resolveConfig } from "../lib/presetResolver.js";
-import { analyzePackageRules } from "../lib/packageRulesAnalysis.js";
+import {
+  analyzePackageRules,
+  resolvePackageRules,
+  toMatchedRule,
+} from "../lib/packageRulesAnalysis.js";
 import { explainDependency, type DependencyHit } from "../lib/dependencyExplainer.js";
 import { readReportPath } from "../lib/reportInput.js";
 import { configRecord, pathString, reportRecord } from "../lib/inputLimits.js";
@@ -80,32 +83,16 @@ export function registerExplainDependency(server: McpServer): void {
       }
 
       if (source && hits.length > 0) {
-        const { resolved, warnings: presetWarnings, presetsUnresolved } = await resolveConfig(source, {
+        const { packageRules, warnings: presetWarnings } = await resolvePackageRules(source, {
           fetchExternal: false,
         });
-        const packageRules = Array.isArray(resolved.packageRules)
-          ? (resolved.packageRules.filter(
-              (r): r is Record<string, unknown> => !!r && typeof r === "object" && !Array.isArray(r),
-            ) as Record<string, unknown>[])
-          : [];
         const analysis = await analyzePackageRules(packageRules, hits.map(contextOf));
         matchQuality = analysis.matchQuality;
         hits = hits.map((hit, i) => ({
           ...hit,
-          matchedRules: (analysis.contexts[i]?.rules ?? [])
-            .filter((r) => r.matched)
-            .map((r) => ({
-              index: r.index,
-              matchedBy: r.matchedBy,
-              ...(r.contributedConfig ? { contributedConfig: r.contributedConfig } : {}),
-            })),
+          matchedRules: (analysis.contexts[i]?.rules ?? []).filter((r) => r.matched).map(toMatchedRule),
         }));
-        warnings.push(...analysis.warnings, ...presetWarnings.map((w) => `${w.preset}: ${w.message}`));
-        if (presetsUnresolved.length > 0) {
-          warnings.push(
-            `${presetsUnresolved.length} preset(s) could not be expanded, so preset-provided packageRules may be missing: ${presetsUnresolved.map((p) => p.preset).join(", ")}.`,
-          );
-        }
+        warnings.push(...analysis.warnings, ...presetWarnings);
         if (packageRules.length === 0) warnings.push("The resolved config has no packageRules.");
         if (analysis.matchQuality === "preview") warnings.push(PREVIEW_NOTE);
       }

@@ -2,6 +2,7 @@ import {
   runApplyPackageRules,
   type PerContextResult,
 } from "./packageRulesWorker.js";
+import { resolveConfig, type ResolveOptions } from "./presetResolver.js";
 
 /**
  * Shared analysis layer for `test_package_rules` and `annotate_dry_run`. Wraps
@@ -149,6 +150,41 @@ export function detectLegacyKeys(
       `evaluates the real (post-migration) matchers, so those rules will appear to ` +
       `match nothing. Run migrate_config first, then re-run this tool.`,
   ];
+}
+
+/**
+ * Expand `source`'s presets and pull out its effective `packageRules`, with the
+ * preset warnings already formatted for a tool's `warnings` array.
+ */
+export async function resolvePackageRules(
+  source: Record<string, unknown>,
+  options: ResolveOptions,
+): Promise<{ packageRules: Record<string, unknown>[]; warnings: string[] }> {
+  const { resolved, warnings, presetsUnresolved } = await resolveConfig(source, options);
+  const packageRules = Array.isArray(resolved.packageRules)
+    ? resolved.packageRules.filter(
+        (r): r is Record<string, unknown> => !!r && typeof r === "object" && !Array.isArray(r),
+      )
+    : [];
+  const out = warnings.map((w) => `${w.preset}: ${w.message}`);
+  if (presetsUnresolved.length > 0) {
+    out.push(
+      `${presetsUnresolved.length} preset(s) could not be expanded, so preset-provided packageRules may be missing: ${presetsUnresolved
+        .map((p) => p.preset)
+        .join(", ")}. See resolve_config for details.`,
+    );
+  }
+  return { packageRules, warnings: out };
+}
+
+/** One `matchedRules` entry, as every packageRules tool reports it. */
+export function toMatchedRule(r: RuleAnalysis) {
+  return {
+    index: r.index,
+    rule: r.rule,
+    matchedBy: r.matchedBy,
+    ...(r.contributedConfig ? { contributedConfig: r.contributedConfig } : {}),
+  };
 }
 
 /**

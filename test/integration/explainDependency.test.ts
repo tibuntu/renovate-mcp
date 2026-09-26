@@ -120,7 +120,12 @@ describe("explain_dependency", () => {
     expect(body.configPath).toBe("renovate.json");
     expect(body.matchQuality).toBe("faithful");
     expect(body.hits[0]!.matchedRules).toEqual([
-      expect.objectContaining({ index: 0, matchedBy: ["matchDatasources"] }),
+      expect.objectContaining({
+        index: 0,
+        rule: { matchDatasources: ["npm"], automerge: true },
+        matchedBy: ["matchDatasources"],
+        contributedConfig: { automerge: true },
+      }),
     ]);
   });
 
