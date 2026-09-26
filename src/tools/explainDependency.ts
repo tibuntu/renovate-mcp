@@ -1,11 +1,11 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { locateConfig } from "../lib/configLocations.js";
 import { resolveConfig } from "../lib/presetResolver.js";
 import { analyzePackageRules } from "../lib/packageRulesAnalysis.js";
 import { explainDependency, type DependencyHit } from "../lib/dependencyExplainer.js";
 import { readReportPath } from "../lib/reportInput.js";
 import { configRecord, pathString, reportRecord } from "../lib/inputLimits.js";
+import { loadConfigSource } from "../lib/toolInputs.js";
 
 const PREVIEW_NOTE =
   "The faithful matcher worker was unavailable, so matchedRules come from an approximate glob-only preview (matchPackageNames / matchDepNames / matchManagers / matchDatasources / matchFileNames / matchCategories only). Run dry_run for authoritative output.";
@@ -70,17 +70,16 @@ export function registerExplainDependency(server: McpServer): void {
       let hits: Array<DependencyHit & { matchedRules?: unknown[] }> = explanation.hits;
       let matchQuality: string | undefined;
       let configPath: string | undefined;
+      let source: Record<string, unknown> | undefined;
 
-      if ((repoPath || configContent) && hits.length > 0) {
-        let source: Record<string, unknown> | undefined = configContent;
-        if (!source) {
-          const located = await locateConfig(repoPath!);
-          if (!located) {
-            return { content: [{ type: "text", text: `No Renovate configuration found in ${repoPath}.` }] };
-          }
-          source = located.config;
-          configPath = located.relPath;
-        }
+      if (repoPath || configContent) {
+        const src = await loadConfigSource({ repoPath, configContent });
+        if ("error" in src) return { isError: true, content: [{ type: "text", text: src.error }] };
+        source = src.config;
+        configPath = src.path;
+      }
+
+      if (source && hits.length > 0) {
         const { resolved, warnings: presetWarnings, presetsUnresolved } = await resolveConfig(source, {
           fetchExternal: false,
         });

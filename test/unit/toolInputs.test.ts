@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { assertRepoDir } from "../../src/lib/toolInputs.js";
+import { assertRepoDir, loadConfigSource } from "../../src/lib/toolInputs.js";
 
 let repo: string;
 
@@ -37,5 +37,44 @@ describe("assertRepoDir", () => {
 
   it("returns null for an existing directory", async () => {
     expect(await assertRepoDir(repo)).toBeNull();
+  });
+});
+
+describe("loadConfigSource", () => {
+  it("rejects both inputs", async () => {
+    expect(await loadConfigSource({ repoPath: repo, configContent: {} })).toEqual({
+      error: "Pass either repoPath or configContent, not both.",
+    });
+  });
+
+  it("rejects neither input", async () => {
+    expect(await loadConfigSource({})).toEqual({
+      error: "Provide either repoPath or configContent.",
+    });
+  });
+
+  it("runs the repoPath guard", async () => {
+    expect(await loadConfigSource({ repoPath: "relative/repo" })).toEqual({
+      error: guardMessage("relative/repo"),
+    });
+  });
+
+  it("reports a repo without config", async () => {
+    expect(await loadConfigSource({ repoPath: repo })).toEqual({
+      error: `No Renovate configuration found in ${repo}.`,
+    });
+  });
+
+  it("returns inline content as-is with no path", async () => {
+    const configContent = { extends: ["config:recommended"] };
+    expect(await loadConfigSource({ configContent })).toEqual({ config: configContent });
+  });
+
+  it("locates a repo config and reports its relative path", async () => {
+    await writeFile(path.join(repo, "renovate.json"), '{"extends":["config:recommended"]}');
+    expect(await loadConfigSource({ repoPath: repo })).toEqual({
+      config: { extends: ["config:recommended"] },
+      path: "renovate.json",
+    });
   });
 });

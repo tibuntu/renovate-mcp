@@ -1,13 +1,12 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { locateConfig } from "../lib/configLocations.js";
 import { explainConfig } from "../lib/configExplainer.js";
 import { configRecord, endpointString, pathString } from "../lib/inputLimits.js";
-
-const FAITHFUL_DISCLAIMER =
-  "Provenance is reconstructed from Renovate's own mergeChildConfig (run in a worker thread), so leaf values match resolve_config exactly. A preset that re-asserts an already-set value is not listed as a separate contributor — attribution credits whoever changed the value. Handlebars other than {{argN}} is left verbatim; run dry_run for full config resolution.";
-const PREVIEW_DISCLAIMER =
-  "The faithful merge worker was unavailable, so this used a simplified in-process merge (arrays concat, objects merge, scalars overwrite) — see warnings. Run dry_run for authoritative output.";
+import {
+  loadConfigSource,
+  MERGE_PREVIEW_DISCLAIMER,
+  EXPLAIN_CONFIG_FAITHFUL_DISCLAIMER,
+} from "../lib/toolInputs.js";
 
 export function registerExplainConfig(server: McpServer): void {
   server.registerTool(
@@ -41,35 +40,8 @@ export function registerExplainConfig(server: McpServer): void {
       },
     },
     async ({ repoPath, configContent, externalPresets, endpoint, platform }) => {
-      if (!repoPath && !configContent) {
-        return {
-          isError: true,
-          content: [
-            { type: "text", text: "Provide either repoPath or configContent." },
-          ],
-        };
-      }
-
-      let source: Record<string, unknown>;
-      let sourcePath: string | undefined;
-
-      if (configContent) {
-        source = configContent;
-      } else {
-        const located = await locateConfig(repoPath!);
-        if (!located) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `No Renovate configuration found in ${repoPath}.`,
-              },
-            ],
-          };
-        }
-        source = located.config;
-        sourcePath = located.relPath;
-      }
+      const src = await loadConfigSource({ repoPath, configContent });
+      if ("error" in src) return { isError: true, content: [{ type: "text", text: src.error }] };
 
       const {
         explanation,
@@ -77,7 +49,7 @@ export function registerExplainConfig(server: McpServer): void {
         presetsUnresolved,
         warnings,
         mergeQuality,
-      } = await explainConfig(source, {
+      } = await explainConfig(src.config, {
         fetchExternal: externalPresets ?? false,
         endpoint,
         platform,
@@ -89,13 +61,13 @@ export function registerExplainConfig(server: McpServer): void {
             type: "text",
             text: JSON.stringify(
               {
-                ...(sourcePath ? { path: sourcePath } : {}),
+                ...(src.path ? { path: src.path } : {}),
                 explanation,
                 mergeQuality,
                 disclaimer:
                   mergeQuality === "faithful"
-                    ? FAITHFUL_DISCLAIMER
-                    : PREVIEW_DISCLAIMER,
+                    ? EXPLAIN_CONFIG_FAITHFUL_DISCLAIMER
+                    : MERGE_PREVIEW_DISCLAIMER,
                 presetsResolved,
                 presetsUnresolved,
                 warnings,

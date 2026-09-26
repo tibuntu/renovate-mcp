@@ -122,7 +122,7 @@ describe("resolve_config_diff", () => {
     session = await startServer({});
     const result = await diff({}, { configContent: { prHourlyLimit: 0 } });
     expect(result.isError).toBe(true);
-    expect(result.content[0]!.text).toMatch(/Provide either repoPath or configContent for before/);
+    expect(result.content[0]!.text).toMatch(/^before: Provide either repoPath or configContent\.$/);
   });
 
   it("advertises the tool in the server instructions", async () => {

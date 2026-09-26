@@ -139,7 +139,7 @@ describe("annotate_dry_run", () => {
     session = await startServer({});
     const result = await call({ report: reportWith(LODASH) });
     expect(result.isError).toBe(true);
-    expect(result.content[0]!.text).toMatch(/Provide a config source/);
+    expect(result.content[0]!.text).toMatch(/Provide either repoPath or configContent/);
   });
 
   it("advertises the tool in the server instructions", async () => {

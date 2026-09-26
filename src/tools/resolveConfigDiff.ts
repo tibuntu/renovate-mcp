@@ -1,9 +1,9 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { locateConfig } from "../lib/configLocations.js";
 import { resolveConfig, type ResolveResult } from "../lib/presetResolver.js";
 import { diffResolvedConfigs } from "../lib/resolveConfigDiff.js";
 import { configRecord, endpointString, pathString } from "../lib/inputLimits.js";
+import { loadConfigSource } from "../lib/toolInputs.js";
 
 const sideSchema = z
   .object({
@@ -26,25 +26,11 @@ async function resolveSide(
   | { ok: true; result: ResolveResult; path?: string }
   | { ok: false; error: string }
 > {
-  if (!input.repoPath && !input.configContent) {
-    return { ok: false, error: `Provide either repoPath or configContent for ${label}.` };
-  }
+  const src = await loadConfigSource(input);
+  if ("error" in src) return { ok: false, error: `${label}: ${src.error}` };
 
-  let source: Record<string, unknown>;
-  let sourcePath: string | undefined;
-  if (input.configContent) {
-    source = input.configContent;
-  } else {
-    const located = await locateConfig(input.repoPath!);
-    if (!located) {
-      return { ok: false, error: `No Renovate configuration found in ${input.repoPath} (${label}).` };
-    }
-    source = located.config;
-    sourcePath = located.relPath;
-  }
-
-  const result = await resolveConfig(source, options);
-  return { ok: true, result, path: sourcePath };
+  const result = await resolveConfig(src.config, options);
+  return { ok: true, result, path: src.path };
 }
 
 export function registerResolveConfigDiff(server: McpServer): void {
