@@ -1,6 +1,5 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { locateConfig } from "../lib/configLocations.js";
 import { resolveConfig } from "../lib/presetResolver.js";
 import { extractReport, identityKey, readArray, readRecord } from "../lib/dryRunDiff.js";
 import { readReportPath } from "../lib/reportInput.js";
@@ -9,11 +8,11 @@ import {
   MATCHER_META,
 } from "../lib/packageRulesAnalysis.js";
 import { configRecord, endpointString, pathString, reportRecord } from "../lib/inputLimits.js";
-
-const FAITHFUL_DISCLAIMER =
-  "Each update is attributed using Renovate's real matchers (run in a worker thread) against the facts present in the dry_run report. Matchers needing data the report doesn't carry are reported under each update's `unevaluatable` and aggregated in `fieldGaps`, NOT as non-matches. matchConfidence needs the merge-confidence API (unevaluatable offline); matchJsonata is advisory. Run dry_run for full-fidelity resolution.";
-const PREVIEW_DISCLAIMER =
-  "The faithful matcher worker was unavailable, so this used an approximate glob-only preview (matchPackageNames / matchDepNames / matchManagers / matchDatasources / matchFileNames / matchCategories only); rules using any other matcher are reported as unevaluatable. Run dry_run for authoritative output.";
+import {
+  loadConfigSource,
+  MATCH_PREVIEW_DISCLAIMER,
+  ANNOTATE_DRY_RUN_FAITHFUL_DISCLAIMER,
+} from "../lib/toolInputs.js";
 
 // Matcher-relevant fields we try to lift off each report upgrade entry.
 const CONTEXT_FIELDS = [
@@ -119,12 +118,6 @@ export function registerAnnotateDryRun(server: McpServer): void {
           content: [{ type: "text", text: "Provide either report or reportPath (run dry_run first)." }],
         };
       }
-      if (!repoPath && !configContent) {
-        return {
-          isError: true,
-          content: [{ type: "text", text: "Provide a config source: either repoPath or configContent." }],
-        };
-      }
 
       // Resolve the report.
       let reportValue: unknown;
@@ -140,19 +133,9 @@ export function registerAnnotateDryRun(server: McpServer): void {
       }
 
       // Resolve the config's effective packageRules.
-      let source: Record<string, unknown>;
-      let sourcePath: string | undefined;
-      if (configContent) {
-        source = configContent;
-      } else {
-        const located = await locateConfig(repoPath!);
-        if (!located) {
-          return { content: [{ type: "text", text: `No Renovate configuration found in ${repoPath}.` }] };
-        }
-        source = located.config;
-        sourcePath = located.relPath;
-      }
-      const { resolved, warnings: presetWarnings, presetsUnresolved } = await resolveConfig(source, {
+      const src = await loadConfigSource({ repoPath, configContent });
+      if ("error" in src) return { isError: true, content: [{ type: "text", text: src.error }] };
+      const { resolved, warnings: presetWarnings, presetsUnresolved } = await resolveConfig(src.config, {
         fetchExternal: externalPresets ?? false,
         endpoint,
         platform,
@@ -234,10 +217,12 @@ export function registerAnnotateDryRun(server: McpServer): void {
             type: "text",
             text: JSON.stringify(
               {
-                ...(sourcePath ? { configPath: sourcePath } : {}),
+                ...(src.path ? { configPath: src.path } : {}),
                 matchQuality: analysis.matchQuality,
                 disclaimer:
-                  analysis.matchQuality === "faithful" ? FAITHFUL_DISCLAIMER : PREVIEW_DISCLAIMER,
+                  analysis.matchQuality === "faithful"
+                    ? ANNOTATE_DRY_RUN_FAITHFUL_DISCLAIMER
+                    : MATCH_PREVIEW_DISCLAIMER,
                 reportSource,
                 ruleCount: packageRules.length,
                 updateCount: entries.length,

@@ -1,13 +1,12 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { locateConfig } from "../lib/configLocations.js";
 import { resolveConfig } from "../lib/presetResolver.js";
 import { configRecord, endpointString, pathString } from "../lib/inputLimits.js";
-
-const FAITHFUL_DISCLAIMER =
-  "Presets are merged with Renovate's own mergeChildConfig (run in a worker thread), so array/object merge semantics are faithful. Handlebars expressions other than positional {{argN}} are still left verbatim, and resolve_config does not run datasource lookups — run dry_run for full config resolution.";
-const PREVIEW_DISCLAIMER =
-  "The faithful merge worker was unavailable, so this used a simplified in-process merge (arrays concat, objects merge, scalars overwrite) — see warnings. Run dry_run for authoritative output.";
+import {
+  loadConfigSource,
+  MERGE_PREVIEW_DISCLAIMER,
+  RESOLVE_CONFIG_FAITHFUL_DISCLAIMER,
+} from "../lib/toolInputs.js";
 
 export function registerResolveConfig(server: McpServer): void {
   server.registerTool(
@@ -41,35 +40,8 @@ export function registerResolveConfig(server: McpServer): void {
       },
     },
     async ({ repoPath, configContent, externalPresets, endpoint, platform }) => {
-      if (!repoPath && !configContent) {
-        return {
-          isError: true,
-          content: [
-            { type: "text", text: "Provide either repoPath or configContent." },
-          ],
-        };
-      }
-
-      let source: Record<string, unknown>;
-      let sourcePath: string | undefined;
-
-      if (configContent) {
-        source = configContent;
-      } else {
-        const located = await locateConfig(repoPath!);
-        if (!located) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `No Renovate configuration found in ${repoPath}.`,
-              },
-            ],
-          };
-        }
-        source = located.config;
-        sourcePath = located.relPath;
-      }
+      const src = await loadConfigSource({ repoPath, configContent });
+      if ("error" in src) return { isError: true, content: [{ type: "text", text: src.error }] };
 
       const {
         resolved,
@@ -77,7 +49,7 @@ export function registerResolveConfig(server: McpServer): void {
         presetsUnresolved,
         warnings,
         mergeQuality,
-      } = await resolveConfig(source, {
+      } = await resolveConfig(src.config, {
         fetchExternal: externalPresets ?? false,
         endpoint,
         platform,
@@ -89,13 +61,13 @@ export function registerResolveConfig(server: McpServer): void {
             type: "text",
             text: JSON.stringify(
               {
-                ...(sourcePath ? { path: sourcePath } : {}),
+                ...(src.path ? { path: src.path } : {}),
                 resolved,
                 mergeQuality,
                 disclaimer:
                   mergeQuality === "faithful"
-                    ? FAITHFUL_DISCLAIMER
-                    : PREVIEW_DISCLAIMER,
+                    ? RESOLVE_CONFIG_FAITHFUL_DISCLAIMER
+                    : MERGE_PREVIEW_DISCLAIMER,
                 presetsResolved,
                 presetsUnresolved,
                 warnings,

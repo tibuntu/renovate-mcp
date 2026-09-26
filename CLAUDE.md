@@ -39,7 +39,7 @@ Two tsconfigs: the root `tsconfig.json` includes both `src/` and `test/` and is 
 
 **Each tool is a `register<Name>(server)` function in its own file** under `src/tools/`. `src/index.ts` wires them all into a single `McpServer` instance. Same pattern for resources under `src/resources/`.
 
-**Config-file discovery lives in `src/lib/configLocations.ts`** and mirrors Renovate's own priority order (`renovate.json`, `renovate.json5`, `.github/renovate.json`, `.github/renovate.json5`, `.gitlab/renovate.json`, `.gitlab/renovate.json5`, `.renovaterc*`, then `package.json#renovate`). `read_config` and `write_config` both rely on this. **The input rules every tool shares live in `src/lib/toolInputs.ts`** (`assertRepoDir` for the `repoPath` guard) — add a new rule there, not per tool.
+**Config-file discovery lives in `src/lib/configLocations.ts`** and mirrors Renovate's own priority order (`renovate.json`, `renovate.json5`, `.github/renovate.json`, `.github/renovate.json5`, `.gitlab/renovate.json`, `.gitlab/renovate.json5`, `.renovaterc*`, then `package.json#renovate`). `read_config` and `write_config` both rely on this. **The input rules every tool shares live in `src/lib/toolInputs.ts`** (`assertRepoDir` for the `repoPath` guard, `loadConfigSource` for the `repoPath`-or-`configContent` source, and the shared `disclaimer` strings) — add a new rule there, not per tool.
 
 **`write_config` is temp-file → validate → atomic rename.** A failed validation must never leave a broken config on disk. `force: true` bypasses the validation gate but still uses the same rename path. Don't refactor this into a direct-write.
 

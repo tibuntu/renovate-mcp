@@ -1,14 +1,13 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { locateConfig } from "../lib/configLocations.js";
 import { resolveConfig } from "../lib/presetResolver.js";
 import { analyzePackageRules } from "../lib/packageRulesAnalysis.js";
 import { configRecord, endpointString, pathString } from "../lib/inputLimits.js";
-
-const FAITHFUL_DISCLAIMER =
-  "Rules are evaluated with Renovate's real matchers (run in a worker thread), so match decisions are faithful for the fields you supplied. Matchers needing post-lookup data you didn't supply (matchUpdateTypes, matchCurrentVersion, matchNewValue, matchCurrentAge) or the merge-confidence API (matchConfidence) are reported under `unevaluatable`, NOT as non-matches. matchJsonata results are advisory (the expression may read fields you didn't supply). Run dry_run for full-fidelity resolution.";
-const PREVIEW_DISCLAIMER =
-  "The faithful matcher worker was unavailable, so this used an approximate glob-only preview (matchPackageNames / matchDepNames / matchManagers / matchDatasources / matchFileNames / matchCategories only); rules using any other matcher are reported as unevaluatable. Run dry_run for authoritative output.";
+import {
+  loadConfigSource,
+  MATCH_PREVIEW_DISCLAIMER,
+  TEST_PACKAGE_RULES_FAITHFUL_DISCLAIMER,
+} from "../lib/toolInputs.js";
 
 const optString = (description: string) => z.string().max(2048).optional().describe(description);
 const optStringArray = (description: string) =>
@@ -68,32 +67,13 @@ export function registerTestPackageRules(server: McpServer): void {
       },
     },
     async ({ repoPath, configContent, externalPresets, endpoint, platform, ...ctx }) => {
-      if (!repoPath && !configContent) {
-        return {
-          isError: true,
-          content: [{ type: "text", text: "Provide either repoPath or configContent." }],
-        };
-      }
-
-      let source: Record<string, unknown>;
-      let sourcePath: string | undefined;
-      if (configContent) {
-        source = configContent;
-      } else {
-        const located = await locateConfig(repoPath!);
-        if (!located) {
-          return {
-            content: [{ type: "text", text: `No Renovate configuration found in ${repoPath}.` }],
-          };
-        }
-        source = located.config;
-        sourcePath = located.relPath;
-      }
+      const src = await loadConfigSource({ repoPath, configContent });
+      if ("error" in src) return { isError: true, content: [{ type: "text", text: src.error }] };
 
       // Expand `extends` so preset-provided packageRules are included, then test
       // against the effective set.
       const { resolved, warnings: presetWarnings, presetsUnresolved } =
-        await resolveConfig(source, {
+        await resolveConfig(src.config, {
           fetchExternal: externalPresets ?? false,
           endpoint,
           platform,
@@ -150,12 +130,12 @@ export function registerTestPackageRules(server: McpServer): void {
             type: "text",
             text: JSON.stringify(
               {
-                ...(sourcePath ? { path: sourcePath } : {}),
+                ...(src.path ? { path: src.path } : {}),
                 matchQuality: analysis.matchQuality,
                 disclaimer:
                   analysis.matchQuality === "faithful"
-                    ? FAITHFUL_DISCLAIMER
-                    : PREVIEW_DISCLAIMER,
+                    ? TEST_PACKAGE_RULES_FAITHFUL_DISCLAIMER
+                    : MATCH_PREVIEW_DISCLAIMER,
                 ruleCount: packageRules.length,
                 matchedRuleCount: matchedRules.length,
                 matchedRules,

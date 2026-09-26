@@ -42,6 +42,7 @@ Detailed reference for every tool and resource exposed by `renovate-mcp`. The [R
 Rules every tool applies the same way (implemented once in `src/lib/toolInputs.ts`):
 
 - **`repoPath` must be an absolute path to an existing directory.** A relative path, a nonexistent path, or a file returns `isError` with `repoPath must be an absolute path to an existing directory (got: <value>)` before the tool does anything else. No tool creates a missing `repoPath`. (`check_setup` is the one exception: a diagnostic never returns `isError`.)
+- **A config source is `repoPath` or `configContent`, never both.** The tools that read a config this way (`resolve_config`, `explain_config`, each side of `resolve_config_diff`, `test_package_rules`, `annotate_dry_run`, `explain_dependency`) return `isError` for both inputs together (`Pass either repoPath or configContent, not both.`), for neither (`Provide either repoPath or configContent.`), and for a repo with no Renovate config (`No Renovate configuration found in <repoPath>.`). `resolve_config_diff` prefixes the failing side (`before: …` / `after: …`). `read_config` is the exception on the last point: there, no config is an ordinary result that points at `write_config`.
 
 ---
 
@@ -132,7 +133,7 @@ Expand every `extends` preset offline. Opt in to fetching `github>` / `gitlab>` 
 **Inputs:**
 
 - `repoPath` (optional, string, max 4096 bytes) — absolute path to the repository root; the tool locates the repo's config automatically. Use instead of `configContent`.
-- `configContent` (optional, object, max ~1,000,000 bytes serialized) — inline config object to resolve. Use instead of `repoPath`. (One of `repoPath` / `configContent` is required.)
+- `configContent` (optional, object, max ~1,000,000 bytes serialized) — inline config object to resolve. Use instead of `repoPath`. (One of `repoPath` / `configContent` is required, never both — see [Common input rules](#common-input-rules).)
 - `externalPresets` (optional boolean, default `false`) — fetch `github>` / `gitlab>` presets over HTTPS.
 - `endpoint` (optional, string, max 2048 bytes) — API base URL for `github>`/`gitlab>` fetches (GitHub Enterprise / self-hosted GitLab). Defaults to `https://api.github.com` and `https://gitlab.com/api/v4`.
 - `platform` (optional, enum `"github"` | `"gitlab"`) — platform flavour of `endpoint`; when set, `local>owner/repo` presets are fetched as `<platform>>owner/repo`.
@@ -149,7 +150,7 @@ See also: [Security & secrets — Endpoint validation](security.md#endpoint-vali
 
 Inverse of `resolve_config`: walk the same preset tree but annotate every leaf field with the chain of presets that touched it. Each leaf is `{ value, setBy }` where `setBy` lists every contribution in merge order — last entry wins for scalars and overwritten (non-mergeable) arrays; for mergeable arrays each entry adds its own slice.
 
-**Inputs:** same shape as [`resolve_config`](#resolve_config) — `repoPath` (optional, string, max 4096 bytes; use instead of `configContent`), `configContent` (optional, object, max ~1,000,000 bytes serialized; use instead of `repoPath`; one of the two is required), `externalPresets` (optional boolean, default `false`), `endpoint` (optional, string, max 2048 bytes), `platform` (optional, enum `"github"` | `"gitlab"`).
+**Inputs:** same shape as [`resolve_config`](#resolve_config) — `repoPath` (optional, string, max 4096 bytes; use instead of `configContent`), `configContent` (optional, object, max ~1,000,000 bytes serialized; use instead of `repoPath`; one of the two is required, never both — see [Common input rules](#common-input-rules)), `externalPresets` (optional boolean, default `false`), `endpoint` (optional, string, max 2048 bytes), `platform` (optional, enum `"github"` | `"gitlab"`).
 
 Same offline-by-default behaviour and same `externalPresets` / `endpoint` / `platform` opt-ins as `resolve_config`. Both tools share one expansion-and-merge core (`collectMergeSteps` plus the same worker-isolated faithful merge), so their resolved values are identical by construction. `explain_config` reconstructs provenance by diffing the merge's per-step snapshots: each contribution is pinned with a source name (literal `extends` entry, or `<own>` for the user's input config) and a `via` chain naming every parent preset traversed to reach it.
 
@@ -266,7 +267,7 @@ Useful when iterating on a config to see exactly what each tweak did.
 
 Offline structural diff between two **fully-resolved** configs — the `before` and `after` of a config refactor. The resolve-level counterpart to [`dry_run_diff`](#dry_run_diff): where `dry_run_diff` shows how the *proposed PRs* change, this shows how the *effective settings* change. It answers "does the new config produce the same Renovate behaviour as the old one, modulo the intended changes?" without running Renovate — so it stays useful even when datasource lookups would fail (in a sandboxed/offline environment `dry_run` reports zero updates and `dry_run_diff` collapses to a vacuous 0-vs-0).
 
-Each side accepts `repoPath` (locates the repo's config via the same discovery order as [`read_config`](#read_config)) **or** `configContent` (an inline config object). If both are provided for a side, `configContent` takes precedence (consistent with [`resolve_config`](#resolve_config)). Both sides are expanded with [`resolve_config`](#resolve_config)'s preset expansion + faithful worker-thread merge before being compared.
+Each side accepts `repoPath` (locates the repo's config via the same discovery order as [`read_config`](#read_config)) **or** `configContent` (an inline config object). Passing both for a side is an error, and a side's input error is prefixed with its name (`before: …` / `after: …`) — see [Common input rules](#common-input-rules). Both sides are expanded with [`resolve_config`](#resolve_config)'s preset expansion + faithful worker-thread merge before being compared.
 
 The shared `externalPresets` / `endpoint` / `platform` knobs mirror [`resolve_config`](#resolve_config) and apply to **both** sides — a refactor is diffed under one resolution context. Default is fully offline (no network I/O).
 
@@ -294,7 +295,7 @@ Pass `repoPath` (locates + expands the repo's config via the same discovery orde
 **Inputs:**
 
 - `repoPath` (optional, string, max 4096 bytes) — absolute path to the repository root; the tool locates and expands its config. Use instead of `configContent`.
-- `configContent` (optional, object, max ~1,000,000 bytes serialized) — inline config whose `packageRules` to test. Use instead of `repoPath`. (One of `repoPath` / `configContent` is required.)
+- `configContent` (optional, object, max ~1,000,000 bytes serialized) — inline config whose `packageRules` to test. Use instead of `repoPath`. (One of `repoPath` / `configContent` is required, never both — see [Common input rules](#common-input-rules).)
 - `externalPresets` (optional boolean, default `false`), `endpoint` (optional, string, max 2048 bytes), `platform` (optional, enum `"github"` | `"gitlab"`) — same semantics as [`resolve_config`](#resolve_config).
 - Synthetic dependency-context fields — all optional, all strings unless noted, supply whichever you're testing: `depName`, `packageName`, `datasource`, `manager`, `depType` (max 2048 bytes each), `depTypes` (string array, max 256 items), `currentValue`, `currentVersion`, `lockedVersion`, `versioning`, `packageFile`, `lockFiles` (array), `categories` (array), `repository`, `baseBranch`, `registryUrls` (array), `sourceUrl`, `newValue`, `updateType`, `isBump` (boolean), `isBreaking` (boolean), `currentVersionTimestamp`, `mergeConfidenceLevel` (see each field's tool description for which matcher it feeds).
 
@@ -319,7 +320,7 @@ Takes a report (inline `report` — raw `{ repositories }` or a full `dry_run` s
 - `report` (optional, object, max ~10,000,000 bytes serialized) — inline report (raw `{ repositories }` or a full `dry_run` summary with a `report` key). Use instead of `reportPath`.
 - `reportPath` (optional, string, max 4096 bytes) — absolute path to a JSON report file (pair with `dry_run`'s `reportOutputPath`). Use instead of `report`. (One of `report` / `reportPath` is required.)
 - `repoPath` (optional, string, max 4096 bytes) — locates and expands the repo's config for its `packageRules`. Use instead of `configContent`.
-- `configContent` (optional, object, max ~1,000,000 bytes serialized) — inline config whose `packageRules` to attribute against. Use instead of `repoPath`. (One of `repoPath` / `configContent` is required.)
+- `configContent` (optional, object, max ~1,000,000 bytes serialized) — inline config whose `packageRules` to attribute against. Use instead of `repoPath`. (One of `repoPath` / `configContent` is required, never both — see [Common input rules](#common-input-rules).)
 - `externalPresets` (optional boolean, default `false`), `endpoint` (optional, string, max 2048 bytes), `platform` (optional, enum `"github"` | `"gitlab"`) — same semantics as [`resolve_config`](#resolve_config).
 
 Returns one `annotation` per update (`manager`, `packageFile`, `depName`, `currentVersion`, `newVersion`, `updateType`, plus `matchedRules` and `unevaluatable` with the same shapes as [`test_package_rules`](#test_package_rules)), and two aggregate signals:
@@ -335,7 +336,7 @@ Answer the most common Renovate support question — "why was/wasn't dependency 
 
 The report already carries the answer: every extracted dependency under `repositories[*].packageFiles[manager][*].deps[]` has a `skipReason` / `skipStage`, an `updates` array, and `warnings`. `dry_run` either inlines the whole report (large, often truncated by clients) or collapses it to a path plus counts with `reportOutputPath`, so this tool walks it for you.
 
-**Inputs.** A report — inline `report` (raw `{ repositories }` or a full `dry_run` summary with a `report` key) **or** `reportPath` (absolute path; pair with `dry_run`'s `reportOutputPath`), the same shapes as [`annotate_dry_run`](#annotate_dry_run) — plus `depName` (required). Matching is case-insensitive against both `depName` and `packageName`; exact by default, `partial: true` for substring matching. Optional `manager` restricts hits to one manager. Optionally add a config source — `repoPath` (same discovery as [`read_config`](#read_config)) or `configContent` — to attach `matchedRules` per hit.
+**Inputs.** A report — inline `report` (raw `{ repositories }` or a full `dry_run` summary with a `report` key) **or** `reportPath` (absolute path; pair with `dry_run`'s `reportOutputPath`), the same shapes as [`annotate_dry_run`](#annotate_dry_run) — plus `depName` (required). Matching is case-insensitive against both `depName` and `packageName`; exact by default, `partial: true` for substring matching. Optional `manager` restricts hits to one manager. Optionally add a config source — `repoPath` (same discovery as [`read_config`](#read_config)) or `configContent`, never both (see [Common input rules](#common-input-rules)) — to attach `matchedRules` per hit.
 
 **Output.**
 
