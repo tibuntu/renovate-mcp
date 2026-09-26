@@ -358,6 +358,28 @@ describe("lint_config end-to-end", () => {
     });
   });
 
+  it("lints a renovate.json with a comment and a trailing comma (JSONC) via configPath", async () => {
+    const configPath = path.join(repo, "renovate.json");
+    await writeFile(
+      configPath,
+      '{\n  // keep me\n  "packageRules": [{ "matchDepNames": ["foo.+"] }],\n}\n',
+    );
+    session = await startServer();
+    const res = await session.request<{
+      isError?: boolean;
+      content: Array<{ type: string; text: string }>;
+    }>("tools/call", {
+      name: "lint_config",
+      arguments: { configPath },
+    });
+    expect(res.result?.isError).toBeFalsy();
+    const parsed = JSON.parse(res.result?.content[0]?.text ?? "{}");
+    expect(parsed.findings[0]).toMatchObject({
+      ruleId: "unwrapped-regex",
+      path: "packageRules[0].matchDepNames[0]",
+    });
+  });
+
   it("reports isError with a helpful message for malformed JSON5", async () => {
     const configPath = path.join(repo, ".renovaterc.json5");
     await writeFile(configPath, "{ extends: ['config:recommended', }");

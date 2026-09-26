@@ -40,6 +40,16 @@ describe("locateConfig", () => {
     expect(loc?.config).toMatchObject({ extends: ["config:recommended"] });
   });
 
+  it("parses renovate.json with a comment and a trailing comma (JSONC, like Renovate)", async () => {
+    await writeFile(
+      path.join(repo, "renovate.json"),
+      '{\n  // keep me\n  "extends": ["config:recommended"],\n}\n',
+    );
+    const loc = await locateConfig(repo);
+    expect(loc?.format).toBe("json");
+    expect(loc?.config).toMatchObject({ extends: ["config:recommended"] });
+  });
+
   it("finds .github/renovate.json", async () => {
     await mkdir(path.join(repo, ".github"));
     await writeFile(path.join(repo, ".github/renovate.json"), '{"enabled":false}');

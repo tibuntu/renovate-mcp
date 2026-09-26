@@ -29,8 +29,10 @@ export async function locateConfig(repoPath: string): Promise<LocatedConfig | nu
     const abs = path.join(repoPath, candidate.path);
     try {
       const raw = await fs.readFile(abs, "utf8");
-      const config: unknown =
-        candidate.format === "json5" ? JSON5.parse(raw) : JSON.parse(raw);
+      // Renovate parses every candidate JSONC-then-JSON5 regardless of
+      // extension (and write_config round-trips comments into renovate.json);
+      // JSON5 is a superset of JSONC, so one parser covers all of them.
+      const config: unknown = JSON5.parse(raw);
       if (!isPlainObject(config)) {
         throw new Error(`${candidate.path} does not contain a JSON object`);
       }

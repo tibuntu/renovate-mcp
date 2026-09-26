@@ -103,6 +103,20 @@ describe("read_config", () => {
     });
   });
 
+  it("parses a renovate.json with a comment and a trailing comma (JSONC)", async () => {
+    await writeFile(
+      path.join(repo, "renovate.json"),
+      '{\n  // keep me\n  "extends": ["config:recommended"],\n}\n',
+    );
+
+    const result = await readConfig(repo);
+    expect(result.isError).toBeFalsy();
+    const parsed = JSON.parse(result.content[0]!.text);
+    expect(parsed.path).toBe("renovate.json");
+    expect(parsed.format).toBe("json");
+    expect(parsed.config).toMatchObject({ extends: ["config:recommended"] });
+  });
+
   it("prefers renovate.json over .github/renovate.json when both exist", async () => {
     await mkdir(path.join(repo, ".github"));
     await writeFile(
