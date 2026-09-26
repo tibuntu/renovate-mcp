@@ -10,6 +10,7 @@ import {
   CommandTimeoutError,
   MAX_CAPTURE_BYTES,
   killLiveChildren,
+  validatorTimeoutMs,
 } from "../../src/lib/renovateCli.js";
 
 const originalEnv = { ...process.env };
@@ -289,6 +290,19 @@ describe("killLiveChildren", () => {
       } catch {
         // already gone — the expected outcome
       }
+    }
+  });
+});
+
+describe("validatorTimeoutMs", () => {
+  it("defaults to 30 s and honours only a positive integer RENOVATE_MCP_VALIDATOR_TIMEOUT_MS", () => {
+    delete process.env.RENOVATE_MCP_VALIDATOR_TIMEOUT_MS;
+    expect(validatorTimeoutMs()).toBe(30_000);
+    process.env.RENOVATE_MCP_VALIDATOR_TIMEOUT_MS = "500";
+    expect(validatorTimeoutMs()).toBe(500);
+    for (const bad of ["", "abc", "0", "-5", "1.5"]) {
+      process.env.RENOVATE_MCP_VALIDATOR_TIMEOUT_MS = bad;
+      expect(validatorTimeoutMs(), `value ${JSON.stringify(bad)}`).toBe(30_000);
     }
   });
 });
