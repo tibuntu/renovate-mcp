@@ -27,17 +27,37 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "html", "lcov"],
       include: ["src/**/*.ts"],
-      exclude: ["src/data/presets.generated.ts"],
-      // Regression floor set just below the v1.0 baseline (stmts 71 / branch 67
-      // / funcs 77 / lines 72). Worker entry points (*WorkerImpl.ts) run in a
-      // separate thread the main-process v8 instrumentation can't see, so they
-      // count as uncovered here despite being exercised by the worker tests —
-      // the margins below absorb that.
+      // Excluded because these paths are only exercised out-of-process and
+      // the main-process v8 instrumentation can't see them, so they'd only
+      // add noise to the number:
+      //  - src/index.ts: the stdio entrypoint, exercised via the built
+      //    dist/index.js child process in test/integration (mcpSession.ts),
+      //    never imported in-process.
+      //  - src/tools/**, src/prompts/**, src/resources/**: registered against
+      //    a live McpServer and invoked over the stdio JSON-RPC transport in
+      //    integration tests, not called directly from unit tests.
+      //  - src/lib/*WorkerImpl.ts: run inside worker_threads workers (see
+      //    CLAUDE.md's worker-isolation carve-outs), invisible to the
+      //    parent process's coverage instrumentation despite being exercised
+      //    by the worker tests.
+      //  - src/data/**: committed, generated snapshot data with no logic of
+      //    its own.
+      exclude: [
+        "src/index.ts",
+        "src/tools/**",
+        "src/prompts/**",
+        "src/resources/**",
+        "src/lib/*WorkerImpl.ts",
+        "src/data/**",
+      ],
+      // Regression floor set 5 points below the measured numbers after the
+      // exclusions above (measured: stmts 92.41 / branch 87.41 / funcs 94.76
+      // / lines 94.16 — see the coverage report's "All files" row).
       thresholds: {
-        statements: 68,
-        branches: 64,
-        functions: 73,
-        lines: 68,
+        statements: 87,
+        branches: 82,
+        functions: 89,
+        lines: 89,
       },
     },
   },
