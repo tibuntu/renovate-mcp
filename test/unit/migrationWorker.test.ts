@@ -11,7 +11,7 @@ describe("runMigration worker error handling", () => {
     // A worker that exits before posting (here a fixture that calls
     // process.exit(1), firing neither 'message' nor 'error') must not hang
     // until the timeout. The old handler swallowed exit code 1 and only threw
-    // MigrationTimeoutError after the full budget. Parity with mergeWorker.
+    // WorkerTimeoutError after the full budget. Parity with mergeWorker.
     vi.stubEnv(
       "RENOVATE_MCP_MIGRATION_WORKER_ENTRY",
       resolve(process.cwd(), "test/fixtures/exit-one-worker.mjs"),

@@ -1,4 +1,9 @@
 import { parentPort, workerData } from "node:worker_threads";
+import type {
+  MatcherResult,
+  PerContextResult,
+  PerRuleResult,
+} from "./packageRulesWorker.js";
 
 /**
  * Worker entry point for faithful `packageRules` matching used by
@@ -27,30 +32,6 @@ import { parentPort, workerData } from "node:worker_threads";
 interface WorkerData {
   packageRules: Record<string, unknown>[];
   contexts: Record<string, unknown>[];
-}
-
-type MatcherResultValue = "null" | "true" | "false" | "threw";
-
-interface MatcherResult {
-  /** The matcher's class name, e.g. `DepNameMatcher`. */
-  name: string;
-  result: MatcherResultValue;
-  /** Present only when `result === "threw"`. */
-  error?: string;
-}
-
-interface PerRuleResult {
-  /** True iff no applicable matcher returned false and none threw. */
-  matched: boolean;
-  matchers: MatcherResult[];
-  /** The rule's contribution (match/exclude keys stripped, overrides applied). Present only when matched. */
-  contributedConfig?: Record<string, unknown>;
-}
-
-interface PerContextResult {
-  /** Faithful merged config — bit-identical to applyPackageRules for matchConfidence-free configs. */
-  mergedConfig: Record<string, unknown>;
-  rules: PerRuleResult[];
 }
 
 interface Matcher {
@@ -82,14 +63,7 @@ try {
       default: Matcher[];
     }
   ).default;
-  const { mergeChildConfig } = (await import(
-    "renovate/dist/config/utils.js"
-  )) as {
-    mergeChildConfig: (
-      parent: Record<string, unknown>,
-      child: Record<string, unknown>,
-    ) => Record<string, unknown>;
-  };
+  const { mergeChildConfig } = await import("renovate/dist/config/utils.js");
   const { compile } = (await import("renovate/dist/util/template/index.js")) as {
     compile: (template: string, config: Record<string, unknown>) => string;
   };

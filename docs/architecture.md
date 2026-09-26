@@ -14,7 +14,7 @@ The `renovate` package is bundled as a runtime dependency so users don't need a 
 
 `migrate_config` was the first tool to call into Renovate as a library (the config-merge worker below is the second) — Renovate ships no `renovate-config-migrate` CLI, only a library export. To keep the main MCP server process decoupled from Renovate's internal API surface (and to avoid the ~20-30 MB resident cost of `getOptions()` eagerly loading the manager registry), the tool spawns a `node:worker_threads` worker on demand that imports `renovate/dist/config/migration.js` **inside the worker**. The main process never imports `renovate`.
 
-First call carries a one-time cold-load latency (a few seconds) for the worker's ESM graph; the worker is terminated after each call.
+First call carries a one-time cold-load latency (a few seconds) for the worker's ESM graph; the worker is terminated after each call. The spawn / first-message / 30 s timeout (`WorkerTimeoutError`) / terminate cycle is shared by all three carve-outs through `src/lib/renovateWorker.ts` (`runRenovateWorker`); each `*Worker.ts` wrapper only names its `*WorkerImpl.js` entry and shapes the reply.
 
 ## Worker isolation for config merge
 

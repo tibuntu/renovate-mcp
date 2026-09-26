@@ -1,4 +1,4 @@
-import { Worker } from "node:worker_threads";
+import { DEFAULT_WORKER_TIMEOUT_MS, runRenovateWorker } from "./renovateWorker.js";
 
 /**
  * Folds an ordered sequence of configs with Renovate's real `mergeChildConfig()`
@@ -26,19 +26,6 @@ export interface MergeResult {
   snapshots?: Record<string, unknown>[];
 }
 
-type WorkerResponse =
-  | {
-      ok: true;
-      merged: Record<string, unknown>;
-      snapshots?: Record<string, unknown>[];
-    }
-  | { ok: false; error: string };
-
-// First-call latency budget: ESM cold-load of renovate's module graph in the
-// worker can take a couple of seconds on slow CI. Each call spawns a fresh
-// worker today, so this budget covers the cold path.
-const DEFAULT_TIMEOUT_MS = 30_000;
-
 /**
  * Worker entry, resolved per call. Overridable via
  * `RENOVATE_MCP_MERGE_WORKER_ENTRY` so the test suite — which loads this module
@@ -53,15 +40,6 @@ function workerEntry(): string | URL {
     process.env.RENOVATE_MCP_MERGE_WORKER_ENTRY ??
     new URL("./mergeWorkerImpl.js", import.meta.url)
   );
-}
-
-export class MergeTimeoutError extends Error {
-  readonly timeoutMs: number;
-  constructor(timeoutMs: number) {
-    super(`Renovate config merge worker exceeded ${timeoutMs}ms`);
-    this.name = "MergeTimeoutError";
-    this.timeoutMs = timeoutMs;
-  }
 }
 
 export interface RunMergeOptions {
@@ -85,61 +63,10 @@ export async function runMerge(
       : { merged: only };
   }
 
-  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const withSteps = options.withSteps ?? false;
-  const worker = new Worker(workerEntry(), {
-    workerData: { configs, withSteps },
-    // Isolate the worker's stdio. Importing renovate pulls in its logger, which
-    // can emit "logger not initialized" notes. The MCP server speaks JSON-RPC
-    // over stdout, so nothing from the worker may leak onto the parent's stdout
-    // (and the stderr notes are just noise). Capturing both streams here keeps
-    // them off the parent's descriptors; we never read them, so they're dropped.
-    stdout: true,
-    stderr: true,
-  });
-
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    const response = await new Promise<WorkerResponse | "timeout">(
-      (resolve, reject) => {
-        // First event wins. The `exit` handler must reject when it fires before
-        // a message/error/timeout — a worker that crashes or exits before
-        // posting (e.g. a load-time failure) would otherwise leave the promise
-        // pending until the timeout instead of degrading promptly.
-        let settled = false;
-        const settle = (fn: () => void) => {
-          if (settled) return;
-          settled = true;
-          fn();
-        };
-        timer = setTimeout(() => settle(() => resolve("timeout")), timeoutMs);
-        worker.once("message", (msg: WorkerResponse) =>
-          settle(() => resolve(msg)),
-        );
-        worker.once("error", (err) => settle(() => reject(err)));
-        worker.once("exit", (code) =>
-          settle(() =>
-            reject(
-              new Error(
-                `Merge worker exited (code ${code}) before returning a result`,
-              ),
-            ),
-          ),
-        );
-      },
-    );
-
-    if (response === "timeout") {
-      throw new MergeTimeoutError(timeoutMs);
-    }
-    if (!response.ok) {
-      throw new Error(`Renovate config merge failed: ${response.error}`);
-    }
-    return response.snapshots
-      ? { merged: response.merged, snapshots: response.snapshots }
-      : { merged: response.merged };
-  } finally {
-    if (timer) clearTimeout(timer);
-    await worker.terminate().catch(() => undefined);
-  }
+  const { merged, snapshots } = await runRenovateWorker<MergeResult>(
+    workerEntry(),
+    { configs, withSteps: options.withSteps ?? false },
+    { timeoutMs: options.timeoutMs ?? DEFAULT_WORKER_TIMEOUT_MS, label: "config merge" },
+  );
+  return snapshots ? { merged, snapshots } : { merged };
 }

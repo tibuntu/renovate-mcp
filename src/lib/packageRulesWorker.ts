@@ -1,4 +1,4 @@
-import { Worker } from "node:worker_threads";
+import { DEFAULT_WORKER_TIMEOUT_MS, runRenovateWorker } from "./renovateWorker.js";
 
 /**
  * Evaluates Renovate's real `packageRules` matchers against one or more
@@ -40,15 +40,6 @@ export interface PerContextResult {
   rules: PerRuleResult[];
 }
 
-type WorkerResponse =
-  | { ok: true; results: PerContextResult[] }
-  | { ok: false; error: string };
-
-// First-call latency budget: ESM cold-load of renovate's matcher registry (which
-// pulls in the versioning subsystem) can take a couple of seconds on slow CI.
-// Each call spawns a fresh worker, so this budget covers the cold path.
-const DEFAULT_TIMEOUT_MS = 30_000;
-
 /**
  * Worker entry, resolved per call. Overridable via
  * `RENOVATE_MCP_PACKAGE_RULES_WORKER_ENTRY` so the test suite — which loads this
@@ -64,15 +55,6 @@ function workerEntry(): string | URL {
   );
 }
 
-export class PackageRulesTimeoutError extends Error {
-  readonly timeoutMs: number;
-  constructor(timeoutMs: number) {
-    super(`Renovate packageRules worker exceeded ${timeoutMs}ms`);
-    this.name = "PackageRulesTimeoutError";
-    this.timeoutMs = timeoutMs;
-  }
-}
-
 export interface RunPackageRulesOptions {
   timeoutMs?: number;
 }
@@ -80,7 +62,7 @@ export interface RunPackageRulesOptions {
 /**
  * Evaluate `packageRules` against each of `contexts`, returning one result per
  * context (faithful merged config + per-rule provenance). Throws
- * `PackageRulesTimeoutError` on timeout or a plain Error on worker failure — the
+ * `WorkerTimeoutError` on timeout or a plain Error on worker failure — the
  * caller (packageRulesAnalysis) catches and degrades to a preview fallback.
  */
 export async function runApplyPackageRules(
@@ -98,54 +80,13 @@ export async function runApplyPackageRules(
     }));
   }
 
-  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const worker = new Worker(workerEntry(), {
-    workerData: { packageRules, contexts },
-    // Isolate the worker's stdio — importing renovate pulls in its logger, and
-    // nothing from the worker may leak onto the parent's stdout JSON-RPC channel.
-    stdout: true,
-    stderr: true,
-  });
-
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    const response = await new Promise<WorkerResponse | "timeout">(
-      (resolve, reject) => {
-        // First event wins. The `exit` handler must reject when it fires before
-        // a message/error/timeout — a worker that crashes or exits before
-        // posting would otherwise leave the promise pending until the timeout.
-        let settled = false;
-        const settle = (fn: () => void) => {
-          if (settled) return;
-          settled = true;
-          fn();
-        };
-        timer = setTimeout(() => settle(() => resolve("timeout")), timeoutMs);
-        worker.once("message", (msg: WorkerResponse) =>
-          settle(() => resolve(msg)),
-        );
-        worker.once("error", (err) => settle(() => reject(err)));
-        worker.once("exit", (code) =>
-          settle(() =>
-            reject(
-              new Error(
-                `packageRules worker exited (code ${code}) before returning a result`,
-              ),
-            ),
-          ),
-        );
-      },
-    );
-
-    if (response === "timeout") {
-      throw new PackageRulesTimeoutError(timeoutMs);
-    }
-    if (!response.ok) {
-      throw new Error(`Renovate packageRules evaluation failed: ${response.error}`);
-    }
-    return response.results;
-  } finally {
-    if (timer) clearTimeout(timer);
-    await worker.terminate().catch(() => undefined);
-  }
+  const { results } = await runRenovateWorker<{ results: PerContextResult[] }>(
+    workerEntry(),
+    { packageRules, contexts },
+    {
+      timeoutMs: options.timeoutMs ?? DEFAULT_WORKER_TIMEOUT_MS,
+      label: "packageRules evaluation",
+    },
+  );
+  return results;
 }

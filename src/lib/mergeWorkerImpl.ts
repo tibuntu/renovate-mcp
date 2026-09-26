@@ -18,14 +18,7 @@ interface WorkerData {
 const { configs, withSteps } = workerData as WorkerData;
 
 try {
-  const { mergeChildConfig } = (await import(
-    "renovate/dist/config/utils.js"
-  )) as {
-    mergeChildConfig: (
-      parent: Record<string, unknown>,
-      child: Record<string, unknown>,
-    ) => Record<string, unknown>;
-  };
+  const { mergeChildConfig } = await import("renovate/dist/config/utils.js");
 
   let acc: Record<string, unknown> = {};
   const snapshots: Record<string, unknown>[] = [];
