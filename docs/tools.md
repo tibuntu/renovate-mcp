@@ -50,7 +50,7 @@ Rules every tool applies the same way (implemented once in `src/lib/toolInputs.t
 
 ## `check_setup`
 
-Report Renovate CLI + validator availability, versions, and install hints. Also runs at server startup.
+Report Renovate CLI + validator availability, versions, and install hints. Also runs at server startup. Never returns `isError`: an incomplete setup is a successful diagnosis, reported through `ok: false` and `hints`.
 
 Surfaces a `platformContext` block with `RENOVATE_PLATFORM` / `RENOVATE_ENDPOINT` values, token-presence booleans, the platform `dry_run` would pick when its input is unset, and notes about likely misconfigurations — so callers can verify env before invoking `dry_run`. Token values are never echoed; only presence booleans.
 
