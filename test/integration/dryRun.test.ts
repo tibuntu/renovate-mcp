@@ -1710,4 +1710,34 @@ process.exit(0);
     expect(res.result!.content[0]!.text).toContain("repository");
     expect(await spawnedDryRun(argvDump)).toBe(false);
   });
+
+  describe("RENOVATE_CONFIG_FILE already set on the server", () => {
+    const operatorConfig = "/etc/renovate/config.js";
+    let argvDump: string;
+    beforeEach(async () => {
+      argvDump = path.join(repo, "argv.json");
+      const fakeBin = await makeFakeRenovate(repo);
+      session = await startServer({
+        RENOVATE_BIN: fakeBin,
+        FAKE_RENOVATE_ARGV_DUMP: argvDump,
+        RENOVATE_CONFIG_FILE: operatorConfig,
+      });
+    });
+
+    it("refuses hostRules instead of silently overriding the operator's config", async () => {
+      const res = await call({ hostRules: [{ matchHost: "registry.acme.corp", token: "t0k3n" }] });
+      expect(res.result?.isError).toBe(true);
+      const text = res.result!.content[0]!.text;
+      expect(text).toContain("RENOVATE_CONFIG_FILE");
+      expect(text).toContain(operatorConfig);
+      expect(await spawnedDryRun(argvDump)).toBe(false);
+    });
+
+    it("passes the operator's RENOVATE_CONFIG_FILE through when no hostRules are given", async () => {
+      const res = await call({});
+      expect(res.result?.isError).toBeFalsy();
+      const dumped = JSON.parse(await readFile(argvDump, "utf8")) as { configFileEnv?: string };
+      expect(dumped.configFileEnv).toBe(operatorConfig);
+    });
+  });
 });
