@@ -77,7 +77,7 @@ describe("check_setup", () => {
     expect(text).toContain("Platform context:");
   });
 
-  it("returns isError with MISSING markers when both binaries are absent", async () => {
+  it("reports MISSING markers without isError when both binaries are absent (the diagnostic succeeded)", async () => {
     session = await startServer(
       {
         RENOVATE_BIN: "/nonexistent/path/to/renovate",
@@ -95,7 +95,7 @@ describe("check_setup", () => {
       isError?: boolean;
     }>("tools/call", { name: "check_setup", arguments: {} });
 
-    expect(res.result?.isError).toBe(true);
+    expect(res.result?.isError).toBeFalsy();
 
     const text = res.result!.content[0]!.text;
     expect(text).toContain("MISSING");
