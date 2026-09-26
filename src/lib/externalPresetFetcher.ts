@@ -200,42 +200,32 @@ async function fetchJson(
   platform: Platform,
   credential: Credential,
 ): Promise<FetchResult> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetchImpl(url, {
       headers,
-      signal: controller.signal,
+      signal: AbortSignal.timeout(timeoutMs),
       redirect: "manual",
     });
-    if (isRedirectResponse(res)) {
-      return { ok: false, reason: formatRedirectRefusal(presetName, url, res) };
+    if (isRedirectResponse(res) || !res.ok) {
+      const reason = await failureReason(res, url, presetName, platform, credential);
+      await discardBody(res);
+      return { ok: false, reason };
     }
-    if (!res.ok) {
-      const rateLimit = detectRateLimit(res, platform, presetName);
-      if (rateLimit) return { ok: false, reason: rateLimit };
-      if (res.status === 401 || res.status === 403) {
-        const body = await safeReadText(res, MAX_AUTH_BODY_BYTES);
-        return {
-          ok: false,
-          reason: formatAuthFailure(res.status, presetName, url, credential, body),
-        };
-      }
+    const declared = Number.parseInt(res.headers.get("content-length") ?? "", 10);
+    if (Number.isFinite(declared) && declared > MAX_PRESET_BYTES) {
+      await discardBody(res);
       return {
         ok: false,
-        reason: `HTTP ${res.status}${res.statusText ? ` ${res.statusText}` : ""} when fetching ${presetName}`,
+        reason: `Preset body for ${presetName} exceeds ${MAX_PRESET_BYTES} bytes (declared ${declared}).`,
       };
     }
-    const oversize = checkDeclaredLength(res, presetName);
-    if (oversize) return oversize;
-    const bounded = await readBoundedText(res, MAX_PRESET_BYTES);
-    if (!bounded.ok) {
+    const { text, overflow } = await readBody(res, MAX_PRESET_BYTES);
+    if (overflow) {
       return {
         ok: false,
         reason: `Preset body for ${presetName} exceeds ${MAX_PRESET_BYTES} bytes.`,
       };
     }
-    const text = bounded.text;
     try {
       const body = JSON.parse(text);
       if (!body || typeof body !== "object" || Array.isArray(body)) {
@@ -253,7 +243,7 @@ async function fetchJson(
     }
   } catch (e) {
     const err = e as Error;
-    if (err.name === "AbortError") {
+    if (err.name === "AbortError" || err.name === "TimeoutError") {
       return {
         ok: false,
         reason: `Timed out after ${timeoutMs}ms fetching ${presetName}`,
@@ -263,97 +253,64 @@ async function fetchJson(
       ok: false,
       reason: `Network error fetching ${presetName}: ${err.message}`,
     };
-  } finally {
-    clearTimeout(timer);
   }
+}
+
+/** Reason for a redirect or non-2xx response; only 401/403 read (a capped slice of) the body. */
+async function failureReason(
+  res: Response,
+  url: string,
+  presetName: string,
+  platform: Platform,
+  credential: Credential,
+): Promise<string> {
+  if (isRedirectResponse(res)) return formatRedirectRefusal(presetName, url, res);
+  const rateLimit = detectRateLimit(res, platform, presetName);
+  if (rateLimit) return rateLimit;
+  if (res.status === 401 || res.status === 403) {
+    const { text } = await readBody(res, MAX_AUTH_BODY_BYTES).catch(() => ({ text: "" }));
+    return formatAuthFailure(res.status, presetName, url, credential, text);
+  }
+  return `HTTP ${res.status}${res.statusText ? ` ${res.statusText}` : ""} when fetching ${presetName}`;
 }
 
 const AUTH_BODY_MAX = 500;
 
-async function safeReadText(res: Response, maxBytes: number): Promise<string> {
-  try {
-    return await readCappedText(res, maxBytes);
-  } catch {
-    return "";
-  }
-}
-
-function checkDeclaredLength(res: Response, presetName: string): FetchResult | undefined {
-  const declared = Number.parseInt(res.headers.get("content-length") ?? "", 10);
-  if (Number.isFinite(declared) && declared > MAX_PRESET_BYTES) {
-    return {
-      ok: false,
-      reason: `Preset body for ${presetName} exceeds ${MAX_PRESET_BYTES} bytes (declared ${declared}).`,
-    };
-  }
-  return undefined;
-}
-
-type BoundedRead = { ok: true; text: string } | { ok: false };
-
-async function readBoundedText(res: Response, maxBytes: number): Promise<BoundedRead> {
-  const collected = await collectBytes(res, maxBytes, "reject");
-  if (collected.overflow) return { ok: false };
-  return { ok: true, text: new TextDecoder("utf-8").decode(collected.bytes) };
-}
-
-async function readCappedText(res: Response, maxBytes: number): Promise<string> {
-  const collected = await collectBytes(res, maxBytes, "truncate");
-  return new TextDecoder("utf-8").decode(collected.bytes);
-}
-
-async function collectBytes(
-  res: Response,
-  maxBytes: number,
-  onOverflow: "reject" | "truncate",
-): Promise<{ bytes: Uint8Array; overflow: boolean }> {
-  if (!res.body) {
-    const text = await res.text();
-    const encoded = new TextEncoder().encode(text);
-    if (encoded.byteLength > maxBytes) {
-      return onOverflow === "reject"
-        ? { bytes: new Uint8Array(0), overflow: true }
-        : { bytes: encoded.slice(0, maxBytes), overflow: true };
-    }
-    return { bytes: encoded, overflow: false };
-  }
+/**
+ * Read at most `max` bytes of the body. On overflow the reader is cancelled
+ * and `text` holds the truncated prefix — the preset path treats `overflow`
+ * as a failure, the auth-snippet path keeps the prefix.
+ */
+async function readBody(res: Response, max: number): Promise<{ text: string; overflow: boolean }> {
+  if (!res.body) return { text: "", overflow: false };
   const reader = res.body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
+  let overflow = false;
   try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (!value) continue;
-      const remaining = maxBytes - total;
-      if (value.byteLength > remaining) {
+    for (let r = await reader.read(); !r.done; r = await reader.read()) {
+      const chunk = r.value.subarray(0, max - total);
+      chunks.push(chunk);
+      total += chunk.byteLength;
+      if (chunk.byteLength < r.value.byteLength) {
+        overflow = true;
         await reader.cancel().catch(() => undefined);
-        if (onOverflow === "reject") {
-          return { bytes: new Uint8Array(0), overflow: true };
-        }
-        if (remaining > 0) {
-          chunks.push(value.slice(0, remaining));
-          total += remaining;
-        }
-        return { bytes: concat(chunks, total), overflow: true };
+        break;
       }
-      chunks.push(value);
-      total += value.byteLength;
     }
   } finally {
     reader.releaseLock?.();
   }
-  return { bytes: concat(chunks, total), overflow: false };
+  return { text: new TextDecoder().decode(Buffer.concat(chunks, total)), overflow };
 }
 
-function concat(chunks: Uint8Array[], total: number): Uint8Array {
-  const out = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    out.set(chunk, offset);
-    offset += chunk.byteLength;
+/** Release a body we will not read so undici can close or reuse the connection. */
+async function discardBody(res: Response): Promise<void> {
+  try {
+    await res.body?.cancel();
+  } catch {
+    // already consumed, locked, or a bodiless test double
   }
-  return out;
 }
 
 function formatAuthFailure(
