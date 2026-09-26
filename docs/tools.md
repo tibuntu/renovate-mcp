@@ -211,7 +211,7 @@ Run Renovate with `--dry-run` and return the structured JSON report. No PRs, no 
 
 Semantic diff between two `dry_run` reports — `added` / `removed` / `changed` proposed updates plus a compact text rendering. Stateless; takes both reports as inputs.
 
-Each side accepts either the inline report (raw `{ repositories }` or a full `dry_run` summary with a `report` key) or `{ reportPath: "<absolute path>" }` pointing at a file written by `dry_run`'s `reportOutputPath`. Inline and path forms can be mixed — pair the two when reports would otherwise hit the inline truncation cap.
+Each side accepts either the inline report (raw `{ repositories }` or a full `dry_run` summary with a `report` key) or `{ reportPath: "<absolute path>" }` pointing at a file written by `dry_run`'s `reportOutputPath`. The collapsed `{ reportPath, repoCount, updateCount }` that `dry_run` returns under `report` in that mode is accepted as-is — directly, or still nested inside the full summary — and followed to the file. Inline and path forms can be mixed — pair the two when reports would otherwise hit the inline truncation cap. An unreadable or non-JSON file returns an `isError` naming the side (`before` / `after`) and the path.
 
 Updates are keyed by `(manager, packageFile, depName)` so a version bump on the same dep shows up once under `changed` rather than twice as `removed + added`. Compared per identity: `newValue`, `newVersion`, `updateType`, `branchName`, `groupName`, `schedule`.
 

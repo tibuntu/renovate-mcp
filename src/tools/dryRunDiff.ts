@@ -1,8 +1,8 @@
-import { promises as fs } from "node:fs";
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { diffDryRunReports } from "../lib/dryRunDiff.js";
 import { pathString, reportRecord } from "../lib/inputLimits.js";
+import { readReportPath } from "../lib/reportInput.js";
 
 const reportShape = reportRecord(
   "A Renovate dry-run report. Pass either the raw report (an object with a `repositories` key) or the full `dry_run` tool summary (an object with a `report` key); the tool unwraps `report` automatically.",
@@ -18,33 +18,33 @@ const reportPathShape = z
     "Pointer to a report on disk. The tool reads the file and JSON-parses it before diffing.",
   );
 
-const reportInputSchema = z.union([reportShape, reportPathShape]);
+// Path shape first: a bare record would also match `{ reportPath }` and the
+// path branch would never be taken.
+const reportInputSchema = z.union([reportPathShape, reportShape]);
+
+/**
+ * The on-disk pointer for this input, if any: `{ reportPath }` itself (also
+ * the collapsed `{ reportPath, repoCount, updateCount }` that `dry_run`
+ * returns under `report` with `reportOutputPath`), or a full `dry_run`
+ * summary whose `report` collapsed to one.
+ */
+function reportPointer(input: Record<string, unknown>): string | undefined {
+  if (typeof input.reportPath === "string") return input.reportPath;
+  const nested = input.report;
+  if (nested && typeof nested === "object" && typeof (nested as Record<string, unknown>).reportPath === "string") {
+    return (nested as Record<string, unknown>).reportPath as string;
+  }
+  return undefined;
+}
 
 async function resolveReport(
   side: "before" | "after",
   input: z.infer<typeof reportInputSchema>,
 ): Promise<{ ok: true; value: unknown } | { ok: false; error: string }> {
-  if (input && typeof input === "object" && "reportPath" in input && typeof input.reportPath === "string") {
-    const reportPath = input.reportPath;
-    let raw: string;
-    try {
-      raw = await fs.readFile(reportPath, "utf8");
-    } catch (err) {
-      return {
-        ok: false,
-        error: `Could not read \`${side}.reportPath\` (\`${reportPath}\`): ${(err as Error).message}.`,
-      };
-    }
-    try {
-      return { ok: true, value: JSON.parse(raw) };
-    } catch (err) {
-      return {
-        ok: false,
-        error: `\`${side}.reportPath\` (\`${reportPath}\`) is not valid JSON: ${(err as Error).message}.`,
-      };
-    }
-  }
-  return { ok: true, value: input };
+  const reportPath = reportPointer(input);
+  if (reportPath === undefined) return { ok: true, value: input };
+  const res = await readReportPath(reportPath);
+  return res.ok ? res : { ok: false, error: `\`${side}\`: ${res.error}` };
 }
 
 export function registerDryRunDiff(server: McpServer): void {

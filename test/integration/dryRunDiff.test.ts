@@ -89,6 +89,36 @@ describe("dry_run_diff path-based inputs", () => {
     expect(body.summary.changed).toBe(1);
   });
 
+  it("follows a collapsed dry_run summary ({ reportPath, repoCount, updateCount }) to the file", async () => {
+    // This is exactly what `dry_run` returns under `report` when
+    // `reportOutputPath` is set; the extra keys used to push it into the
+    // generic record branch, where it diffed as an empty report.
+    const before = path.join(scratch, "before.json");
+    const after = path.join(scratch, "after.json");
+    await writeFile(before, JSON.stringify(REPORT_BEFORE));
+    await writeFile(after, JSON.stringify(REPORT_AFTER));
+    session = await startServer({});
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run_diff",
+      arguments: {
+        before: { reportPath: before, repoCount: 1, updateCount: 1 },
+        after: { ok: true, report: { reportPath: after, repoCount: 1, updateCount: 1 } },
+      },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    const body = JSON.parse(res.result!.content[0]!.text) as {
+      summary: { changed: number };
+      changed: Array<{ depName: string }>;
+    };
+    expect(body.summary.changed).toBe(1);
+    expect(body.changed[0]?.depName).toBe("lodash");
+  });
+
   it("returns isError when a reportPath is unreadable", async () => {
     session = await startServer({});
 
