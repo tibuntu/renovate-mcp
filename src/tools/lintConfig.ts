@@ -1,5 +1,4 @@
 import { promises as fs } from "node:fs";
-import path from "node:path";
 import JSON5 from "json5";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { lintConfig } from "../lib/configLinter.js";
@@ -11,10 +10,10 @@ export function registerLintConfig(server: McpServer): void {
     {
       title: "Lint Renovate config for semantic footguns",
       description:
-        "Run a semantic lint pass over a Renovate config. Complements validate_config: schema validation catches structural bugs, this catches Renovate-specific footguns schema validation misses — malformed '/…/' regex patterns in fields like matchPackageNames, matchDepNames, matchSourceUrls, matchCurrentVersion, plus unknown manager names in matchManagers / excludeManagers (typos that Renovate silently ignores). Each finding includes a severity ('error' | 'warn'). Offline; does not shell out. Pass either configPath (file on disk, JSON or JSON5) or configContent (inline object).",
+        "Run a semantic lint pass over a Renovate config. Complements validate_config: schema validation catches structural bugs, this catches Renovate-specific footguns schema validation misses — malformed '/…/' regex patterns in fields like matchPackageNames, matchDepNames, matchSourceUrls, matchCurrentVersion, plus unknown manager names in matchManagers / excludeManagers (typos that Renovate silently ignores). Each finding includes a severity ('error' | 'warn'). Offline; does not shell out. Pass either configPath (file on disk, JSON, JSONC or JSON5) or configContent (inline object).",
       inputSchema: {
         configPath: pathString(
-          "Absolute path to a config file to lint (JSON or JSON5)",
+          "Absolute path to a config file to lint (JSON, JSONC or JSON5)",
         ).optional(),
         configContent: configRecord("Inline config object to lint").optional(),
       },
@@ -35,9 +34,9 @@ export function registerLintConfig(server: McpServer): void {
       } else {
         try {
           const raw = await fs.readFile(configPath!, "utf8");
-          config = path.extname(configPath!).toLowerCase() === ".json5"
-            ? JSON5.parse(raw)
-            : JSON.parse(raw);
+          // JSON5 is a superset of the JSONC Renovate accepts in any config
+          // file, so one parser covers .json / .json5 / extensionless alike.
+          config = JSON5.parse(raw);
         } catch (err) {
           return {
             isError: true,

@@ -77,7 +77,7 @@ Report the renovate-mcp server version and whether it's a released build (runnin
 
 ## `read_config`
 
-Locate and parse a repo's Renovate config (`renovate.json`, `renovate.json5`, `.renovaterc*`, `package.json#renovate`, …) in priority order, mirroring Renovate's own discovery logic.
+Locate and parse a repo's Renovate config (`renovate.json`, `renovate.json5`, `.renovaterc*`, `package.json#renovate`, …) in priority order, mirroring Renovate's own discovery logic. JSON, JSONC (comments, trailing commas) and JSON5 are accepted for every candidate filename, matching Renovate's own parser.
 
 ## `suggest_presets`
 
@@ -152,7 +152,7 @@ Run `renovate-config-validator` against a file or inline object. Pair with [`lin
 
 ## `lint_config`
 
-Semantic lint pass that sits alongside `validate_config` rather than replacing it. Offline.
+Semantic lint pass that sits alongside `validate_config` rather than replacing it. Offline. A `configPath` file is parsed as JSON, JSONC or JSON5 regardless of extension, matching Renovate's own parser.
 
 Schema validation catches structural bugs; the linter catches Renovate-specific footguns that schema validation declares valid — most commonly a pattern like `"matchPackageNames": ["/devops\\/pipelines\\/.+"]` where a trailing `/` is missing and Renovate silently degrades the value to an exact-string match that never hits, or a typo like `"matchManagers": ["npmm"]` that silently applies the rule to zero packages.
 
