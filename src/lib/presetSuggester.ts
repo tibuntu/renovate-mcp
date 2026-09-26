@@ -572,15 +572,10 @@ export async function suggestPresets(
   query: string,
   opts: SuggestOptions = {},
 ): Promise<SuggestResult> {
-  const rankOpts: RankOptions = {
-    namespace: opts.namespace,
-    limit: opts.limit,
-    minScore: opts.minScore,
-    includeBody: opts.includeBody,
-  };
   const warnings: string[] = [];
 
-  const builtIn = rankCorpus(query, getBuiltInCorpus(), rankOpts);
+  // `SuggestOptions` is a superset of `RankOptions`; the ranker reads only its own keys.
+  const builtIn = rankCorpus(query, getBuiltInCorpus(), opts);
 
   let local: SuggestMatch[] = [];
   if (opts.presetsPath) {
@@ -589,7 +584,7 @@ export async function suggestPresets(
       maxPresetsIndexed: opts.maxPresetsIndexed,
     });
     warnings.push(...idx.warnings);
-    local = rankCorpus(query, buildCorpus(idx.presets), rankOpts);
+    local = rankCorpus(query, buildCorpus(idx.presets), opts);
   }
 
   const bestScore = Math.max(builtIn[0]?.score ?? 0, local[0]?.score ?? 0);

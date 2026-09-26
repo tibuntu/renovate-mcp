@@ -115,7 +115,6 @@ export interface RunOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   timeoutMs?: number;
-  stdin?: string;
   /**
    * Optional line-oriented observers. Invoked once per complete line (newline
    * stripped) as data arrives, and once more on process close for any trailing
@@ -234,11 +233,7 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
       });
     });
 
-    if (opts.stdin != null) {
-      child.stdin.end(opts.stdin);
-    } else {
-      child.stdin.end();
-    }
+    child.stdin.end();
   });
 }
 

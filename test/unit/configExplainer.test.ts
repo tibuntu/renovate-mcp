@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { explainConfig, OWN_SOURCE } from "../../src/lib/configExplainer.js";
-import { resolveConfig } from "../../src/lib/presetResolver.js";
+import { explainConfig } from "../../src/lib/configExplainer.js";
+import { OWN_SOURCE, resolveConfig } from "../../src/lib/presetResolver.js";
 
 /**
  * Coverage strategy: every `explain_config` claim is "for the same input,

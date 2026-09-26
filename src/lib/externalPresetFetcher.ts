@@ -63,17 +63,10 @@ function dispatch(parsed: ParsedPreset, options: FetchOptions): Promise<FetchRes
     endpoint = trimTrailingSlash(options.endpoint);
   }
 
-  switch (parsed.source) {
-    case "github":
-      return fetchGitHub(parsed, timeoutMs, fetchImpl, endpoint);
-    case "gitlab":
-      return fetchGitLab(parsed, timeoutMs, fetchImpl, endpoint);
-    default:
-      return Promise.resolve({
-        ok: false,
-        reason: `Unknown preset source: ${parsed.source}`,
-      });
-  }
+  // `fetchable` is only ever true for github / gitlab.
+  return parsed.source === "github"
+    ? fetchGitHub(parsed, timeoutMs, fetchImpl, endpoint)
+    : fetchGitLab(parsed, timeoutMs, fetchImpl, endpoint);
 }
 
 type Platform = "github" | "gitlab";
