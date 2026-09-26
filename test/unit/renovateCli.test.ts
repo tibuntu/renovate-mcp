@@ -6,6 +6,8 @@ import {
   resolveRenovateTool,
   formatMissingBinaryError,
   run,
+  CommandTimeoutError,
+  MAX_CAPTURE_BYTES,
 } from "../../src/lib/renovateCli.js";
 
 const originalEnv = { ...process.env };
@@ -61,26 +63,26 @@ describe("resolveRenovateTool", () => {
   });
 });
 
+let dir: string;
+
+beforeEach(async () => {
+  dir = await mkdtemp(
+    path.join(tmpdir(), `rmcp-${path.basename(import.meta.url, ".ts")}-${process.pid}-`),
+  );
+});
+
+afterEach(async () => {
+  await rm(dir, { recursive: true, force: true });
+});
+
+async function makeScript(contents: string): Promise<string> {
+  const file = path.join(dir, "emit.mjs");
+  await writeFile(file, `#!/usr/bin/env node\n${contents}\n`);
+  await chmod(file, 0o755);
+  return file;
+}
+
 describe("run() streaming observers", () => {
-  let dir: string;
-
-  beforeEach(async () => {
-    dir = await mkdtemp(
-      path.join(tmpdir(), `rmcp-${path.basename(import.meta.url, ".ts")}-${process.pid}-`),
-    );
-  });
-
-  afterEach(async () => {
-    await rm(dir, { recursive: true, force: true });
-  });
-
-  async function makeScript(contents: string): Promise<string> {
-    const file = path.join(dir, "emit.mjs");
-    await writeFile(file, `#!/usr/bin/env node\n${contents}\n`);
-    await chmod(file, 0o755);
-    return file;
-  }
-
   it("emits stdout lines split on newline (including chunks that split a line)", async () => {
     // Small sleeps force the runtime to deliver the stdout in two `data`
     // events so we also exercise the cross-chunk buffering.
@@ -98,6 +100,7 @@ describe("run() streaming observers", () => {
     expect(res.exitCode).toBe(0);
     expect(lines).toEqual(["alpha", "beta-continued", "gamma"]);
     expect(res.stdout).toBe("alpha\nbeta-continued\ngamma\n");
+    expect(res.truncated).toBe(false);
   });
 
   it("flushes a trailing non-newline-terminated line on process close", async () => {
@@ -160,6 +163,84 @@ describe("run() streaming observers", () => {
     const script = await makeScript(`process.stdout.write("ok\\n");`);
     const result = await run(process.execPath, [script]);
     expect(result.runtimeWarnings).toEqual([]);
+  });
+});
+
+describe("run() timeout and capture cap", () => {
+  it("rejects a timeout with CommandTimeoutError carrying timeoutMs", async () => {
+    const script = await makeScript(`setInterval(() => {}, 1000);`);
+
+    const err = await run(process.execPath, [script], { timeoutMs: 300 }).catch((e) => e);
+    expect(err).toBeInstanceOf(CommandTimeoutError);
+    expect((err as CommandTimeoutError).timeoutMs).toBe(300);
+    expect((err as Error).message).toContain("timed out after");
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "kills the whole process group on timeout, not just the direct child",
+    async () => {
+      // The fake spawns a long-lived grandchild (stdio ignored so it doesn't
+      // hold our pipes open), prints its pid, then idles until killed.
+      const script = await makeScript(`
+        import { spawn } from "node:child_process";
+        const gc = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+        process.stdout.write(String(gc.pid) + "\\n");
+        setInterval(() => {}, 1000);
+      `);
+
+      let grandchildPid = 0;
+      const err = await run(process.execPath, [script], {
+        timeoutMs: 500,
+        onStdoutLine: (l) => {
+          grandchildPid = Number(l);
+        },
+      }).catch((e) => e);
+      try {
+        expect(err).toBeInstanceOf(CommandTimeoutError);
+        expect(grandchildPid).toBeGreaterThan(0);
+
+        // Poll up to 2 s for the grandchild to disappear (signal 0 = probe).
+        const deadline = Date.now() + 2000;
+        let alive = true;
+        while (alive && Date.now() < deadline) {
+          try {
+            process.kill(grandchildPid, 0);
+            await new Promise((r) => setTimeout(r, 50));
+          } catch (e) {
+            expect((e as NodeJS.ErrnoException).code).toBe("ESRCH");
+            alive = false;
+          }
+        }
+        expect(alive).toBe(false);
+      } finally {
+        try {
+          process.kill(grandchildPid, "SIGKILL");
+        } catch {
+          // already gone — the expected outcome
+        }
+      }
+    },
+  );
+
+  it("caps captured stdout at 4 MiB (keeps the tail) while observers still see every line", async () => {
+    // 6144 lines × 1 KiB = 6 MiB.
+    const script = await makeScript(`
+      const line = "x".repeat(1023) + "\\n";
+      process.stdout.write(line.repeat(6144));
+    `);
+
+    let lines = 0;
+    const res = await run(process.execPath, [script], {
+      onStdoutLine: () => {
+        lines += 1;
+      },
+    });
+
+    expect(res.exitCode).toBe(0);
+    expect(res.truncated).toBe(true);
+    expect(res.stdout.length).toBeLessThanOrEqual(MAX_CAPTURE_BYTES);
+    expect(res.stdout.endsWith("x\n")).toBe(true);
+    expect(lines).toBe(6144);
   });
 });
 

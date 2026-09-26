@@ -17,6 +17,24 @@ export interface RunResult {
    * present — empty array when nothing was detected.
    */
   runtimeWarnings: RuntimeWarning[];
+  /**
+   * True when stdout or stderr exceeded MAX_CAPTURE_BYTES and only the tail
+   * was kept. Line observers still saw every line.
+   */
+  truncated: boolean;
+}
+
+/** Per-stream cap on captured output; only the tail is kept beyond it. */
+export const MAX_CAPTURE_BYTES = 4 * 1024 * 1024;
+
+/** Thrown by `run()` when the child exceeded `timeoutMs` and was killed. */
+export class CommandTimeoutError extends Error {
+  readonly timeoutMs: number;
+  constructor(timeoutMs: number, cmd: string, args: string[]) {
+    super(`Command timed out after ${timeoutMs}ms: ${cmd} ${args.join(" ")}`);
+    this.name = "CommandTimeoutError";
+    this.timeoutMs = timeoutMs;
+  }
 }
 
 export interface RunOptions {
@@ -41,14 +59,19 @@ export interface RunOptions {
  */
 export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise<RunResult> {
   return new Promise((resolve, reject) => {
+    // `detached` makes the child a process-group leader so a timeout can kill
+    // the whole group — Renovate spawns git and package-manager children that
+    // would otherwise outlive it.
     const child = spawn(cmd, args, {
       cwd: opts.cwd,
       env: { ...process.env, ...opts.env },
       stdio: ["pipe", "pipe", "pipe"],
+      detached: true,
     });
 
     let stdout = "";
     let stderr = "";
+    let truncated = false;
     let stdoutLineBuf = "";
     let stderrLineBuf = "";
     let timer: NodeJS.Timeout | undefined;
@@ -57,9 +80,21 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
     if (opts.timeoutMs) {
       timer = setTimeout(() => {
         killed = true;
-        child.kill("SIGKILL");
+        try {
+          process.kill(-child.pid!, "SIGKILL");
+        } catch {
+          child.kill("SIGKILL");
+        }
       }, opts.timeoutMs);
     }
+
+    // Keep only the tail once a stream exceeds the cap; callers use the tail
+    // and line observers, never the whole log.
+    const cap = (s: string): string => {
+      if (s.length <= MAX_CAPTURE_BYTES) return s;
+      truncated = true;
+      return s.slice(-MAX_CAPTURE_BYTES);
+    };
 
     const emitLines = (
       chunk: string,
@@ -82,12 +117,12 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
 
     child.stdout.on("data", (d) => {
       const chunk = d.toString();
-      stdout += chunk;
+      stdout = cap(stdout + chunk);
       stdoutLineBuf = emitLines(chunk, stdoutLineBuf, opts.onStdoutLine);
     });
     child.stderr.on("data", (d) => {
       const chunk = d.toString();
-      stderr += chunk;
+      stderr = cap(stderr + chunk);
       stderrLineBuf = emitLines(chunk, stderrLineBuf, opts.onStderrLine);
     });
     child.on("error", (err) => {
@@ -112,7 +147,7 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
         }
       }
       if (killed) {
-        reject(new Error(`Command timed out after ${opts.timeoutMs}ms: ${cmd} ${args.join(" ")}`));
+        reject(new CommandTimeoutError(opts.timeoutMs!, cmd, args));
         return;
       }
       resolve({
@@ -120,6 +155,7 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
         stderr,
         exitCode: code ?? -1,
         runtimeWarnings: detectRuntimeWarnings(stderr),
+        truncated,
       });
     });
 
