@@ -9,11 +9,11 @@ Timeouts, caps, escape hatches, and runtime behavior that power users need to kn
 - `maxFilesWalked` (default 2000) — bounds the directory walk before any `fileMatch` testing.
 - `maxFilesMatched` (default 500) — bounds the result set after `fileMatch` is applied.
 
-Previously a single `maxFilesScanned` conflated the two, leaving the user unable to tell whether to narrow `fileMatch` or widen the walk.
+Splitting the two lets the warning text say which one to raise — a single combined cap couldn't tell the user whether to narrow `fileMatch` or widen the walk.
 
 **File size cap.** `maxFileBytes` (default 5 MiB) — each matched file is `stat`'d before reading; anything larger is skipped with a warning. A stray lockfile, generated artifact, or SQL dump caught by a loose `fileMatch` can't OOM the server.
 
-**Per-file output cap.** `maxHitsPerFile` bounds output size separately from input size.
+**Per-file output cap.** `maxHitsPerFile` (default 100) bounds output size separately from input size.
 
 **Regex / JSONata timeout.** `matchTimeoutMs` (default 2 s) — every user-supplied regex and every JSONata expression runs inside a `worker_threads` worker with this wall-clock budget. Pathological patterns (catastrophic backtracking like `^(a+)+b$` against `aaaa…c`, or runaway JSONata) would otherwise pin the MCP server's event loop indefinitely. On timeout the worker is terminated and a warning is appended identifying which `fileMatch[i]` or `matchStrings[i]` was aborted, so the user can simplify the pattern or raise the budget. The budget clocks the work itself: it starts when the worker thread comes online, so `worker_threads` spin-up and module compilation are not charged against it — a trivial pattern won't spuriously time out from bootstrap latency on a slow host, even at a tight `matchTimeoutMs`.
 
@@ -47,6 +47,8 @@ Each Renovate CLI binary is `node node_modules/renovate/dist/<cli>.js`, and a co
 When the binary resolves via the bundled path (the default install), `check_setup` reads the version directly from `node_modules/renovate/package.json` — no spawn — bringing the probe to a few milliseconds. The `RENOVATE_BIN` / `RENOVATE_CONFIG_VALIDATOR_BIN` env overrides keep the spawn-based check (a user pointing those at a custom binary wants real proof of life).
 
 **Side effect:** runtime warnings derived from `--version` stderr (e.g. RE2 dlopen failure) no longer appear in the startup banner for the bundled path; they still fire on the first actual tool call, so users see the warning on first use rather than at session start.
+
+**Endpoint probe timeout.** The separate `repoPath` endpoint-reachability probe (see [Tool reference — check_setup](tools.md#check_setup)) gives up and reports the endpoint unreachable after 3 s.
 
 ## RE2 runtime degradation
 

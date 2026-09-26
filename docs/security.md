@@ -17,6 +17,17 @@ This is the single most common setup mistake. If `dry_run` returns 0 updates sil
 
 For `dry_run`, the platform-specific var is auto-translated to `RENOVATE_TOKEN` for the spawned Renovate CLI (Renovate itself only reads that one var). `resolve_config` follows the same precedence.
 
+## Other env vars the server reads
+
+- `RENOVATE_BIN` / `RENOVATE_CONFIG_VALIDATOR_BIN` — override which `renovate` / `renovate-config-validator` binary `validate_config`, `dry_run`, and `write_config` spawn. When set, the override always wins over the bundled binary (see CLAUDE.md's shell-out design).
+- `RENOVATE_MCP_REQUIRE_CLI=false` — suppresses the startup "partial availability" banner for users who only intend to use the offline tools.
+- `RENOVATE_ENDPOINT` — read by `check_setup` (when called with a `repoPath`) as one step in its endpoint-probe precedence, and by `dry_run` as its endpoint fallback when the `endpoint` input is unset. See [Platform setup](platform-setup.md).
+- `RENOVATE_BASE_BRANCH_PATTERNS` — set (JSON-encoded) on the Renovate child spawned by `dry_run` when `baseBranches` is passed, since `baseBranchPatterns` is `cli:false` in Renovate and has no CLI flag.
+
+### Test/debug hooks — never set these in production
+
+`RENOVATE_MCP_MIGRATION_WORKER_ENTRY`, `RENOVATE_MCP_MERGE_WORKER_ENTRY`, and `RENOVATE_MCP_PACKAGE_RULES_WORKER_ENTRY` redirect which compiled worker file `migrate_config`, `resolve_config`/`explain_config`, and `test_package_rules`/`annotate_dry_run`/`explain_dependency` spawn, respectively. The test suite points them at the compiled `dist/lib/*WorkerImpl.js` files so vitest's TS-source worker entry (which has no sibling `.js` until after a build) still resolves. Because they redirect which code actually executes, treat them like any other code-injection vector — never set them outside the test suite.
+
 ### `GITHUB_COM_TOKEN` — a separate role
 
 `GITHUB_COM_TOKEN` authenticates Renovate's **github.com datasource** lookups (release notes, `github-tags` / `github-releases` / `github-actions`) — distinct from the **platform** token above, which authenticates "where Renovate runs" (reading the repo, opening PRs). It is **never auto-derived** from `GITHUB_TOKEN` / `RENOVATE_TOKEN`: the platform token may be a GitHub Enterprise, GitLab, or otherwise-scoped credential, and silently forwarding it to an external host (github.com) is a credential-leak path we refuse to take.
@@ -29,9 +40,9 @@ See [Platform setup](platform-setup.md) for the full env-var matrix per platform
 
 Anything passed as a tool input — `token`, `hostRules[].token`, `hostRules[].password` — is stored in the MCP transcript that the client may share, replay, or feed back into the LLM. Prefer env vars.
 
-As of v0.12, `dry_run` detects inline `token` / `hostRules[].token` on its input and appends a single advisory entry to the result `warnings` array steering callers toward env-var auth. The warning is advisory only — it does not change `isError`, does not block the spawn, and does not alter the report shape. (`password`-only host rules are not yet covered by the warning; the locked v0.12 trigger is `token`-only.)
+`dry_run` detects inline `token` / `hostRules[].token` on its input and appends a single advisory entry to the result `warnings` array steering callers toward env-var auth. The warning is advisory only — it does not change `isError`, does not block the spawn, and does not alter the report shape. (`password`-only host rules are not yet covered by the warning; the locked trigger is `token`-only.)
 
-This warning is `dry_run`-only as of v0.12. Other tools that accept inline tokens (e.g. `resolve_config`) follow the same env-var precedence but do not currently emit the warning.
+This warning is `dry_run`-only. Other tools that accept inline tokens (e.g. `resolve_config`) follow the same env-var precedence but do not currently emit the warning.
 
 ## Endpoint validation
 
