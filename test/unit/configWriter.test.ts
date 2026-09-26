@@ -422,6 +422,23 @@ describe("serializeConfig — json5 + refusal-reason dispatch", () => {
     });
   });
 
+  it.each(["", "  \n\t\n"])(
+    "treats an empty / whitespace-only existing file (%j) as a fresh write, not as unparseable",
+    (existing) => {
+      const nextConfig = { extends: ["config:recommended"] };
+      const result = serializeConfig({
+        targetPath: "/tmp/renovate.json",
+        nextConfig,
+        existing,
+      });
+
+      expect(result).toEqual({
+        mode: "fresh-write",
+        bytes: JSON.stringify(nextConfig, null, 2) + "\n",
+      });
+    },
+  );
+
   it("uses the fresh-write path for a .json5 target with no existing content (no extension-specific behavior)", () => {
     const nextConfig = { extends: ["config:recommended"] };
     const result = serializeConfig({

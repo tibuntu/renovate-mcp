@@ -222,7 +222,9 @@ function planEdits(
 export function serializeConfig(args: SerializeArgs): SerializeResult {
   const packageJson = isPackageJsonTarget(args.targetPath);
 
-  if (args.existing === undefined) {
+  // A 0-byte or whitespace-only file has nothing to round-trip; treat it as
+  // absent rather than refusing it as corrupted.
+  if (args.existing === undefined || args.existing.trim() === "") {
     if (packageJson) {
       return { refuse: true, reason: "package-json-missing", hint: PACKAGE_JSON_MISSING_HINT };
     }
