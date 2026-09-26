@@ -10,6 +10,7 @@ import {
   formatMissingBinaryError,
   formatTimeoutError,
   CommandTimeoutError,
+  validatorTimeoutMs,
 } from "../lib/renovateCli.js";
 import { configRecord, pathString } from "../lib/inputLimits.js";
 
@@ -64,7 +65,9 @@ export function registerValidateConfig(server: McpServer): void {
         // `token` validate clean. Kept after the file: fake validators in the
         // tests read argv[2] as the path.
         args.push(target, "--no-global");
-        const result = await run(tool.cmd, [...tool.prefixArgs, ...args], { timeoutMs: 30_000 });
+        const result = await run(tool.cmd, [...tool.prefixArgs, ...args], {
+          timeoutMs: validatorTimeoutMs(),
+        });
         const valid = result.exitCode === 0;
         const output = (result.stdout + result.stderr).trim();
         const payload: Record<string, unknown> = { valid, output };

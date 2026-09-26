@@ -9,6 +9,7 @@ import {
   formatMissingBinaryError,
   formatTimeoutError,
   CommandTimeoutError,
+  validatorTimeoutMs,
 } from "../lib/renovateCli.js";
 import type { RuntimeWarning } from "../lib/runtimeWarnings.js";
 import { configRecord, filenameString, pathString } from "../lib/inputLimits.js";
@@ -174,7 +175,7 @@ export function registerWriteConfig(server: McpServer): void {
           // --no-global (after the file): validate as a repo config, not as
           // global self-hosted config — see validateConfig.ts.
           const v = await run(tool.cmd, [...tool.prefixArgs, sliceTmp ?? tmp, "--no-global"], {
-            timeoutMs: 30_000,
+            timeoutMs: validatorTimeoutMs(),
           });
           validationOutput = (v.stdout + v.stderr).trim();
           valid = v.exitCode === 0;

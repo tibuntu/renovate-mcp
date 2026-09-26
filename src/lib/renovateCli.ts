@@ -30,6 +30,16 @@ export const MAX_CAPTURE_BYTES = 4 * 1024 * 1024;
 const MAX_LINE_BYTES = 1024 * 1024;
 
 /**
+ * Budget for `renovate-config-validator` runs. `RENOVATE_MCP_VALIDATOR_TIMEOUT_MS`
+ * overrides the 30 s default (a test seam, like the `RENOVATE_MCP_*_WORKER_ENTRY`
+ * vars); unparseable or non-positive values are ignored.
+ */
+export function validatorTimeoutMs(): number {
+  const raw = Number(process.env.RENOVATE_MCP_VALIDATOR_TIMEOUT_MS);
+  return Number.isInteger(raw) && raw > 0 ? raw : 30_000;
+}
+
+/**
  * Bounded capture of one stream: chunks are appended as they arrive and whole
  * chunks are dropped from the front once the total passes the cap, so nothing
  * is copied per chunk. Joined once on close.
