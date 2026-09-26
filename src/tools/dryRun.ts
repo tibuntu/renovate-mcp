@@ -225,7 +225,10 @@ export function registerDryRun(server: McpServer): void {
         ).optional(),
         repository: repositoryString(
           "Identifier of the repository Renovate should operate on, passed as a positional argument (Renovate has no `--repository` flag). For GitHub: `owner/repo`. For GitLab: `group/project` or a nested-group path like `group/subgroup/project` — both are accepted. Required when `platform` is `github`/`gitlab`. Ignored when `platform=local`.",
-        ).optional(),
+        )
+          // A leading `-` would be parsed as a CLI flag by Renovate's commander.
+          .regex(/^[^-]/, "repository must not start with '-'")
+          .optional(),
         hostRules: z
           .array(hostRuleSchema)
           .max(HOST_RULES_MAX_ITEMS)
@@ -286,6 +289,41 @@ export function registerDryRun(server: McpServer): void {
             };
           }
           throw err;
+        }
+      }
+
+      // Preflight the paths we're about to hand to the child. A missing
+      // `cwd` surfaces from spawn as ENOENT — indistinguishable from a
+      // missing binary — and a bad `reportOutputPath` would only fail after
+      // a run of up to 15 minutes.
+      // ponytail: dry_run-local; a shared repoPath preflight is a later task.
+      if (!path.isAbsolute(repoPath)) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: `\`repoPath\` must be an absolute path (got \`${repoPath}\`).` }],
+        };
+      }
+      const repoStat = await fs.stat(repoPath).catch(() => null);
+      if (!repoStat?.isDirectory()) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: `\`repoPath\` \`${repoPath}\` does not exist or is not a directory.` }],
+        };
+      }
+      if (reportOutputPath !== undefined) {
+        if (!path.isAbsolute(reportOutputPath)) {
+          return {
+            isError: true,
+            content: [{ type: "text", text: `\`reportOutputPath\` must be an absolute path (got \`${reportOutputPath}\`).` }],
+          };
+        }
+        // lstat: a dangling symlink counts as "exists" too (the wx write
+        // below would refuse it anyway — this just fails before the run).
+        if (await fs.lstat(reportOutputPath).then(() => true, () => false)) {
+          return {
+            isError: true,
+            content: [{ type: "text", text: `\`reportOutputPath\` \`${reportOutputPath}\` already exists; refusing to overwrite. Pass a fresh path.` }],
+          };
         }
       }
 
@@ -556,10 +594,13 @@ export function registerDryRun(server: McpServer): void {
         let savedReportPath: string | undefined;
         if (reportOutputPath && report) {
           try {
+            // `wx`: never follow or overwrite something that appeared at the
+            // path since the preflight; the file is always fresh, so 0600
+            // sticks without a chmod.
             await fs.writeFile(reportOutputPath, JSON.stringify(report), {
+              flag: "wx",
               mode: 0o600,
             });
-            await fs.chmod(reportOutputPath, 0o600).catch(() => undefined);
             savedReportPath = reportOutputPath;
             const repoCount = countRepositories(report);
             const updateCount = countUpdates(report);
@@ -569,15 +610,11 @@ export function registerDryRun(server: McpServer): void {
               updateCount,
             };
           } catch (err) {
-            return {
-              isError: true,
-              content: [
-                {
-                  type: "text",
-                  text: `Failed to write report to \`${reportOutputPath}\`: ${(err as Error).message}.`,
-                },
-              ],
-            };
+            const text =
+              (err as NodeJS.ErrnoException).code === "EEXIST"
+                ? `\`reportOutputPath\` \`${reportOutputPath}\` already exists; refusing to overwrite. Pass a fresh path.`
+                : `Failed to write report to \`${reportOutputPath}\`: ${(err as Error).message}.`;
+            return { isError: true, content: [{ type: "text", text }] };
           }
         }
 
