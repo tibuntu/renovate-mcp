@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, rm, writeFile, readFile, chmod, access } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, readFile, chmod, access, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { startServer, type McpSession } from "../helpers/mcpSession.js";
@@ -1570,6 +1570,14 @@ process.exit(0);
 });
 
 describe("dry_run hardening", () => {
+  // The startup check_setup probe already spawns the fake with `--version`
+  // (overwriting the dump), so "not spawned" means the last recorded argv
+  // was not a dry-run invocation.
+  async function spawnedDryRun(argvDump: string): Promise<boolean> {
+    const dumped = JSON.parse(await readFile(argvDump, "utf8")) as { args: string[] };
+    return dumped.args.some((a) => a.startsWith("--dry-run="));
+  }
+
   async function call(args: Record<string, unknown>) {
     return session.request<{
       content: Array<{ type: string; text: string }>;
@@ -1597,5 +1605,109 @@ setInterval(() => {}, 1000);
     expect(text).toContain("timed out after 500 ms");
     expect(text).toContain("timeoutMs");
     expect(text).not.toContain("check_setup");
+  });
+
+  describe("repoPath preflight", () => {
+    // The fake dumps argv when spawned — a missing dump proves no spawn.
+    let argvDump: string;
+    beforeEach(async () => {
+      argvDump = path.join(repo, "argv.json");
+      const fakeBin = await makeFakeRenovate(repo);
+      session = await startServer({ RENOVATE_BIN: fakeBin, FAKE_RENOVATE_ARGV_DUMP: argvDump });
+    });
+
+    it("rejects a relative repoPath before spawning", async () => {
+      const res = await call({ repoPath: "relative/repo" });
+      expect(res.result?.isError).toBe(true);
+      expect(res.result!.content[0]!.text).toContain("relative/repo");
+      expect(await spawnedDryRun(argvDump)).toBe(false);
+    });
+
+    it("rejects a nonexistent repoPath before spawning", async () => {
+      const missing = path.join(repo, "missing");
+      const res = await call({ repoPath: missing });
+      expect(res.result?.isError).toBe(true);
+      expect(res.result!.content[0]!.text).toContain(missing);
+      expect(await spawnedDryRun(argvDump)).toBe(false);
+    });
+
+    it("rejects a repoPath that is a file before spawning", async () => {
+      const file = path.join(repo, "not-a-dir");
+      await writeFile(file, "x");
+      const res = await call({ repoPath: file });
+      expect(res.result?.isError).toBe(true);
+      expect(res.result!.content[0]!.text).toContain(file);
+      expect(await spawnedDryRun(argvDump)).toBe(false);
+    });
+  });
+
+  describe("reportOutputPath", () => {
+    it("rejects a relative reportOutputPath before spawning", async () => {
+      const argvDump = path.join(repo, "argv.json");
+      const fakeBin = await makeFakeRenovate(repo);
+      session = await startServer({ RENOVATE_BIN: fakeBin, FAKE_RENOVATE_ARGV_DUMP: argvDump });
+
+      const res = await call({ reportOutputPath: "out/report.json" });
+      expect(res.result?.isError).toBe(true);
+      expect(res.result!.content[0]!.text).toContain("out/report.json");
+      expect(await spawnedDryRun(argvDump)).toBe(false);
+    });
+
+    it("refuses to overwrite a pre-existing symlink at reportOutputPath (no spawn, target untouched)", async () => {
+      const argvDump = path.join(repo, "argv.json");
+      const fakeBin = await makeFakeRenovate(repo);
+      session = await startServer({ RENOVATE_BIN: fakeBin, FAKE_RENOVATE_ARGV_DUMP: argvDump });
+
+      const target = path.join(repo, "sentinel.txt");
+      await writeFile(target, "do-not-overwrite");
+      const outPath = path.join(repo, "report.json");
+      await symlink(target, outPath);
+
+      const res = await call({ reportOutputPath: outPath });
+      expect(res.result?.isError).toBe(true);
+      expect(res.result!.content[0]!.text).toContain("already exists");
+      expect(await readFile(target, "utf8")).toBe("do-not-overwrite");
+      expect(await spawnedDryRun(argvDump)).toBe(false);
+    });
+
+    it("refuses to overwrite a file that appeared during the run (wx write)", async () => {
+      // The fake creates the output path itself mid-run, after the preflight
+      // has already passed — only O_EXCL catches this.
+      const outPath = path.join(repo, "report.json");
+      const fakeBin = path.join(repo, "racy-renovate.mjs");
+      await writeFile(
+        fakeBin,
+        `#!/usr/bin/env node
+import { writeFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+const reportArg = args.find(a => a.startsWith('--report-path='));
+if (reportArg) writeFileSync(reportArg.slice('--report-path='.length), JSON.stringify({ repositories: [] }));
+writeFileSync(${JSON.stringify(outPath)}, "planted");
+process.exit(0);
+`,
+      );
+      await chmod(fakeBin, 0o755);
+      session = await startServer({ RENOVATE_BIN: fakeBin });
+
+      const res = await call({ reportOutputPath: outPath });
+      expect(res.result?.isError).toBe(true);
+      expect(res.result!.content[0]!.text).toContain("already exists");
+      expect(await readFile(outPath, "utf8")).toBe("planted");
+    });
+  });
+
+  it("rejects a repository starting with '-' (would become a CLI flag)", async () => {
+    const argvDump = path.join(repo, "argv.json");
+    const fakeBin = await makeFakeRenovate(repo);
+    session = await startServer({ RENOVATE_BIN: fakeBin, FAKE_RENOVATE_ARGV_DUMP: argvDump });
+
+    const res = await call({
+      platform: "gitlab",
+      token: "glpat-xyz",
+      repository: "--platform=github",
+    });
+    expect(res.result?.isError).toBe(true);
+    expect(res.result!.content[0]!.text).toContain("repository");
+    expect(await spawnedDryRun(argvDump)).toBe(false);
   });
 });
