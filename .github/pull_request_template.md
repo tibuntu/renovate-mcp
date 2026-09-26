@@ -8,14 +8,17 @@
 
 <!-- The motivation, if not obvious from the linked issue. -->
 
-## README sync (per CLAUDE.md)
+## Docs sync (per CLAUDE.md)
 
-`CLAUDE.md` requires `README.md` to track the user-facing surface. Tick the relevant boxes:
+`CLAUDE.md` ("Keep README.md and docs/*.md in sync") requires the docs to track the user-facing surface. Tick the relevant boxes:
 
-- [ ] Tool table updated (a tool was added, removed, or renamed)
-- [ ] Tool row updated (inputs or externally-visible behavior changed)
-- [ ] "Requirements" updated (env vars or installed binaries changed)
-- [ ] "Example prompts" / "Example session" re-read for tool-name or shape drift
+- [ ] `docs/tools.md` section added/updated for the changed tool or resource (plus the README tool table row, and its anchor link if renamed)
+- [ ] `docs/security.md` updated (new/changed env var or auth surface)
+- [ ] `docs/operations.md` updated (new/changed cap, timeout, or escape hatch)
+- [ ] `docs/architecture.md` updated (architectural/design change)
+- [ ] `docs/platform-setup.md` updated (new/changed platform env var)
+- [ ] `docs/development.md` updated (CI, snapshot, or integration-test change)
+- [ ] README "Example prompts" / "Example session" re-read for tool-name or shape drift
 - [ ] N/A — change doesn't touch any of the above
 
 ## Test plan
