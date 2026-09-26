@@ -2,49 +2,43 @@
 
 ## [1.6.0](https://github.com/tibuntu/renovate-mcp/compare/v1.5.6...v1.6.0) (2026-09-26)
 
+A hardening release from a repository-wide audit. It fixes **three bugs that made tools quietly lie**: JSONata previews found no dependencies unless the server happened to run from its own checkout, `validate_config` accepted self-hosted-only options in a repository config, and the config readers choked on the comments `write_config` itself preserves. It brings `preview_custom_manager` up to **Renovate 44's `managerFilePatterns`**, hardens `dry_run` and the child-process runner, corrects the documentation to match the code, and removes duplicated code without changing any tool's surface beyond what is listed under *Upgrading*.
 
-### Features
+### New features
 
-* **lint:** flag keys handled by Renovate's deprecated custom migrations ([0069eaf](https://github.com/tibuntu/renovate-mcp/commit/0069eafec3b61048a804afaed0d969ec5f21ba4f))
-* **preview_custom_manager:** support managerFilePatterns (globs and /regex/), deprecate fileMatch ([6bd5926](https://github.com/tibuntu/renovate-mcp/commit/6bd59261aec8cdfd6c621e8e71cbed2ec0da1d6d))
-* **write_config:** report the serializer mode in the result ([743182c](https://github.com/tibuntu/renovate-mcp/commit/743182c8545c22d0804995db8c80b9af614220c6))
+**`preview_custom_manager` understands `managerFilePatterns`.** Renovate 44 replaced `fileMatch` with `managerFilePatterns`, where an entry is either a glob or a `/regex/` (optionally `/regex/i`, or negated with `!`). The preview now accepts that input and matches files exactly as Renovate's extract phase does: globs run through `minimatch` with `dot` and `nocase` on, regexes still run in the timeout-guarded worker, `*` matches everything, and every entry is unioned, so a `!` entry adds the files it matches rather than excluding them. `fileMatch` still works; each entry is converted to `/…/` the way Renovate's own migration does, and the result carries a warning pointing at `migrate_config`. An entry that looks like a regex but does not compile is reported as an error, with a note that Renovate itself would silently treat it as a glob that matches nothing.
 
+**`lint_config` flags keys Renovate's custom migrations deprecate.** The `deprecated-key` rule used to know only the simple renames (24 keys). It now also covers the keys Renovate handles through custom migrations, `fileMatch` and `stabilityDays` among them (53 keys in total, regenerated on every Renovate bump). For those the finding says Renovate migrates the key automatically and points at `migrate_config` to see the replacement.
 
-### Bug Fixes
+**`write_config` says how it wrote.** The result gains `mode`, so a caller can tell a comment-preserving round-trip from a fresh write. A validator that overruns its budget is reported with its own refusal reason, `validator-timeout`, whose hint says the config was not validated and warns against `force: true`; before, it looked like a validation failure.
 
-* **check_setup:** a completed diagnostic is not a tool error ([4774488](https://github.com/tibuntu/renovate-mcp/commit/4774488595780d789ce8898da2ead51de430ef02))
-* **check_setup:** list every offline tool in the partial-availability banner ([e679d7b](https://github.com/tibuntu/renovate-mcp/commit/e679d7bc243a133ad24dde36014ce5800057165a))
-* **deps:** keep simple-git override on v3 and hold majors ([a529ccb](https://github.com/tibuntu/renovate-mcp/commit/a529ccbe92069ae63013d9bd986017582c8e459e))
-* **deps:** update dependency simple-git to v4 ([abad9c2](https://github.com/tibuntu/renovate-mcp/commit/abad9c29ca45b0a1984386bab67b6510eb3ae3f5))
-* **dry_run_diff:** follow reportPath inputs instead of diffing the summary ([4286d5a](https://github.com/tibuntu/renovate-mcp/commit/4286d5ad46aa2163fab1ce2780df2d836feecc7d))
-* **dry_run:** do not scrub tokens shorter than 4 characters ([267cb59](https://github.com/tibuntu/renovate-mcp/commit/267cb59810d9f09a335f3057b1b8f81c3d3bf775))
-* **dry_run:** drop the no-op summaryOnly input ([d544108](https://github.com/tibuntu/renovate-mcp/commit/d544108adee889b3045525e052066127e01db1e2))
-* **dry_run:** never override an operator's RENOVATE_CONFIG_FILE ([c5c9d17](https://github.com/tibuntu/renovate-mcp/commit/c5c9d172196cb36a655b2b8a73e8aeaa5fd592fa))
-* **dry_run:** reject a reportOutputPath whose parent directory is missing ([101930c](https://github.com/tibuntu/renovate-mcp/commit/101930c18a606f408c915efc9bc2ae96c0a923b5))
-* **dry_run:** stop flagging dotted versions as 401/403 auth failures ([6411094](https://github.com/tibuntu/renovate-mcp/commit/64110940933d83a4b0e8df9ddae1d06f8c399cca))
-* **dry_run:** surface logTail on every non-zero exit ([21aa69c](https://github.com/tibuntu/renovate-mcp/commit/21aa69c47bf29fd8f68454e905ded6125f5aa231))
-* **dry_run:** validate repoPath and refuse to overwrite reportOutputPath ([596274f](https://github.com/tibuntu/renovate-mcp/commit/596274f9f38a093c367a87b96030334fcc497487))
-* **endpoint:** redact credentials in every validateEndpoint refusal message ([2bf6560](https://github.com/tibuntu/renovate-mcp/commit/2bf656057d803560fd74da0f531e23a70341a92a))
-* **endpoint:** redact credentials in the userinfo refusal message ([2f4d95c](https://github.com/tibuntu/renovate-mcp/commit/2f4d95cea337262c4da0c35e1dcb9a4de77005e1))
-* **install:** use mktemp for the claude mcp add error capture ([606bd21](https://github.com/tibuntu/renovate-mcp/commit/606bd217b116599a2ab4a720a59cab89bf66661e))
-* **lint:** align the deprecated-key message style ([36a4ef1](https://github.com/tibuntu/renovate-mcp/commit/36a4ef173c89b2654df39cc3059f7dfd406ecfc7))
-* **preview_custom_manager:** resolve jsonata from the package, not cwd ([e9b77f7](https://github.com/tibuntu/renovate-mcp/commit/e9b77f7450155a2129beb69d1c227165d679eae3))
-* **preview_custom_manager:** union managerFilePatterns entries like Renovate's extract phase ([97b1145](https://github.com/tibuntu/renovate-mcp/commit/97b114599ee15c78929728d60987fc7e66f086b4))
-* **read_config:** accept JSONC/JSON5 in every config file like Renovate does ([f5b0590](https://github.com/tibuntu/renovate-mcp/commit/f5b059034b274dd1cbf6c56c2fceb5ec06a5ad9f))
-* **renovate-cli:** kill live Renovate process groups when the server exits ([6c37599](https://github.com/tibuntu/renovate-mcp/commit/6c37599e4e14e3010b817ca81beb5ae5e2052a6e))
-* **renovate-cli:** typed timeout, process-group kill, bounded output capture ([efdda10](https://github.com/tibuntu/renovate-mcp/commit/efdda104416bf7df7c83bd07c55758dce1150883))
-* **resources:** reject malformed percent-encoding without a raw URIError ([61195f9](https://github.com/tibuntu/renovate-mcp/commit/61195f9818061c00c4bfafbfcf3313af7b711ba9))
-* **test-package-rules:** support matchIsBreaking matcher from Renovate 44.115 ([8d83421](https://github.com/tibuntu/renovate-mcp/commit/8d834216b3b187c2cb130a846f063a1946287f06))
-* **test:** use managerFilePatterns in the JSONata cwd test ([3bfdb16](https://github.com/tibuntu/renovate-mcp/commit/3bfdb168bfe992e075211f996f4139cde214977c))
-* **tools:** reject path and inline inputs passed together ([32ea84d](https://github.com/tibuntu/renovate-mcp/commit/32ea84d0f3f3913528dbbb67e9e93e4f280c7ed7))
-* **tools:** report Renovate timeouts as timeouts, not missing binaries ([86c8347](https://github.com/tibuntu/renovate-mcp/commit/86c834733f4b9d2cfcba9970ddcadbee0b3f8667))
-* **tools:** treat an empty repoPath as given in loadConfigSource ([8440fa4](https://github.com/tibuntu/renovate-mcp/commit/8440fa493bc6a97c7614bdd2a1a145fd4c6a4e74))
-* **validate_config:** create the inline temp file with wx and mode 0600 ([b28ee2a](https://github.com/tibuntu/renovate-mcp/commit/b28ee2af74094138300b1ab382ea2ac7c8b0644c))
-* **validate_config:** validate repo configs as repo config, not global ([bc06629](https://github.com/tibuntu/renovate-mcp/commit/bc066290b7d5fffb8715683b076eae3c9b969429))
-* **write_config:** decide package.json/json5 handling from the requested filename, not the symlink target ([e5e7787](https://github.com/tibuntu/renovate-mcp/commit/e5e778745d86f126143bfc9615d1107fe6b94333))
-* **write_config:** report validator timeouts with their own refusal reason ([c9b35f2](https://github.com/tibuntu/renovate-mcp/commit/c9b35f20c5726281eef11266e718ef173c9ef40d))
-* **write_config:** treat an empty existing file as a fresh write ([12f4c0c](https://github.com/tibuntu/renovate-mcp/commit/12f4c0cacf4c4bc192e6f195004b0e6b9fece473))
-* **write_config:** write through symlinked config files ([79f1682](https://github.com/tibuntu/renovate-mcp/commit/79f1682b503e4e1eb8e29eb1fc6d8fb20e921f30))
+### Fixes & improvements
+
+* **JSONata previews work from any working directory.** The worker resolved `jsonata` from the process cwd, so under a global install launched by an MCP client every JSONata expression returned "Cannot find module" as a warning and zero dependencies. The main process now resolves the package path once and hands it to the worker; it still never loads `jsonata` itself.
+* **Repository configs are validated as repository configs.** `renovate-config-validator` treats a file given on the command line as self-hosted global config unless told otherwise, so `validate_config` and `write_config` accepted `token`, `platform`, `onboarding` and every other global-only option. Both tools now pass `--no-global`, and a test runs the real bundled validator in CI to keep it that way.
+* **Every config reader accepts JSONC and JSON5**, like Renovate does. `read_config`, `lint_config` and the six tools that load a repo's config parsed non-`.json5` files with strict `JSON.parse`, so a `renovate.json` with a comment (which `write_config` preserves on purpose) broke them.
+* **`dry_run` hardening.** `repoPath` is checked before anything is spawned. `reportOutputPath` must be absolute, its parent must exist, and it is never overwritten; an existing file or symlink is refused. Passing `hostRules` while the operator has `RENOVATE_CONFIG_FILE` set is refused instead of silently replacing their global config. `logTail` is included on every non-zero exit, no longer just when the report is missing. A dotted version such as `1.403.0` no longer counts as a 401/403 auth failure, and tokens shorter than four characters are no longer scrubbed (a one-character token redacted every occurrence of that character). The documented `summaryOnly` input never did anything and is gone.
+* **The child-process runner cleans up after Renovate.** Timeouts are reported as timeouts instead of "binary missing". Renovate runs in its own process group, which is killed as a whole on timeout and when the server exits or receives SIGINT/SIGTERM, so `git` and package-manager children no longer outlive a dead server. Captured output is bounded to a 4 MiB tail per stream without copying the buffer per chunk, and `dry_run` reports `outputTruncated` when data was dropped.
+* **`dry_run_diff` follows `reportPath` inputs**, including the collapsed summary `dry_run` returns with `reportOutputPath`, instead of diffing the summary object.
+* **Uniform input handling across tools.** Every repo-taking tool now requires `repoPath` to be an absolute path to an existing directory (`write_config` used to create a typo'd directory, `preview_custom_manager` reported zero files). Passing both a path input and an inline input is an error instead of one silently winning. "No Renovate configuration found" is an error result in every tool that loads a config. `check_setup` no longer marks its result as an error when setup is incomplete; the `ok` flag and hints carry that. `write_config` writes through a symlinked config file so the link survives, while the `package.json` and `.json5` handling still follows the requested filename.
+* **Credentials never appear in endpoint refusals**, including the protocol-mismatch and unparseable-URL paths that previously echoed `user:password@`. Malformed percent-encoding in a `renovate://` resource URI yields the normal "unknown" error instead of a raw `URIError`. An empty existing config file is treated as a fresh write. The startup banner lists all fourteen offline tools instead of three.
+* **`test_package_rules` supports the `matchIsBreaking` matcher** added in Renovate 44.115.
+* **Documentation matches the code again.** The release flow is documented, every environment variable the server reads is listed in `docs/security.md`, every tool section has an Inputs block, the lint rules are listed one per bullet, the post-v1 roadmap lives in `docs/roadmap.md` instead of a gitignored file, and stale claims (a pre-1.0 security policy at 1.5.x, "no coverage threshold", a wrong jsonata pin) are gone.
+
+### Under the hood
+
+Two refactor passes removed about 540 lines of duplication: one shared `repoPath` guard, config-source loader and package-rule projection for the tools; one worker driver for the three Renovate carve-outs; one helper for the four snapshot generators; one file pipeline for the regex and JSONata preview paths; `RegExp.escape`, `util.isDeepStrictEqual`, `Map.groupBy` and `net.BlockList` in place of hand-rolled equivalents; dead branches and duplicate types deleted. Coverage thresholds now measure what the instrumentation can see (out-of-process tool handlers are excluded) and rose from 68/64/73/68 to 87/82/89/89. The published tarball no longer ships type declarations or a `main` entry. Two dead `overrides` are gone, `lockFileMaintenance` is enabled so transitive fixes land through Renovate, and `npm audit` went from 7 advisories to 0. Tests: 850 → 981.
+
+Dependency updates: `minimatch` added as a runtime dependency (the glob half of `managerFilePatterns`), `@types/node` 24.19.0, vitest and coverage tooling 5.0.2, plus the lockfile maintenance and audit fixes above.
+
+> **Upgrading:**
+>
+> * `preview_custom_manager`: pass `managerFilePatterns`; `fileMatch` still works but adds a deprecation warning. Negative (`!`) entries add files rather than excluding them, matching Renovate; the preview does not apply `ignorePaths`, so confirm exclusions with `dry_run`.
+> * `validate_config` and `write_config` now reject global-only options (`token`, `platform`, `onboarding`, …) in a repository config. A config that passed before and fails now was never valid for Renovate; move those options to the self-hosted config.
+> * `dry_run`: `summaryOnly` is removed; `reportOutputPath` must be absolute, must not exist, and its parent directory must; `hostRules` is refused while `RENOVATE_CONFIG_FILE` is set; `repository` may not start with `-`.
+> * Every repo-taking tool requires an absolute, existing `repoPath`; "no configuration found" and "both path and inline input given" are error results; `check_setup` no longer sets `isError`.
+> * `write_config` adds the `mode` field and the `validator-timeout` refusal reason, and writes through symlinked targets.
+> * Worker diagnostics inside the "faithful … worker unavailable" warnings are worded slightly differently.
 
 ## [1.5.6](https://github.com/tibuntu/renovate-mcp/compare/v1.5.5...v1.5.6) (2026-09-23)
 
