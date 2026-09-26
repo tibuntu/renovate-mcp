@@ -8,6 +8,7 @@ import {
   readdir,
   chmod,
   symlink,
+  lstat,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -245,6 +246,61 @@ describe("write_config", () => {
 
       const leaked = await readdir(outside);
       expect(leaked).toHaveLength(0);
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("writes through a symlinked renovate.json so the link survives and the shared file changes", async () => {
+    const validator = await makeFakeValidator(repo, "fake-pass.mjs", 0);
+    session = await startServer({ RENOVATE_CONFIG_VALIDATOR_BIN: validator });
+
+    await mkdir(path.join(repo, "shared"));
+    const real = path.join(repo, "shared", "renovate.json");
+    await writeFile(real, '{"extends":["config:base"]}\n');
+    const link = path.join(repo, "renovate.json");
+    await symlink(path.join("shared", "renovate.json"), link);
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "write_config",
+      arguments: { repoPath: repo, config: { extends: ["config:recommended"] } },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    expect((await lstat(link)).isSymbolicLink()).toBe(true);
+    expect(JSON.parse(await readFile(real, "utf8"))).toEqual({ extends: ["config:recommended"] });
+    expect(await readdir(path.join(repo, "shared"))).toEqual(["renovate.json"]);
+  });
+
+  it("refuses a symlinked renovate.json whose real path escapes repoPath", async () => {
+    session = await startServer();
+
+    const outside = await mkdtemp(
+      path.join(
+        tmpdir(),
+        `rmcp-${path.basename(import.meta.url, ".ts")}-${process.pid}-outside-`,
+      ),
+    );
+    try {
+      const real = path.join(outside, "renovate.json");
+      await writeFile(real, "untouched");
+      await symlink(real, path.join(repo, "renovate.json"));
+
+      const res = await session.request<{
+        content: Array<{ type: string; text: string }>;
+        isError?: boolean;
+      }>("tools/call", {
+        name: "write_config",
+        arguments: { repoPath: repo, config: { extends: ["config:recommended"] } },
+      });
+
+      expect(res.result?.isError).toBe(true);
+      expect(res.result!.content[0]!.text).toContain("escapes repoPath");
+      expect(await readFile(real, "utf8")).toBe("untouched");
+      expect(await readdir(outside)).toEqual(["renovate.json"]);
     } finally {
       await rm(outside, { recursive: true, force: true });
     }
