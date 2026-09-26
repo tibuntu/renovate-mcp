@@ -41,11 +41,13 @@ describe.each(SCRIPTS)(
   "scripts/$scriptName refuses to overwrite a symlink",
   ({ scriptName, outputName }) => {
     it("exits non-zero when destination is a symlink, without following it", async () => {
-      // Copy the script into a temp tree that mirrors the real layout so it
-      // resolves OUT_PATH to a path we control.
-      const scriptSrc = path.join(REPO_ROOT, "scripts", scriptName);
+      // Copy the script (and the shared helpers it imports) into a temp tree
+      // that mirrors the real layout so it resolves OUT_PATH to a path we
+      // control.
       const scriptDst = path.join(tempRoot, "scripts", scriptName);
-      await fs.copyFile(scriptSrc, scriptDst);
+      for (const name of [scriptName, "_lib.mjs"]) {
+        await fs.copyFile(path.join(REPO_ROOT, "scripts", name), path.join(tempRoot, "scripts", name));
+      }
 
       // Point the symlink at a sentinel file that we'll watch. If the script
       // followed the link, it would clobber this file's contents.
