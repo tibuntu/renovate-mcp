@@ -306,6 +306,43 @@ describe("write_config", () => {
     }
   });
 
+  it("keeps package.json handling when package.json is a symlink to a differently named file", async () => {
+    // Format decisions (nested `renovate` round-trip, slice-only validation)
+    // must follow the requested filename, not the link's real path.
+    const record = path.join(repo, "validator-record.json");
+    const validator = await makeFakeValidator(repo, "fake-pass.mjs", 0, record);
+    session = await startServer({ RENOVATE_CONFIG_VALIDATOR_BIN: validator });
+
+    await mkdir(path.join(repo, "pkgs"));
+    const real = path.join(repo, "pkgs", "app.json");
+    await writeFile(real, '{\n  "name": "app",\n  "version": "1.0.0"\n}\n');
+    const link = path.join(repo, "package.json");
+    await symlink(path.join("pkgs", "app.json"), link);
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "write_config",
+      arguments: {
+        repoPath: repo,
+        filename: "package.json",
+        config: { extends: ["config:recommended"] },
+      },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    expect(JSON.parse(res.result!.content[0]!.text)).toMatchObject({ wrote: true, mode: "round-trip" });
+    expect((await lstat(link)).isSymbolicLink()).toBe(true);
+    expect(JSON.parse(await readFile(real, "utf8"))).toEqual({
+      name: "app",
+      version: "1.0.0",
+      renovate: { extends: ["config:recommended"] },
+    });
+    // The validator saw only the Renovate slice, never the manifest.
+    expect(JSON.parse((await readRecord(record)).content)).toEqual({ extends: ["config:recommended"] });
+  });
+
   it("cleans up the tmp file when the final rename fails (issue #57)", async () => {
     // Simulate a rename failure by pre-creating a non-empty directory at the
     // target path — fs.rename(tmp, target) fails with ENOTEMPTY / EISDIR on

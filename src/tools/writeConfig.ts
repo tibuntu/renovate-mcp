@@ -95,6 +95,8 @@ export function registerWriteConfig(server: McpServer): void {
       // A symlinked target is written through: the rename below replaces the
       // file the link points at, so the link survives and the shared file
       // changes. The escape check therefore runs against that real path.
+      // Format decisions (package.json nesting, .json5 refusal) still follow
+      // `requested` — the name the caller asked for, not the link's target.
       const repoReal = await fs.realpath(repoAbs);
       const target = await resolveWithExistingAncestor(requested);
       const checkRel = path.relative(repoReal, path.dirname(target));
@@ -111,7 +113,7 @@ export function registerWriteConfig(server: McpServer): void {
       // JSON.stringify, and the user has accepted that comments/key-order
       // will be lost. Exception: package.json. A whole-file rewrite there IS
       // the clobber, so the nested round-trip at ["renovate"] always runs.
-      const packageJson = isPackageJsonTarget(target);
+      const packageJson = isPackageJsonTarget(requested);
       let existing: string | undefined = undefined;
       if (!force || packageJson) {
         try {
@@ -122,7 +124,7 @@ export function registerWriteConfig(server: McpServer): void {
       }
 
       const writeResult = serializeConfig({
-        targetPath: target,
+        targetPath: requested,
         nextConfig: config,
         existing,
       });
