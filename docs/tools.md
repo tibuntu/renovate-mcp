@@ -43,6 +43,7 @@ Rules every tool applies the same way (implemented once in `src/lib/toolInputs.t
 
 - **`repoPath` must be an absolute path to an existing directory.** A relative path, a nonexistent path, or a file returns `isError` with `repoPath must be an absolute path to an existing directory (got: <value>)` before the tool does anything else. No tool creates a missing `repoPath`. (`check_setup` is the one exception: a diagnostic never returns `isError`.)
 - **A config source is `repoPath` or `configContent`, never both.** The tools that read a config this way (`resolve_config`, `explain_config`, each side of `resolve_config_diff`, `test_package_rules`, `annotate_dry_run`, `explain_dependency`) return `isError` for both inputs together (`Pass either repoPath or configContent, not both.`), for neither (`Provide either repoPath or configContent.`), and for a repo with no Renovate config (`No Renovate configuration found in <repoPath>.`). `resolve_config_diff` prefixes the failing side (`before: …` / `after: …`). `read_config` is the exception on the last point: there, no config is an ordinary result that points at `write_config`.
+- **Symlinked config targets are written through.** When the file `write_config` targets is a symlink, the write lands on the link's real path — the link survives and the file it points at changes. The escape check runs against that real path, so a link pointing outside `repoPath` is refused with `filename escapes repoPath` and nothing is written.
 
 ---
 
@@ -363,7 +364,7 @@ Runs in an isolated worker thread so the main MCP server process never imports t
 
 Validate, then atomically write a config to disk. A failed validation must never leave a broken config on disk.
 
-`repoPath` follows the [Common input rules](#common-input-rules): the repository directory must already exist (the tool creates subdirectories named by `filename`, never the repo itself).
+`repoPath` follows the [Common input rules](#common-input-rules): the repository directory must already exist (the tool creates subdirectories named by `filename`, never the repo itself), and a symlinked target file is written through rather than replaced.
 
 **Round-trip preservation.** When the target file already exists and parses as JSON-with-comments, edits go through a round-trip serializer that preserves comments, key order, trailing commas, blank-line groupings, and any unrelated trivia — only the keys the caller actually changed are rewritten. Brand-new file writes (no prior file at the target path) fall back to plain `JSON.stringify(config, null, 2) + "\n"` — byte-identical to pre-round-trip behavior. The result reports which branch ran as `mode: "round-trip"` or `mode: "fresh-write"` (alongside `wrote`, `path`, `bytes`, `valid`, and `validationOutput` / `warnings` when present). See [Architecture — round-trip writer](architecture.md#round-trip-writer).
 

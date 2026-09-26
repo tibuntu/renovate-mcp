@@ -89,12 +89,15 @@ export function registerWriteConfig(server: McpServer): void {
       if (repoError) return { isError: true, content: [{ type: "text", text: repoError }] };
 
       const repoAbs = path.resolve(repoPath);
-      const target = path.resolve(repoAbs, filename);
-      const rel = path.relative(repoAbs, target);
+      const requested = path.resolve(repoAbs, filename);
+      const rel = path.relative(repoAbs, requested);
 
-      const repoReal = await resolveWithExistingAncestor(repoAbs);
-      const parentReal = await resolveWithExistingAncestor(path.dirname(target));
-      const checkRel = path.relative(repoReal, parentReal);
+      // A symlinked target is written through: the rename below replaces the
+      // file the link points at, so the link survives and the shared file
+      // changes. The escape check therefore runs against that real path.
+      const repoReal = await fs.realpath(repoAbs);
+      const target = await resolveWithExistingAncestor(requested);
+      const checkRel = path.relative(repoReal, path.dirname(target));
       if (checkRel.startsWith("..") || path.isAbsolute(checkRel)) {
         return {
           isError: true,
