@@ -31,7 +31,7 @@ Detailed reference for every tool and resource exposed by `renovate-mcp`. The [R
 - [`renovate://option/{name}`](#renovateoptionname)
 - [`renovate://managers`](#renovatemanagers)
 
-## Prompts
+## Prompt index
 
 - [`design-renovate-config`](#design-renovate-config)
 - [`debug-package-rule`](#debug-package-rule)
@@ -46,6 +46,10 @@ Report Renovate CLI + validator availability, versions, and install hints. Also 
 Surfaces a `platformContext` block with `RENOVATE_PLATFORM` / `RENOVATE_ENDPOINT` values, token-presence booleans, the platform `dry_run` would pick when its input is unset, and notes about likely misconfigurations — so callers can verify env before invoking `dry_run`. Token values are never echoed; only presence booleans.
 
 Compares the running Node version against the bundled Renovate's declared `engines.node` range and emits an actionable hint when they're incompatible — the same condition Renovate would otherwise log only as `Unsupported node environment` during a `dry_run`.
+
+**Inputs:**
+
+- `repoPath` (optional, string, max 4096 bytes) — absolute path to a repository root. When set, adds the `repoContext` block described below.
 
 ### Optional `repoPath` — repo-aware diagnosis
 
@@ -75,9 +79,15 @@ See also: [Operational notes — `check_setup` bundled-binary fast path](operati
 
 Report the renovate-mcp server version and whether it's a released build (running from `node_modules`) or a local/dev build (typically launched via `command: node` against a checkout).
 
+**Inputs:** none.
+
 ## `read_config`
 
 Locate and parse a repo's Renovate config (`renovate.json`, `renovate.json5`, `.renovaterc*`, `package.json#renovate`, …) in priority order, mirroring Renovate's own discovery logic. JSON, JSONC (comments, trailing commas) and JSON5 are accepted for every candidate filename, matching Renovate's own parser.
+
+**Inputs:**
+
+- `repoPath` (required, string, max 4096 bytes) — absolute path to the repository root.
 
 ## `suggest_presets`
 
@@ -113,6 +123,14 @@ See also: [Operational notes — `suggest_presets` caps](operations.md#suggest_p
 
 Expand every `extends` preset offline. Opt in to fetching `github>` / `gitlab>` presets over HTTPS with `externalPresets: true`.
 
+**Inputs:**
+
+- `repoPath` (optional, string, max 4096 bytes) — absolute path to the repository root; the tool locates the repo's config automatically. Use instead of `configContent`.
+- `configContent` (optional, object, max ~1,000,000 bytes serialized) — inline config object to resolve. Use instead of `repoPath`. (One of `repoPath` / `configContent` is required.)
+- `externalPresets` (optional boolean, default `false`) — fetch `github>` / `gitlab>` presets over HTTPS.
+- `endpoint` (optional, string, max 2048 bytes) — API base URL for `github>`/`gitlab>` fetches (GitHub Enterprise / self-hosted GitLab). Defaults to `https://api.github.com` and `https://gitlab.com/api/v4`.
+- `platform` (optional, enum `"github"` | `"gitlab"`) — platform flavour of `endpoint`; when set, `local>owner/repo` presets are fetched as `<platform>>owner/repo`.
+
 Built-in presets expand against a committed snapshot of Renovate's catalogue (`src/data/presets.generated.ts`). External `github>` / `gitlab>` fetching is opt-in, uses each platform's contents API with a 10 s timeout, and caches results per call. The `endpoint` input swaps in a custom API base for GHE / self-hosted GitLab; `platform` additionally rewrites `local>` presets to be fetched against that endpoint. `bitbucket>`, `gitea>`, and npm presets still land in `presetsUnresolved` with a reason.
 
 Merging uses Renovate's own `mergeChildConfig`, run in a worker thread so the main process never imports `renovate` — mergeable arrays (`packageRules`, `hostRules`, `addLabels`, …) concatenate, non-mergeable arrays (`assignees`, `labels`, `schedule`, …) overwrite, objects recurse, `constraints` object-merges, and `force` applies last. Responses carry `mergeQuality: "faithful"` plus a `disclaimer`. A config that pulls in ≥2 sources spawns the worker, so the first such call pays a one-time cold start (~1-3 s); configs that don't actually merge skip it. If the worker is unavailable the tool falls back to a simplified in-process merge (arrays concat, objects merge, scalars overwrite), appends a warning, and reports `mergeQuality: "preview"`. `resolve_config` still doesn't run datasource lookups — run `dry_run` for full config resolution.
@@ -124,6 +142,8 @@ See also: [Security & secrets — Endpoint validation](security.md#endpoint-vali
 ## `explain_config`
 
 Inverse of `resolve_config`: walk the same preset tree but annotate every leaf field with the chain of presets that touched it. Each leaf is `{ value, setBy }` where `setBy` lists every contribution in merge order — last entry wins for scalars and overwritten (non-mergeable) arrays; for mergeable arrays each entry adds its own slice.
+
+**Inputs:** same shape as [`resolve_config`](#resolve_config) — `repoPath` (optional, string, max 4096 bytes; use instead of `configContent`), `configContent` (optional, object, max ~1,000,000 bytes serialized; use instead of `repoPath`; one of the two is required), `externalPresets` (optional boolean, default `false`), `endpoint` (optional, string, max 2048 bytes), `platform` (optional, enum `"github"` | `"gitlab"`).
 
 Same offline-by-default behaviour and same `externalPresets` / `endpoint` / `platform` opt-ins as `resolve_config`. Both tools share one expansion-and-merge core (`collectMergeSteps` plus the same worker-isolated faithful merge), so their resolved values are identical by construction. `explain_config` reconstructs provenance by diffing the merge's per-step snapshots: each contribution is pinned with a source name (literal `extends` entry, or `<own>` for the user's input config) and a `via` chain naming every parent preset traversed to reach it.
 
@@ -181,7 +201,20 @@ Schema validation catches structural bugs; the linter catches Renovate-specific 
 - `duplicate-package-rule-matchers`
 - `host-rule-inline-secret`
 
-The ruleset is intentionally small, scoped to the regex-aware and manager-aware fields plus a handful of `packageRules`-level footguns, and tuned to avoid false positives on benign exact strings containing a `.`. The valid-manager list is snapshotted from the `renovate` devDep; unknown names get a Damerau-Levenshtein "did you mean?" suggestion when something close enough exists. The `deprecated-key` rule scans the top level plus `packageRules` / `hostRules` / `customManagers` entries for keys Renovate has renamed (e.g. `masterIssue` → `dependencyDashboard`) — the rename is embedded in the finding message and `suggestion` — and for keys handled by Renovate's deprecated custom migrations (value coercions such as `stabilityDays`, structural rewrites such as `fileMatch` → `managerFilePatterns`), where the finding says Renovate migrates the key automatically; both point the user at [`migrate_config`](#migrate_config) to see and apply the replacement. The `automerge-includes-major` rule flags a `packageRules` entry with `automerge: true` whose `matchUpdateTypes` is absent or includes `"major"`, since major bumps then merge automatically without review; it's suppressed for the whole config only when a later entry pairs `matchUpdateTypes: ["major"]` with `automerge: false` as an explicit guard (a heuristic that doesn't verify the guard actually covers the same deps). The `duplicate-package-rule-matchers` rule flags a `packageRules` entry whose selector keys and values exactly match an earlier entry's (array order ignored), because the later entry's action keys silently win over the earlier one's wherever they overlap. The `host-rule-inline-secret` rule flags a `hostRules` entry with a plain-string `token` or `password` (anything not wrapped as a `{{ }}` template) — since repo config is committed and readable by everyone with repo access, the secret belongs in the `encrypted` sub-object, a `{{ secrets.NAME }}` template, or the self-hosted/global config instead.
+The ruleset is intentionally small, scoped to the regex-aware and manager-aware fields plus a handful of `packageRules`-level footguns, and tuned to avoid false positives on benign exact strings containing a `.`:
+
+- **`dead-regex-missing-slash`** (error) — a value starts with `/` but doesn't end with it (or vice versa), so Renovate treats it as an exact-match string rather than the intended regex. Add the missing slash, or remove the stray one if a literal match was intended.
+- **`unwrapped-regex`** (warn) — a value contains regex metacharacters but isn't wrapped in `/…/`, so Renovate treats it as an exact-match string. Wrap it (`/…/`, or `!/…/` to negate) if a regex match was intended.
+- **`matchManagers-unknown-name`** (error) — a `matchManagers` / `excludeManagers` entry isn't a name Renovate recognizes. The valid-manager list is snapshotted from the installed `renovate` runtime dependency; unknown names get a Damerau-Levenshtein "did you mean?" suggestion when something close enough exists.
+- **`deprecated-key`** (warn) — the top level, or a `packageRules` / `hostRules` / `customManagers` entry, uses a key Renovate has renamed (e.g. `masterIssue` → `dependencyDashboard`) — the rename is embedded in the finding message and `suggestion` — or a key handled by Renovate's deprecated custom migrations (value coercions such as `stabilityDays`, structural rewrites such as `fileMatch` → `managerFilePatterns`), where the finding says Renovate migrates the key automatically. Both point at [`migrate_config`](#migrate_config) to see and apply the replacement.
+- **`automerge-without-automerge-type`** (warn) — `automerge: true` is set (at the top level or in a `packageRules` entry) without `automergeType`. Renovate defaults to `"pr"` here; set it explicitly to avoid surprises if the default ever changes.
+- **`empty-extends`** (warn) — `extends: []` is present but empty, almost always a paste error since it inherits no presets.
+- **`contradictory-disabled-with-package-rules`** (error) — the root config has `enabled: false` but a `packageRules` entry has `enabled: true`, trying to re-enable a subset. Renovate does **not** re-enable specific deps from `packageRules` when the root is disabled — the whole repo stays off.
+- **`package-rule-without-action`** (warn) — a `packageRules` entry has selector key(s) but no action keys, so Renovate matches deps and does nothing with them. `description` is metadata and `matchUpdateTypes` / `paths` are selectors — neither counts as an action.
+- **`invalid-schedule`** (error) — a `schedule` value isn't a recognizable Renovate schedule (later-text like `"before 5am every weekday"`, or cron with a `*` minutes field). Renovate silently falls back to "at any time" on a parse failure, so this footgun goes undetected at runtime otherwise.
+- **`automerge-includes-major`** (warn) — a `packageRules` entry has `automerge: true` with `matchUpdateTypes` absent or including `"major"`, so major bumps merge automatically without review. Suppressed for the whole config only when a later entry pairs `matchUpdateTypes: ["major"]` with `automerge: false` as an explicit guard (a heuristic that doesn't verify the guard actually covers the same deps).
+- **`duplicate-package-rule-matchers`** (warn) — a `packageRules` entry's selector keys and values exactly match an earlier entry's (array order ignored); the later entry's action keys silently win over the earlier one's wherever they overlap.
+- **`host-rule-inline-secret`** (warn) — a `hostRules` entry has a plain-string `token` or `password` (anything not wrapped as a `{{ }}` template). Since repo config is committed and readable by everyone with repo access, the secret belongs in the `encrypted` sub-object, a `{{ secrets.NAME }}` template, or the self-hosted/global config instead.
 
 ## `dry_run`
 
@@ -229,6 +262,14 @@ Each side accepts `repoPath` (locates the repo's config via the same discovery o
 
 The shared `externalPresets` / `endpoint` / `platform` knobs mirror [`resolve_config`](#resolve_config) and apply to **both** sides — a refactor is diffed under one resolution context. Default is fully offline (no network I/O).
 
+**Inputs:**
+
+- `before` (required, object `{ repoPath?, configContent? }`) — one side of the diff.
+- `after` (required, object `{ repoPath?, configContent? }`) — the other side.
+- `externalPresets` (optional boolean, default `false`) — applies to both sides.
+- `endpoint` (optional, string, max 2048 bytes) — applies to both sides.
+- `platform` (optional, enum `"github"` | `"gitlab"`) — applies to both sides.
+
 **Diff semantics (top-level keys only):**
 
 - **Non-array keys** → deep-compared; a difference is reported in `fieldChanges` as `{ key, before, after }` carrying the full values. A nested array inside an object is part of that object's value and surfaces as a whole-field change.
@@ -241,6 +282,13 @@ Returns `summary` (`fieldsChanged`, `arraysChanged`, `arrayItemsAdded`, `arrayIt
 Offline "what-if" for `packageRules`: given a hypothetical dependency context and a config, report which rules match, **which matcher decided each**, and what each matched rule contributes. Answers "why didn't my rule match?" without running Renovate.
 
 Pass `repoPath` (locates + expands the repo's config via the same discovery order as [`read_config`](#read_config)) **or** `configContent` (an inline config). The config's `extends` are expanded first (via [`resolve_config`](#resolve_config)'s offline expansion + the same `externalPresets` / `endpoint` / `platform` opt-ins), so preset-provided `packageRules` are included. The dependency is described with optional synthetic fields — `depName`, `packageName`, `datasource`, `manager`, `depType`, `currentValue`, `currentVersion`, `packageFile`, `categories`, … — supply whatever you want to test against.
+
+**Inputs:**
+
+- `repoPath` (optional, string, max 4096 bytes) — absolute path to the repository root; the tool locates and expands its config. Use instead of `configContent`.
+- `configContent` (optional, object, max ~1,000,000 bytes serialized) — inline config whose `packageRules` to test. Use instead of `repoPath`. (One of `repoPath` / `configContent` is required.)
+- `externalPresets` (optional boolean, default `false`), `endpoint` (optional, string, max 2048 bytes), `platform` (optional, enum `"github"` | `"gitlab"`) — same semantics as [`resolve_config`](#resolve_config).
+- Synthetic dependency-context fields — all optional, all strings unless noted, supply whichever you're testing: `depName`, `packageName`, `datasource`, `manager`, `depType` (max 2048 bytes each), `depTypes` (string array, max 256 items), `currentValue`, `currentVersion`, `lockedVersion`, `versioning`, `packageFile`, `lockFiles` (array), `categories` (array), `repository`, `baseBranch`, `registryUrls` (array), `sourceUrl`, `newValue`, `updateType`, `isBump` (boolean), `isBreaking` (boolean), `currentVersionTimestamp`, `mergeConfidenceLevel` (see each field's tool description for which matcher it feeds).
 
 **Faithful by construction.** Rules are evaluated with Renovate's **real matchers** in a worker thread (see [Architecture — worker isolation for packageRules](architecture.md#worker-isolation-for-packagerules)), so match decisions are bit-faithful for the fields you supply. The crucial subtlety: a matcher returns `false` identically for "supplied-but-no-match" and "field-absent", so results are classified against what you actually passed:
 
@@ -257,6 +305,14 @@ Deprecated matcher keys (`matchPackagePatterns`, `matchPackagePrefixes`, `paths`
 Attribute each proposed update in a `dry_run` report to the `packageRules` that caused it — "which of my rules produced these updates?". Stateless and offline: run [`dry_run`](#dry_run) first, then pass its report here.
 
 Takes a report (inline `report` — raw `{ repositories }` or a full `dry_run` summary with a `report` key — **or** `{ reportPath: "<absolute path>" }`, the same shapes as [`dry_run_diff`](#dry_run_diff)) **plus** a config source (`repoPath` or `configContent`, with the same `externalPresets` / `endpoint` / `platform` opt-ins as [`resolve_config`](#resolve_config)). Updates are deduplicated by `(manager, packageFile, depName)` and each is matched — using the **real facts already in the report** — against the config's effective `packageRules` in a single worker round-trip.
+
+**Inputs:**
+
+- `report` (optional, object, max ~10,000,000 bytes serialized) — inline report (raw `{ repositories }` or a full `dry_run` summary with a `report` key). Use instead of `reportPath`.
+- `reportPath` (optional, string, max 4096 bytes) — absolute path to a JSON report file (pair with `dry_run`'s `reportOutputPath`). Use instead of `report`. (One of `report` / `reportPath` is required.)
+- `repoPath` (optional, string, max 4096 bytes) — locates and expands the repo's config for its `packageRules`. Use instead of `configContent`.
+- `configContent` (optional, object, max ~1,000,000 bytes serialized) — inline config whose `packageRules` to attribute against. Use instead of `repoPath`. (One of `repoPath` / `configContent` is required.)
+- `externalPresets` (optional boolean, default `false`), `endpoint` (optional, string, max 2048 bytes), `platform` (optional, enum `"github"` | `"gitlab"`) — same semantics as [`resolve_config`](#resolve_config).
 
 Returns one `annotation` per update (`manager`, `packageFile`, `depName`, `currentVersion`, `newVersion`, `updateType`, plus `matchedRules` and `unevaluatable` with the same shapes as [`test_package_rules`](#test_package_rules)), and two aggregate signals:
 
@@ -286,6 +342,11 @@ The report already carries the answer: every extracted dependency under `reposit
 Apply Renovate's built-in config migrations (deprecated key renames like `masterIssue` → `dependencyDashboard`, template-variable rewrites, `packageRules` matcher consolidation, `host-rules` unification, …) and return the migrated config plus a unified diff.
 
 Does **not** write — chain with [`write_config`](#write_config) to persist.
+
+**Inputs:**
+
+- `configPath` (optional, string, max 4096 bytes) — absolute path to a JSON or JSON5 config file to migrate. Use instead of `configContent`.
+- `configContent` (optional, object, max ~1,000,000 bytes serialized) — inline config object to migrate. Use instead of `configPath`. (One of the two is required.)
 
 Runs in an isolated worker thread so the main MCP server process never imports the `renovate` package; first call carries a one-time cold-load cost of a few seconds. See [Architecture — worker isolation for migration](architecture.md#worker-isolation-for-migration).
 
