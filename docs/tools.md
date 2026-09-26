@@ -37,6 +37,12 @@ Detailed reference for every tool and resource exposed by `renovate-mcp`. The [R
 - [`debug-package-rule`](#debug-package-rule)
 - [`author-custom-manager`](#author-custom-manager)
 
+## Common input rules
+
+Rules every tool applies the same way (implemented once in `src/lib/toolInputs.ts`):
+
+- **`repoPath` must be an absolute path to an existing directory.** A relative path, a nonexistent path, or a file returns `isError` with `repoPath must be an absolute path to an existing directory (got: <value>)` before the tool does anything else. No tool creates a missing `repoPath`. (`check_setup` is the one exception: a diagnostic never returns `isError`.)
+
 ---
 
 ## `check_setup`
@@ -87,7 +93,7 @@ Locate and parse a repo's Renovate config (`renovate.json`, `renovate.json5`, `.
 
 **Inputs:**
 
-- `repoPath` (required, string, max 4096 bytes) — absolute path to the repository root.
+- `repoPath` (required, string, max 4096 bytes) — absolute path to the repository root; see [Common input rules](#common-input-rules).
 
 ## `suggest_presets`
 
@@ -152,6 +158,8 @@ Same offline-by-default behaviour and same `externalPresets` / `endpoint` / `pla
 ## `preview_custom_manager`
 
 Preview a `customManagers` entry against a local repo. For `customType: "regex"`, shows file/line hits and extracted dep info. For `customType: "jsonata"` (`fileFormat: "json" | "yaml" | "toml"`), parses the file structure and extracts deps from each `matchStrings` JSONata projection. Offline.
+
+`repoPath` follows the [Common input rules](#common-input-rules) — a missing repo is an `isError`, never a silent `filesWalked: 0`.
 
 **File selection (`managerFilePatterns`):** entries are matched against POSIX-style paths relative to `repoPath` exactly like Renovate's extract phase (`getMatchingFiles` in `workers/repository/extract/file-match.js`): every entry is evaluated on its own and the results are unioned, so a file is selected when *any* entry matches it. Per entry: `*` matches everything; `/…/` (or `/…/i` for case-insensitive) is a regex, and `!/…/` matches the files the regex does *not* match; anything else is a glob evaluated with `minimatch` using `{ dot: true, nocase: true }` (so `**/*.yml` also matches `.github/workflows/ci.yml`, and `dockerfile` matches `Dockerfile`), with minimatch's own leading-`!` negation. Because entries are unioned, a `!` pattern adds files rather than excluding them — `["**/*.yaml", "!**/vendor/**"]` selects every YAML file *plus* every file outside `vendor/` — so exclude with Renovate's top-level `ignorePaths` instead (which this preview does not apply; confirm with `dry_run`). Regex entries still run in the worker under `matchTimeoutMs`; globs are evaluated in-process. An invalid `/…/` regex is reported as an error (`Invalid regex in managerFilePatterns[i] …`) that also says what Renovate would do: silently treat the entry as a glob, which almost certainly matches nothing.
 
@@ -220,7 +228,7 @@ The ruleset is intentionally small, scoped to the regex-aware and manager-aware 
 
 Run Renovate with `--dry-run` and return the structured JSON report. No PRs, no pushes.
 
-**Inputs.** `repoPath` must be an absolute path to an existing directory — it is preflighted and a bad path returns an `isError` naming it before anything is spawned (a missing `cwd` would otherwise surface as a spawn `ENOENT`, indistinguishable from a missing binary). `dryRunMode` is `extract` (detect manifests only), `lookup` (also resolve latest versions) or `full` (default; full simulation including branches/PRs). `logLevel` is `info` (default) or `debug`. `timeoutMs` defaults to 5 minutes and is capped at 15; on overrun the run is killed (including its child processes) and the tool returns an `isError` that says `timed out after`. `repository` must not start with `-` (Renovate would parse it as a flag). `reportOutputPath` must be an absolute path inside an existing directory, and must not exist yet itself — both are checked before Renovate is spawned (a missing parent directory returns an `isError` naming it); the file is created with `O_EXCL` and mode 0600, and a pre-existing file or symlink at that path yields an `isError` saying `already exists` instead of an overwrite.
+**Inputs.** `repoPath` follows the [Common input rules](#common-input-rules) and is checked before anything is spawned (a missing `cwd` would otherwise surface as a spawn `ENOENT`, indistinguishable from a missing binary). `dryRunMode` is `extract` (detect manifests only), `lookup` (also resolve latest versions) or `full` (default; full simulation including branches/PRs). `logLevel` is `info` (default) or `debug`. `timeoutMs` defaults to 5 minutes and is capped at 15; on overrun the run is killed (including its child processes) and the tool returns an `isError` that says `timed out after`. `repository` must not start with `-` (Renovate would parse it as a flag). `reportOutputPath` must be an absolute path inside an existing directory, and must not exist yet itself — both are checked before Renovate is spawned (a missing parent directory returns an `isError` naming it); the file is created with `O_EXCL` and mode 0600, and a pre-existing file or symlink at that path yields an `isError` saying `already exists` instead of an overwrite.
 
 **Platform selection.** Defaults to `--platform=local` against `repoPath`. Pass `platform` + `endpoint` + `token` + `repository` to run as a real GitHub/GitLab client (needed when the config extends `local>` presets on a private host). When `platform` is not passed, the tool reads `RENOVATE_PLATFORM` from the MCP server's env before defaulting to `local`. The response echoes `platformSource` (`input` / `env` / `default`) and `effectivePlatform`, and an advisory warning fires when env-derived platform is non-local so a surprising `gitlab`/`github` is never mysterious. Preflight error messages also tag the platform origin.
 
@@ -353,6 +361,8 @@ Runs in an isolated worker thread so the main MCP server process never imports t
 ## `write_config`
 
 Validate, then atomically write a config to disk. A failed validation must never leave a broken config on disk.
+
+`repoPath` follows the [Common input rules](#common-input-rules): the repository directory must already exist (the tool creates subdirectories named by `filename`, never the repo itself).
 
 **Round-trip preservation.** When the target file already exists and parses as JSON-with-comments, edits go through a round-trip serializer that preserves comments, key order, trailing commas, blank-line groupings, and any unrelated trivia — only the keys the caller actually changed are rewritten. Brand-new file writes (no prior file at the target path) fall back to plain `JSON.stringify(config, null, 2) + "\n"` — byte-identical to pre-round-trip behavior. The result reports which branch ran as `mode: "round-trip"` or `mode: "fresh-write"` (alongside `wrote`, `path`, `bytes`, `valid`, and `validationOutput` / `warnings` when present). See [Architecture — round-trip writer](architecture.md#round-trip-writer).
 

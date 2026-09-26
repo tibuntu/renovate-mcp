@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { locateConfig } from "../lib/configLocations.js";
 import { pathString } from "../lib/inputLimits.js";
+import { assertRepoDir } from "../lib/toolInputs.js";
 
 export function registerReadConfig(server: McpServer): void {
   server.registerTool(
@@ -14,6 +15,8 @@ export function registerReadConfig(server: McpServer): void {
       },
     },
     async ({ repoPath }) => {
+      const repoError = await assertRepoDir(repoPath);
+      if (repoError) return { isError: true, content: [{ type: "text", text: repoError }] };
       const located = await locateConfig(repoPath);
       if (!located) {
         return {
