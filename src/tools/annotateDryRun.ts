@@ -1,11 +1,12 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { resolveConfig } from "../lib/presetResolver.js";
 import { extractReport, identityKey, readArray, readRecord } from "../lib/dryRunDiff.js";
 import { readReportPath } from "../lib/reportInput.js";
 import {
   analyzePackageRules,
   MATCHER_META,
+  resolvePackageRules,
+  toMatchedRule,
 } from "../lib/packageRulesAnalysis.js";
 import { configRecord, endpointString, pathString, reportRecord } from "../lib/inputLimits.js";
 import {
@@ -135,16 +136,11 @@ export function registerAnnotateDryRun(server: McpServer): void {
       // Resolve the config's effective packageRules.
       const src = await loadConfigSource({ repoPath, configContent });
       if ("error" in src) return { isError: true, content: [{ type: "text", text: src.error }] };
-      const { resolved, warnings: presetWarnings, presetsUnresolved } = await resolveConfig(src.config, {
+      const { packageRules, warnings: presetWarnings } = await resolvePackageRules(src.config, {
         fetchExternal: externalPresets ?? false,
         endpoint,
         platform,
       });
-      const packageRules = Array.isArray(resolved.packageRules)
-        ? (resolved.packageRules.filter(
-            (r): r is Record<string, unknown> => !!r && typeof r === "object" && !Array.isArray(r),
-          ) as Record<string, unknown>[])
-        : [];
 
       // Collect + dedup updates (a dep can appear in multiple branches).
       const entriesRaw = collectUpdateEntries(extractReport(reportValue));
@@ -169,12 +165,7 @@ export function registerAnnotateDryRun(server: McpServer): void {
           .filter((r) => r.matched)
           .map((r) => {
             matchedIndices.add(r.index);
-            return {
-              index: r.index,
-              rule: r.rule,
-              matchedBy: r.matchedBy,
-              ...(r.contributedConfig ? { contributedConfig: r.contributedConfig } : {}),
-            };
+            return toMatchedRule(r);
           });
         const unevaluatable = ruleAnalysis.flatMap((r) =>
           r.unevaluatable.map((u) => ({ ruleIndex: r.index, ...u })),
@@ -200,14 +191,7 @@ export function registerAnnotateDryRun(server: McpServer): void {
       }
       const fieldGaps = [...usedFields].filter((f) => !presentFields.has(f)).sort();
 
-      const warnings = [...analysis.warnings, ...presetWarnings.map((w) => `${w.preset}: ${w.message}`)];
-      if (presetsUnresolved.length > 0) {
-        warnings.push(
-          `${presetsUnresolved.length} preset(s) could not be expanded, so preset-provided packageRules may be missing: ${presetsUnresolved
-            .map((p) => p.preset)
-            .join(", ")}.`,
-        );
-      }
+      const warnings = [...analysis.warnings, ...presetWarnings];
       if (packageRules.length === 0) warnings.push("The resolved config has no packageRules.");
       if (entries.length === 0) warnings.push("The report contained no proposed updates to annotate.");
 

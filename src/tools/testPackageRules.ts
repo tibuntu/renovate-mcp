@@ -1,7 +1,10 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { resolveConfig } from "../lib/presetResolver.js";
-import { analyzePackageRules } from "../lib/packageRulesAnalysis.js";
+import {
+  analyzePackageRules,
+  resolvePackageRules,
+  toMatchedRule,
+} from "../lib/packageRulesAnalysis.js";
 import { configRecord, endpointString, pathString } from "../lib/inputLimits.js";
 import {
   loadConfigSource,
@@ -72,18 +75,11 @@ export function registerTestPackageRules(server: McpServer): void {
 
       // Expand `extends` so preset-provided packageRules are included, then test
       // against the effective set.
-      const { resolved, warnings: presetWarnings, presetsUnresolved } =
-        await resolveConfig(src.config, {
-          fetchExternal: externalPresets ?? false,
-          endpoint,
-          platform,
-        });
-      const packageRules = Array.isArray(resolved.packageRules)
-        ? (resolved.packageRules.filter(
-            (r): r is Record<string, unknown> =>
-              !!r && typeof r === "object" && !Array.isArray(r),
-          ) as Record<string, unknown>[])
-        : [];
+      const { packageRules, warnings: presetWarnings } = await resolvePackageRules(src.config, {
+        fetchExternal: externalPresets ?? false,
+        endpoint,
+        platform,
+      });
 
       // Build the synthetic dependency context from supplied fields only.
       const context: Record<string, unknown> = {};
@@ -94,14 +90,7 @@ export function registerTestPackageRules(server: McpServer): void {
       const analysis = await analyzePackageRules(packageRules, [context]);
       const result = analysis.contexts[0] ?? { mergedConfig: {}, rules: [] };
 
-      const matchedRules = result.rules
-        .filter((r) => r.matched)
-        .map((r) => ({
-          index: r.index,
-          rule: r.rule,
-          matchedBy: r.matchedBy,
-          ...(r.contributedConfig ? { contributedConfig: r.contributedConfig } : {}),
-        }));
+      const matchedRules = result.rules.filter((r) => r.matched).map(toMatchedRule);
       const unmatchedRules = result.rules
         .filter((r) => !r.matched)
         .map((r) => ({ index: r.index, rule: r.rule, decidedBy: r.decidedBy }));
@@ -112,14 +101,7 @@ export function registerTestPackageRules(server: McpServer): void {
       const effectiveConfig = { ...result.mergedConfig };
       delete effectiveConfig.packageRules;
 
-      const warnings = [...analysis.warnings, ...presetWarnings.map((w) => `${w.preset}: ${w.message}`)];
-      if (presetsUnresolved.length > 0) {
-        warnings.push(
-          `${presetsUnresolved.length} preset(s) could not be expanded, so preset-provided packageRules may be missing: ${presetsUnresolved
-            .map((p) => p.preset)
-            .join(", ")}. See resolve_config for details.`,
-        );
-      }
+      const warnings = [...analysis.warnings, ...presetWarnings];
       if (packageRules.length === 0) {
         warnings.push("The resolved config has no packageRules to test.");
       }
