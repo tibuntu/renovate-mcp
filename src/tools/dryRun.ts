@@ -12,7 +12,7 @@ import {
   CommandTimeoutError,
 } from "../lib/renovateCli.js";
 import { resolveCredential } from "../lib/credentialResolver.js";
-import { EndpointValidationError, validateEndpoint } from "../lib/endpointValidator.js";
+import { validateEndpoint } from "../lib/endpointValidator.js";
 import { locateConfig } from "../lib/configLocations.js";
 import { assertRepoDir } from "../lib/toolInputs.js";
 import { detectLookupProblems } from "../lib/lookupProblems.js";
@@ -273,17 +273,8 @@ export function registerDryRun(server: McpServer): void {
       extra,
     ) => {
       if (endpoint !== undefined) {
-        try {
-          validateEndpoint(endpoint);
-        } catch (err) {
-          if (err instanceof EndpointValidationError) {
-            return {
-              isError: true,
-              content: [{ type: "text", text: err.message }],
-            };
-          }
-          throw err;
-        }
+        const blocked = validateEndpoint(endpoint);
+        if (blocked) return { isError: true, content: [{ type: "text", text: blocked }] };
       }
 
       // Preflight the paths we're about to hand to the child. A missing

@@ -1,4 +1,4 @@
-import { EndpointValidationError, validateEndpoint } from "./endpointValidator.js";
+import { validateEndpoint } from "./endpointValidator.js";
 
 /**
  * Best-effort reachability check for an `endpoint` URL. Used by `check_setup`
@@ -24,30 +24,28 @@ export async function probeEndpoint(
   url: string,
   timeoutMs = 3000,
 ): Promise<EndpointProbeResult> {
-  try {
-    validateEndpoint(url);
-  } catch (err) {
-    const reason = err instanceof EndpointValidationError ? err.message : String(err);
-    return { url, reachable: false, skipped: "endpoint-blocked", error: reason };
+  const blocked = validateEndpoint(url);
+  if (blocked) {
+    return { url, reachable: false, skipped: "endpoint-blocked", error: blocked };
   }
 
-  const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  // One budget covers the HEAD and its optional GET fallback.
+  const signal = AbortSignal.timeout(timeoutMs);
   try {
-    let response = await fetch(url, { method: "HEAD", signal: ac.signal });
+    let response = await fetch(url, { method: "HEAD", signal });
     if (response.status === 405) {
-      response = await fetch(url, { method: "GET", signal: ac.signal });
+      response = await fetch(url, { method: "GET", signal });
     }
+    // Only the status matters; release the body so the connection is freed.
+    await response.body?.cancel().catch(() => undefined);
     return { url, reachable: response.ok || response.status < 500, status: response.status };
   } catch (err) {
     const message =
-      err instanceof Error && err.name === "AbortError"
+      err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError")
         ? `timed out after ${timeoutMs}ms`
         : err instanceof Error
           ? err.message
           : String(err);
     return { url, reachable: false, error: message };
-  } finally {
-    clearTimeout(timer);
   }
 }

@@ -1,5 +1,5 @@
 import { resolveCredential, type Credential } from "./credentialResolver.js";
-import { EndpointValidationError, validateEndpoint } from "./endpointValidator.js";
+import { validateEndpoint } from "./endpointValidator.js";
 import { classifyExternalSource, type ParsedPreset } from "./presetResolver.js";
 
 export interface FetchOptions {
@@ -58,14 +58,8 @@ function dispatch(parsed: ParsedPreset, options: FetchOptions): Promise<FetchRes
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   let endpoint: string | undefined;
   if (options.endpoint) {
-    try {
-      validateEndpoint(options.endpoint);
-    } catch (err) {
-      if (err instanceof EndpointValidationError) {
-        return Promise.resolve({ ok: false, reason: err.message });
-      }
-      throw err;
-    }
+    const blocked = validateEndpoint(options.endpoint);
+    if (blocked) return Promise.resolve({ ok: false, reason: blocked });
     endpoint = trimTrailingSlash(options.endpoint);
   }
 
