@@ -112,39 +112,36 @@ describe("validate_config", () => {
     expect(payload.valid).toBe(true);
   });
 
-  it.skipIf(process.platform === "win32")(
-    "writes the inline temp file with mode 0600",
-    async () => {
-      // Fake validator that records the mode of the file it was handed.
-      const record = path.join(repo, "mode.json");
-      const validator = path.join(repo, "fake-mode.mjs");
-      await writeFile(
-        validator,
-        `#!/usr/bin/env node
+  it("writes the inline temp file with mode 0600", async () => {
+    // Fake validator that records the mode of the file it was handed.
+    const record = path.join(repo, "mode.json");
+    const validator = path.join(repo, "fake-mode.mjs");
+    await writeFile(
+      validator,
+      `#!/usr/bin/env node
 import { statSync, writeFileSync } from "node:fs";
 writeFileSync(${JSON.stringify(record)}, JSON.stringify({ mode: statSync(process.argv[2]).mode & 0o777 }));
 process.exit(0);
 `,
-      );
-      await chmod(validator, 0o755);
-      session = await startServer(
-        { RENOVATE_CONFIG_VALIDATOR_BIN: validator },
-        { requestTimeoutMs: 30_000 },
-      );
+    );
+    await chmod(validator, 0o755);
+    session = await startServer(
+      { RENOVATE_CONFIG_VALIDATOR_BIN: validator },
+      { requestTimeoutMs: 30_000 },
+    );
 
-      const res = await session.request<{
-        content: Array<{ type: string; text: string }>;
-        isError?: boolean;
-      }>("tools/call", {
-        name: "validate_config",
-        arguments: { configContent: { extends: ["config:recommended"] } },
-      });
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "validate_config",
+      arguments: { configContent: { extends: ["config:recommended"] } },
+    });
 
-      expect(res.result?.isError).toBeFalsy();
-      const seen = JSON.parse(await readFile(record, "utf8")) as { mode: number };
-      expect(seen.mode).toBe(0o600);
-    },
-  );
+    expect(res.result?.isError).toBeFalsy();
+    const seen = JSON.parse(await readFile(record, "utf8")) as { mode: number };
+    expect(seen.mode).toBe(0o600);
+  });
 
   it("returns isError when neither configPath nor configContent is supplied", async () => {
     session = await startServer({}, { requestTimeoutMs: 30_000 });

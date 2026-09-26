@@ -177,51 +177,48 @@ describe("run() timeout and capture cap", () => {
     expect((err as Error).message).toContain("timed out after");
   });
 
-  it.skipIf(process.platform === "win32")(
-    "kills the whole process group on timeout, not just the direct child",
-    async () => {
-      // The fake spawns a long-lived grandchild (stdio ignored so it doesn't
-      // hold our pipes open), prints its pid, then idles until killed.
-      const script = await makeScript(`
-        import { spawn } from "node:child_process";
-        const gc = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
-        process.stdout.write(String(gc.pid) + "\\n");
-        setInterval(() => {}, 1000);
-      `);
+  it("kills the whole process group on timeout, not just the direct child", async () => {
+    // The fake spawns a long-lived grandchild (stdio ignored so it doesn't
+    // hold our pipes open), prints its pid, then idles until killed.
+    const script = await makeScript(`
+      import { spawn } from "node:child_process";
+      const gc = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+      process.stdout.write(String(gc.pid) + "\\n");
+      setInterval(() => {}, 1000);
+    `);
 
-      let grandchildPid = 0;
-      const err = await run(process.execPath, [script], {
-        timeoutMs: 500,
-        onStdoutLine: (l) => {
-          grandchildPid = Number(l);
-        },
-      }).catch((e) => e);
-      try {
-        expect(err).toBeInstanceOf(CommandTimeoutError);
-        expect(grandchildPid).toBeGreaterThan(0);
+    let grandchildPid = 0;
+    const err = await run(process.execPath, [script], {
+      timeoutMs: 500,
+      onStdoutLine: (l) => {
+        grandchildPid = Number(l);
+      },
+    }).catch((e) => e);
+    try {
+      expect(err).toBeInstanceOf(CommandTimeoutError);
+      expect(grandchildPid).toBeGreaterThan(0);
 
-        // Poll up to 2 s for the grandchild to disappear (signal 0 = probe).
-        const deadline = Date.now() + 2000;
-        let alive = true;
-        while (alive && Date.now() < deadline) {
-          try {
-            process.kill(grandchildPid, 0);
-            await new Promise((r) => setTimeout(r, 50));
-          } catch (e) {
-            expect((e as NodeJS.ErrnoException).code).toBe("ESRCH");
-            alive = false;
-          }
-        }
-        expect(alive).toBe(false);
-      } finally {
+      // Poll up to 2 s for the grandchild to disappear (signal 0 = probe).
+      const deadline = Date.now() + 2000;
+      let alive = true;
+      while (alive && Date.now() < deadline) {
         try {
-          process.kill(grandchildPid, "SIGKILL");
-        } catch {
-          // already gone — the expected outcome
+          process.kill(grandchildPid, 0);
+          await new Promise((r) => setTimeout(r, 50));
+        } catch (e) {
+          expect((e as NodeJS.ErrnoException).code).toBe("ESRCH");
+          alive = false;
         }
       }
-    },
-  );
+      expect(alive).toBe(false);
+    } finally {
+      try {
+        process.kill(grandchildPid, "SIGKILL");
+      } catch {
+        // already gone — the expected outcome
+      }
+    }
+  });
 
   it("caps captured stdout at 4 MiB (keeps the tail) while observers still see every line", async () => {
     // 6144 lines × 1 KiB = 6 MiB.
