@@ -14,6 +14,7 @@ import {
 import { resolveCredential } from "../lib/credentialResolver.js";
 import { EndpointValidationError, validateEndpoint } from "../lib/endpointValidator.js";
 import { locateConfig } from "../lib/configLocations.js";
+import { assertRepoDir } from "../lib/toolInputs.js";
 import { detectLookupProblems } from "../lib/lookupProblems.js";
 import {
   collectSecrets,
@@ -289,20 +290,8 @@ export function registerDryRun(server: McpServer): void {
       // `cwd` surfaces from spawn as ENOENT — indistinguishable from a
       // missing binary — and a bad `reportOutputPath` would only fail after
       // a run of up to 15 minutes.
-      // ponytail: dry_run-local; a shared repoPath preflight is a later task.
-      if (!path.isAbsolute(repoPath)) {
-        return {
-          isError: true,
-          content: [{ type: "text", text: `\`repoPath\` must be an absolute path (got \`${repoPath}\`).` }],
-        };
-      }
-      const repoStat = await fs.stat(repoPath).catch(() => null);
-      if (!repoStat?.isDirectory()) {
-        return {
-          isError: true,
-          content: [{ type: "text", text: `\`repoPath\` \`${repoPath}\` does not exist or is not a directory.` }],
-        };
-      }
+      const repoError = await assertRepoDir(repoPath);
+      if (repoError) return { isError: true, content: [{ type: "text", text: repoError }] };
       if (reportOutputPath !== undefined) {
         if (!path.isAbsolute(reportOutputPath)) {
           return {

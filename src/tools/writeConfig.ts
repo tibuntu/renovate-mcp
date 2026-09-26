@@ -14,6 +14,7 @@ import {
 import type { RuntimeWarning } from "../lib/runtimeWarnings.js";
 import { configRecord, filenameString, pathString } from "../lib/inputLimits.js";
 import { serializeConfig, isPackageJsonTarget } from "../lib/configWriter.js";
+import { assertRepoDir } from "../lib/toolInputs.js";
 
 // Resolve symlinks in `p`, walking up to the nearest existing ancestor when
 // tail components don't exist yet (e.g. a new subdir we're about to mkdir).
@@ -83,6 +84,9 @@ export function registerWriteConfig(server: McpServer): void {
           ],
         };
       }
+
+      const repoError = await assertRepoDir(repoPath);
+      if (repoError) return { isError: true, content: [{ type: "text", text: repoError }] };
 
       const repoAbs = path.resolve(repoPath);
       const target = path.resolve(repoAbs, filename);

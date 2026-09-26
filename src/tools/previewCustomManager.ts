@@ -5,6 +5,7 @@ import {
   type CustomManager,
 } from "../lib/customManagerPreview.js";
 import { pathString } from "../lib/inputLimits.js";
+import { assertRepoDir } from "../lib/toolInputs.js";
 
 const managerSchema = z
   .object({
@@ -106,6 +107,8 @@ export function registerPreviewCustomManager(server: McpServer): void {
       matchTimeoutMs,
       maxFileBytes,
     }) => {
+      const repoError = await assertRepoDir(repoPath);
+      if (repoError) return { isError: true, content: [{ type: "text", text: repoError }] };
       if (manager.customType !== "regex" && manager.customType !== "jsonata") {
         return {
           isError: true,
