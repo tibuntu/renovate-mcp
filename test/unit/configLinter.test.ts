@@ -317,7 +317,7 @@ describe("lintConfig", () => {
         value: "fileMatch",
         severity: "warn",
         message:
-          '"fileMatch" is deprecated; Renovate migrates it automatically — run migrate_config to see the replacement.',
+          "Key 'fileMatch' is deprecated; Renovate migrates it automatically — run migrate_config to see the replacement.",
       });
       expect(dep[0]!.suggestion).toBeUndefined();
     });

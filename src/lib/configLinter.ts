@@ -526,7 +526,7 @@ function makeDeprecatedKeyFinding(
       severity: "warn",
       path,
       value: oldKey,
-      message: `"${oldKey}" is deprecated; Renovate migrates it automatically — run migrate_config to see the replacement.`,
+      message: `Key '${oldKey}' is deprecated; Renovate migrates it automatically — run migrate_config to see the replacement.`,
     };
   }
   return {
