@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.6.1](https://github.com/tibuntu/renovate-mcp/compare/v1.6.0...v1.6.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @modelcontextprotocol/sdk to v1.31.0 ([a7766e7](https://github.com/tibuntu/renovate-mcp/commit/a7766e7eaa3fc96f7c428b9d3fb5b5b6e0e57d04))
+* **deps:** update dependency @modelcontextprotocol/sdk to v1.32.0 ([0a2cbb7](https://github.com/tibuntu/renovate-mcp/commit/0a2cbb7abb0ffc7d016124cfb6205a2765f9b329))
+* **deps:** update dependency ignore to v7.0.11 ([a83aa1d](https://github.com/tibuntu/renovate-mcp/commit/a83aa1d776296b1ac20b382fb6450b029a2a79cf))
+
 ## [1.6.0](https://github.com/tibuntu/renovate-mcp/compare/v1.5.6...v1.6.0) (2026-09-26)
 
 A hardening release from a repository-wide audit. It fixes **three bugs that made tools quietly lie**: JSONata previews found no dependencies unless the server happened to run from its own checkout, `validate_config` accepted self-hosted-only options in a repository config, and the config readers choked on the comments `write_config` itself preserves. It brings `preview_custom_manager` up to **Renovate 44's `managerFilePatterns`**, hardens `dry_run` and the child-process runner, corrects the documentation to match the code, and removes duplicated code without changing any tool's surface beyond what is listed under *Upgrading*.
