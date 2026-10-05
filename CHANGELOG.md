@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.3](https://github.com/tibuntu/renovate-mcp/compare/v1.6.2...v1.6.3) (2026-10-05)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @modelcontextprotocol/sdk to v1.32.1 ([a25a06e](https://github.com/tibuntu/renovate-mcp/commit/a25a06e54675b4b1d1693f38d3b5964b535aea31))
+
 ## [1.6.2](https://github.com/tibuntu/renovate-mcp/compare/v1.6.1...v1.6.2) (2026-10-04)
 
 
