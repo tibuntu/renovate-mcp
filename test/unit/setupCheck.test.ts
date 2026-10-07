@@ -583,3 +583,16 @@ describe("describeSetup platform context block", () => {
     expect(out).toContain("UI URL");
   });
 });
+
+describe("engines.node floor matches Renovate's", () => {
+  it("our minimum Node satisfies Renovate's engines.node range", () => {
+    const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+    const read = (p: string) => JSON.parse(readFileSync(path.join(root, p), "utf8"));
+    const ours: string = read("package.json").engines.node;
+    const theirs: string = read("node_modules/renovate/package.json").engines.node;
+    expect(
+      versionSatisfiesRange(ours.replace(/^>=/, ""), theirs),
+      `Renovate's engines.node is now ${theirs}; raise our engines.node (${ours}), .nvmrc and the README's Node requirement to match.`,
+    ).toBe(true);
+  });
+});
