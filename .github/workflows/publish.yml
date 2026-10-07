@@ -26,10 +26,13 @@ on:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       id-token: write  # required for npm provenance via OIDC
+    env:
+      # renovate: datasource=npm depName=npm
+      NPM_VERSION: 12.2.0
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -42,7 +45,7 @@ jobs:
           cache: npm
 
       # npm >= 11.5.1 is required for Trusted Publishers (OIDC) auth.
-      - run: npm install -g npm@latest
+      - run: npm install -g npm@${{ env.NPM_VERSION }}
 
       - run: npm ci
       - run: npm run typecheck

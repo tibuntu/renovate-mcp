@@ -5,7 +5,8 @@
       "include-component-in-tag": false,
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
-        "src/lib/version.ts"
+        "src/lib/version.ts",
+        "install.sh"
       ],
       "changelog-sections": [
         {
