@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-MCP server that helps users design Renovate configurations interactively. TypeScript, Node ≥ 24 (aligns with Renovate's own engine requirement), built with `@modelcontextprotocol/sdk` 1.x, stdio transport.
+MCP server that helps users design Renovate configurations interactively. TypeScript, Node ≥ 24.11 (aligns with Renovate's own engine requirement), built with `@modelcontextprotocol/sdk` 1.x, stdio transport.
 
 Surface is intentionally small: seventeen tools (`check_setup`, `read_config`, `suggest_presets`, `resolve_config`, `explain_config`, `resolve_config_diff`, `test_package_rules`, `preview_custom_manager`, `validate_config`, `lint_config`, `dry_run`, `dry_run_diff`, `annotate_dry_run`, `explain_dependency`, `migrate_config`, `write_config`, `get_version`) plus the `renovate://presets` resource family (namespace index, per-namespace listings, per-preset JSON), the `renovate://options` resource family (options index, per-option JSON), `renovate://managers` (manager name list), and three workflow prompts. Don't grow this without a reason — the roadmap for expansion is tracked in `docs/roadmap.md`, not in ad-hoc additions.
 

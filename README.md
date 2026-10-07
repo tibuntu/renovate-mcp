@@ -78,7 +78,7 @@ Seventeen tools, six resources, and three workflow prompts. Each tool name below
 ## Requirements
 
 - **Linux or macOS.** Windows is not supported — `package.json` declares `"os": ["darwin", "linux"]`, so `npm i` surfaces an `EBADPLATFORM` warning on Windows and the server exits with a clear stderr message at startup. Use WSL2 or a Linux/macOS host instead.
-- **Node.js ≥ 24** (aligns with Renovate's own engine requirement).
+- **Node.js ≥ 24.11** (aligns with Renovate's own engine requirement).
 
 Renovate ships bundled — the `renovate` package is a runtime dependency, so `validate_config`, `dry_run`, and `write_config` work out of the box with no separate install. The offline tools (`read_config`, `suggest_presets`, `resolve_config`, `explain_config`, `resolve_config_diff`, `test_package_rules`, `preview_custom_manager`, `lint_config`, `dry_run_diff`, `annotate_dry_run`, `explain_dependency`, `migrate_config`) never spawn Renovate at all — nor do `check_setup` (by default it reads version metadata from the bundled install instead of spawning) or `get_version` (it only reports the renovate-mcp server's own version).
 

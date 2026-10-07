@@ -52,7 +52,7 @@
     "provenance": true
   },
   "engines": {
-    "node": ">=24"
+    "node": ">=24.11.0"
   },
   "os": [
     "darwin",
