@@ -56,7 +56,7 @@ jobs:
   # on that PR. Direct pushes to main still run. This only affects push-to-main;
   # PR behavior (and the ci-required-bypass companion) is untouched.
   gate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       pull-requests: read
