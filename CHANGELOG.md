@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.4](https://github.com/tibuntu/renovate-mcp/compare/v1.6.3...v1.6.4) (2026-10-10)
+
+
+### Bug Fixes
+
+* **deps:** update dependency fast-uri to ^4.2.2 ([7bc9636](https://github.com/tibuntu/renovate-mcp/commit/7bc9636ac920419b01e0eebf09096db683545637))
+* **deps:** update dependency smol-toml to v1.9.1 ([89f10e1](https://github.com/tibuntu/renovate-mcp/commit/89f10e159d05471a2b946e3d5c1f21573eea31fc))
+
 ## [1.6.3](https://github.com/tibuntu/renovate-mcp/compare/v1.6.2...v1.6.3) (2026-10-07)
 
 
