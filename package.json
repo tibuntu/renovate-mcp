@@ -71,7 +71,7 @@
     "zod": "^4.0.0"
   },
   "overrides": {
-    "fast-uri": "^4.2.1"
+    "fast-uri": "^4.2.2"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
