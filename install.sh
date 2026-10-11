@@ -7,7 +7,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/tibuntu/renovate-mcp/main/install.sh | bash
 #   curl -fsSL https://raw.githubusercontent.com/tibuntu/renovate-mcp/main/install.sh | bash -s -- --global
 #   curl -fsSL https://raw.githubusercontent.com/tibuntu/renovate-mcp/main/install.sh | bash -s -- --no-mcp-add
-#   curl -fsSL https://raw.githubusercontent.com/tibuntu/renovate-mcp/main/install.sh | bash -s -- --version=1.6.3 # x-release-please-version
+#   curl -fsSL https://raw.githubusercontent.com/tibuntu/renovate-mcp/main/install.sh | bash -s -- --version=1.6.4 # x-release-please-version
 #
 # Flags:
 #   --global              Install globally via `npm install -g`.
