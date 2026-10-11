@@ -65,7 +65,7 @@
     "jsonata": "2.2.1",
     "jsonc-parser": "^3.3.1",
     "minimatch": "^10.2.6",
-    "renovate": "^44.132.5",
+    "renovate": "^44.149.3",
     "smol-toml": "^1.6.1",
     "yaml": "^2.9.0",
     "zod": "^4.0.0"
