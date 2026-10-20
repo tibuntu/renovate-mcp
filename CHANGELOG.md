@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.7](https://github.com/tibuntu/renovate-mcp/compare/v1.6.6...v1.6.7) (2026-10-20)
+
+
+### Bug Fixes
+
+* **deps:** update dependency fast-uri to ^4.2.3 ([d008e72](https://github.com/tibuntu/renovate-mcp/commit/d008e72823f77a9df526660b9a1eb6126bb77e9c))
+* **deps:** update dependency ignore to v7.0.13 ([171f0f4](https://github.com/tibuntu/renovate-mcp/commit/171f0f4693a1ecfcf05bd5d42aae6427e2233758))
+
 ## [1.6.6](https://github.com/tibuntu/renovate-mcp/compare/v1.6.5...v1.6.6) (2026-10-18)
 
 
