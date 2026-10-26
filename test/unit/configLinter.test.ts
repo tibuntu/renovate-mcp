@@ -1233,4 +1233,83 @@ describe("lintConfig", () => {
       expect(findings).toEqual([]);
     });
   });
+
+  describe("matchDatasources-unknown-name", () => {
+    const RULE = "matchDatasources-unknown-name";
+
+    it("does not flag known datasource ids", () => {
+      const findings = lintConfig({
+        packageRules: [
+          { matchDatasources: ["npm", "docker", "github-releases"], enabled: false },
+        ],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toEqual([]);
+    });
+
+    it("accepts any 'custom.<name>' entry", () => {
+      const findings = lintConfig({
+        packageRules: [{ matchDatasources: ["custom.foo"], enabled: false }],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toEqual([]);
+    });
+
+    it("does not flag regex, glob or negated-known entries", () => {
+      const findings = lintConfig({
+        packageRules: [
+          {
+            matchDatasources: ["/^github-/", "/DOCKER/i", "git*", "!npm", "!/^go/"],
+            enabled: false,
+          },
+        ],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toEqual([]);
+    });
+
+    it("flags an unknown id with a did-you-mean suggestion", () => {
+      const findings = lintConfig({
+        packageRules: [{ matchDatasources: ["dokcer"], enabled: false }],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toHaveLength(1);
+      expect(findings[0]).toMatchObject({
+        ruleId: RULE,
+        severity: "error",
+        path: "packageRules[0].matchDatasources[0]",
+        value: "dokcer",
+        suggestion: "docker",
+      });
+      expect(findings[0]!.message).toContain("'docker'");
+    });
+
+    it("flags an unknown negated id", () => {
+      const findings = lintConfig({
+        packageRules: [{ matchDatasources: ["!nmp"], enabled: false }],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toHaveLength(1);
+      expect(findings[0]!.value).toBe("!nmp");
+    });
+
+    it("checks a literal customManagers[].datasourceTemplate", () => {
+      const findings = lintConfig({
+        customManagers: [
+          { customType: "regex", datasourceTemplate: "github-release" },
+        ],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toHaveLength(1);
+      expect(findings[0]).toMatchObject({
+        path: "customManagers[0].datasourceTemplate",
+        value: "github-release",
+      });
+    });
+
+    it("skips a templated datasourceTemplate and accepts a known literal one", () => {
+      const findings = lintConfig({
+        customManagers: [
+          { customType: "regex", datasourceTemplate: "{{datasource}}" },
+          { customType: "regex", datasourceTemplate: "github-releases" },
+          { customType: "regex", datasourceTemplate: "custom.mine" },
+        ],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toEqual([]);
+    });
+  });
 });
