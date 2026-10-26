@@ -756,6 +756,8 @@ function checkSchedule(value: string, path: string, findings: LintFinding[]): vo
 // Renovate evaluates matchManagers and matchDatasources with
 // matchRegexOrGlobList: `/…/` (optionally `/…/i`) is a regex and anything with
 // glob metachars is a glob — neither is a literal id to check against a list.
+// Deliberately permissive: a typo that happens to contain a glob char (e.g.
+// `docker[`) is skipped rather than risk an error-severity finding on a valid glob.
 function isRegexOrGlobEntry(name: string): boolean {
   return /^\/.+\/i?$/.test(name) || /[*?[\]{}]/.test(name);
 }
@@ -784,17 +786,27 @@ function checkDatasourceTemplates(config: unknown, findings: LintFinding[]): voi
     if (!isRecord(entry)) return;
     const tpl = entry.datasourceTemplate;
     // A templated value is resolved per match; only a literal id can be checked.
+    // A literal template is an id, never a pattern, so no `!` / regex / glob leniency.
     if (typeof tpl !== "string" || tpl.includes("{{")) return;
-    checkDatasource(tpl, `customManagers[${i}].datasourceTemplate`, findings);
+    checkDatasource(tpl, `customManagers[${i}].datasourceTemplate`, findings, false);
   });
 }
 
-function checkDatasource(raw: string, path: string, findings: LintFinding[]): void {
+function checkDatasource(
+  raw: string,
+  path: string,
+  findings: LintFinding[],
+  isPattern = true,
+): void {
   // Renovate matches `matchDatasources` via matchRegexOrGlobList: `!` negates,
   // `/…/` is a regex and anything with glob metachars is a glob — none of those
   // are literal ids. `custom.<name>` routes to the user's customDatasources.
-  const name = raw.startsWith("!") ? raw.slice(1) : raw;
-  if (VALID_DATASOURCES.has(name) || name.startsWith("custom.") || isRegexOrGlobEntry(name)) {
+  const name = isPattern && raw.startsWith("!") ? raw.slice(1) : raw;
+  if (
+    VALID_DATASOURCES.has(name) ||
+    name.startsWith("custom.") ||
+    (isPattern && isRegexOrGlobEntry(name))
+  ) {
     return;
   }
 

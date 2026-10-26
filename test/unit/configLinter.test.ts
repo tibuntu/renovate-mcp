@@ -1318,6 +1318,17 @@ describe("lintConfig", () => {
       });
     });
 
+    it("flags a glob-looking datasourceTemplate (a literal id is never a pattern)", () => {
+      const findings = lintConfig({
+        customManagers: [{ customType: "regex", datasourceTemplate: "github-rel*" }],
+      }).filter((f) => f.ruleId === "matchDatasources-unknown-name");
+      expect(findings).toHaveLength(1);
+      expect(findings[0]).toMatchObject({
+        path: "customManagers[0].datasourceTemplate",
+        value: "github-rel*",
+      });
+    });
+
     it("skips a templated datasourceTemplate and accepts a known literal one", () => {
       const findings = lintConfig({
         customManagers: [
