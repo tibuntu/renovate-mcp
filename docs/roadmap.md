@@ -1,6 +1,6 @@
 # Roadmap
 
-`renovate-mcp`'s original v1 roadmap (the early tracked GitHub issues: `resolve_config`, tests/CI, setup diagnostics, a custom-manager authoring helper, the full preset catalogue, npm publishing) is complete — every one of those tools ships today. The only tracked GitHub issue still open is Renovate's own auto-generated Dependency Dashboard notice on this repo, which isn't a `renovate-mcp` feature request.
+`renovate-mcp`'s original v1 roadmap (the early tracked GitHub issues: `resolve_config`, tests/CI, setup diagnostics, a custom-manager authoring helper, the full preset catalogue, npm publishing) is complete — every one of those tools ships today. Every item below that has been triaged links to its [GitHub issue](https://github.com/tibuntu/renovate-mcp/issues); the one other open issue is Renovate's own auto-generated Dependency Dashboard notice on this repo, which isn't a `renovate-mcp` feature request.
 
 This page is the durable public summary of what's next. The maintainer keeps a more detailed working roadmap locally that isn't part of this repository; treat silence on an idea as "not yet triaged", not "rejected" — pick an item below, or open a new [GitHub issue](https://github.com/tibuntu/renovate-mcp/issues), if you're looking for something to work on. See [`CONTRIBUTING.md`](../CONTRIBUTING.md) before starting.
 
