@@ -23,6 +23,7 @@ const SCRIPTS: ScriptCase[] = [
   { scriptName: "generate-presets.mjs", outputName: "presets.generated.ts" },
   { scriptName: "generate-managers.mjs", outputName: "managers.generated.ts" },
   { scriptName: "generate-migrations.mjs", outputName: "migrations.generated.ts" },
+  { scriptName: "generate-datasources.mjs", outputName: "datasources.generated.ts" },
 ];
 
 let tempRoot: string;

@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { startServer, type McpSession } from "../helpers/mcpSession.js";
 import { OPTION_NAMES } from "../../src/data/options.generated.js";
 import { ALL_MANAGERS, CUSTOM_MANAGERS } from "../../src/data/managers.generated.js";
+import { DATASOURCES } from "../../src/data/datasources.generated.js";
 
 let session: McpSession;
 
@@ -88,5 +89,26 @@ describe("renovate://managers", () => {
     expect(content?.text).toContain("`npm`");
     expect(content?.text).toContain("`regex`");
     expect(content?.text).toContain(`\`custom.${CUSTOM_MANAGERS[0]}\``);
+  });
+});
+
+describe("renovate://datasources", () => {
+  it("is listed and returns a markdown list containing npm and docker", async () => {
+    session = await startServer();
+    const list = await session.request<{
+      resources: Array<{ uri: string }>;
+    }>("resources/list");
+    expect((list.result?.resources ?? []).map((r) => r.uri)).toContain(
+      "renovate://datasources",
+    );
+    const res = await session.request<{
+      contents: Array<{ uri: string; mimeType: string; text: string }>;
+    }>("resources/read", { uri: "renovate://datasources" });
+    const content = res.result?.contents[0];
+    expect(content?.mimeType).toBe("text/markdown");
+    expect(content?.text).toContain(`**${DATASOURCES.length} datasources**`);
+    expect(content?.text).toContain("`npm`");
+    expect(content?.text).toContain("`docker`");
+    expect(content?.text).toContain("custom.<name>");
   });
 });

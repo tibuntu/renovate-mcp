@@ -4,14 +4,15 @@ Build, test, and CI plumbing. The [README](../README.md) lists the npm scripts; 
 
 ## Snapshot files
 
-The four `src/data/*.generated.ts` files are committed snapshots of Renovate's built-in presets, manager registry, config option registry, and renamed-property map:
+The five `src/data/*.generated.ts` files are committed snapshots of Renovate's built-in presets, manager registry, config option registry, renamed-property map, and datasource registry:
 
 - `src/data/presets.generated.ts` — preset catalogue
 - `src/data/managers.generated.ts` — valid manager names for `lint_config`'s `matchManagers-unknown-name` rule, and for the `renovate://managers` resource
 - `src/data/migrations.generated.ts` — deprecated-key rename map for `lint_config`'s `deprecated-key` rule
 - `src/data/options.generated.ts` — config option definitions for the `renovate://options` / `renovate://option/{name}` resources
+- `src/data/datasources.generated.ts` — valid datasource ids for `lint_config`'s `matchDatasources-unknown-name` rule, and for the `renovate://datasources` resource
 
-The main server process never imports the `renovate` package at runtime — only the build-time `scripts/generate-*.mjs` scripts do. The three `*WorkerImpl.ts` workers (migration, config merge, packageRules) are the narrow, documented exception: they import `renovate` library exports inside an isolated `worker_threads` worker, never from the main process — see CLAUDE.md's worker-isolation carve-outs. All four generated files are wired into a `postUpgradeTasks` block in this repo's `renovate.json` so a Renovate dependency bump auto-regenerates them on the bot's branch: `npm ci`, `npm run sync:jsonata-pin` (syncs the `jsonata` pin to Renovate's own), `npm install`, then the four `npm run generate:*` commands — assuming the operator's `RENOVATE_ALLOWED_POST_UPGRADE_COMMANDS` permits all of them; regenerate manually otherwise.
+The main server process never imports the `renovate` package at runtime — only the build-time `scripts/generate-*.mjs` scripts do. The three `*WorkerImpl.ts` workers (migration, config merge, packageRules) are the narrow, documented exception: they import `renovate` library exports inside an isolated `worker_threads` worker, never from the main process — see CLAUDE.md's worker-isolation carve-outs. All five generated files are wired into a `postUpgradeTasks` block in this repo's `renovate.json` so a Renovate dependency bump auto-regenerates them on the bot's branch: `npm ci`, `npm run sync:jsonata-pin` (syncs the `jsonata` pin to Renovate's own), `npm install`, then the five `npm run generate:*` commands — assuming the operator's `RENOVATE_ALLOWED_POST_UPGRADE_COMMANDS` permits all of them; regenerate manually otherwise.
 
 `npm run check:snapshot-versions` (also run in CI) compares the embedded version against `node_modules/renovate/package.json#version` and fails fast naming the stale file(s) and the `npm run generate:*` command to fix them. `npm run sync:jsonata-pin` keeps the `jsonata` dependency pin in `package.json` matching Renovate's own pin (see CLAUDE.md's JSONata worker-isolation note).
 

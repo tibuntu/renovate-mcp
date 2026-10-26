@@ -1,5 +1,5 @@
 /**
- * Shared plumbing for the four snapshot generators (`generate-*.mjs`): the
+ * Shared plumbing for the five snapshot generators (`generate-*.mjs`): the
  * renovate version stamp, the `src/data/` output path, the AUTO-GENERATED
  * banner, the symlink guard, and the write-and-log tail. Each generator keeps
  * only the part that differs: which renovate module it reads and how it shapes

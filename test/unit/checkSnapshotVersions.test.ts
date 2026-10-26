@@ -6,19 +6,21 @@ import {
 } from "../../scripts/check-snapshot-versions.mjs";
 
 describe("SNAPSHOTS catalogue", () => {
-  it("describes exactly the four generated snapshot files with the right regenerate commands", () => {
-    expect(SNAPSHOTS).toHaveLength(4);
+  it("describes exactly the five generated snapshot files with the right regenerate commands", () => {
+    expect(SNAPSHOTS).toHaveLength(5);
     expect(SNAPSHOTS.map((s) => s.file)).toEqual([
       "src/data/presets.generated.ts",
       "src/data/managers.generated.ts",
       "src/data/migrations.generated.ts",
       "src/data/options.generated.ts",
+      "src/data/datasources.generated.ts",
     ]);
     expect(SNAPSHOTS.map((s) => s.regenerateCmd)).toEqual([
       "npm run generate:presets",
       "npm run generate:managers",
       "npm run generate:migrations",
       "npm run generate:options",
+      "npm run generate:datasources",
     ]);
   });
 });
