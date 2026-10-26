@@ -37,6 +37,7 @@ Detailed reference for every tool and resource exposed by `renovate-mcp`. The [R
 - [`design-renovate-config`](#design-renovate-config)
 - [`debug-package-rule`](#debug-package-rule)
 - [`author-custom-manager`](#author-custom-manager)
+- [`onboard-repo`](#onboard-repo)
 
 ## Common input rules
 
@@ -441,3 +442,9 @@ Drives `check_setup` → `read_config` → `test_package_rules` for the (hypothe
 **Arguments:** `repoPath` (required) — absolute path to the repository root. `description` (required) — what to extract, and from which files.
 
 Drives drafting a `customManagers` entry (regex or jsonata) → `preview_custom_manager` iteratively until the hits look right → `validate_config` + `lint_config` → `dry_run` → `write_config` on confirmation.
+
+### `onboard-repo`
+
+**Arguments:** `repoPath` (required) — absolute path to the repository root. `intent` (optional) — free-text description of what Renovate should do.
+
+For a repo with no Renovate config yet (if `read_config` finds one, it redirects to `design-renovate-config`). Drives `check_setup` → `read_config` (expecting no config) → `dry_run` with `dryRunMode: "extract"` to detect managers and package files → `suggest_presets` with a query built from the detected ecosystems plus `intent` → `lint_config` + `validate_config` on the draft → `write_config` on confirmation → a full `dry_run` with the written config. `dry_run` has no inline config input, so the full dry run comes after the write.

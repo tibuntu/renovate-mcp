@@ -39,7 +39,7 @@ Restart your client and try the prompt: *"List the namespaces available under `r
 
 ## Tools & resources
 
-Seventeen tools, seven resources, and three workflow prompts. Each tool name below links to its full reference in [`docs/tools.md`](docs/tools.md).
+Seventeen tools, seven resources, and four workflow prompts. Each tool name below links to its full reference in [`docs/tools.md`](docs/tools.md).
 
 | Tool | Purpose |
 | --- | --- |
@@ -68,13 +68,14 @@ Seventeen tools, seven resources, and three workflow prompts. Each tool name bel
 | [`renovate://managers`](docs/tools.md#renovatemanagers) (resource) | Markdown list of all manager names, including custom managers. |
 | [`renovate://datasources`](docs/tools.md#renovatedatasources) (resource) | Markdown list of all built-in datasource ids. |
 
-**Prompts.** Three workflow prompts package the tool sequences above into ready-to-run starting points. Claude Code surfaces MCP prompts as slash commands (e.g. `/mcp__renovate__design-renovate-config`); other MCP clients expose them through their own prompt picker.
+**Prompts.** Four workflow prompts package the tool sequences above into ready-to-run starting points. Claude Code surfaces MCP prompts as slash commands (e.g. `/mcp__renovate__design-renovate-config`); other MCP clients expose them through their own prompt picker.
 
 | Prompt | Drives |
 | --- | --- |
 | [`design-renovate-config`](docs/tools.md#design-renovate-config) | `check_setup` → `read_config` → `suggest_presets` → `resolve_config`/`explain_config` → `validate_config`/`lint_config` → `dry_run` → `write_config` on confirmation. |
 | [`debug-package-rule`](docs/tools.md#debug-package-rule) | `check_setup` → `read_config` → `test_package_rules` → `dry_run` (with `reportOutputPath`) → `annotate_dry_run` → `explain_dependency` → a verdict naming rule indices and matchers. |
 | [`author-custom-manager`](docs/tools.md#author-custom-manager) | Draft a `customManagers` entry → `preview_custom_manager` iteratively → `validate_config`/`lint_config` → `dry_run` → `write_config` on confirmation. |
+| [`onboard-repo`](docs/tools.md#onboard-repo) | For repos without a config: `check_setup` → `read_config` (expect none) → `dry_run` (extract mode) → `suggest_presets` → `lint_config`/`validate_config` → `write_config` on confirmation → full `dry_run`. |
 
 ## Requirements
 

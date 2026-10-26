@@ -26,7 +26,7 @@ describe("MCP prompts", () => {
     expect(session.capabilities).toHaveProperty("prompts");
   });
 
-  it("lists exactly the three workflow prompts with the right required flags", async () => {
+  it("lists exactly the four workflow prompts with the right required flags", async () => {
     session = await startServer();
     const res = await session.request<{ prompts: PromptSummary[] }>("prompts/list");
     const prompts = res.result?.prompts ?? [];
@@ -35,6 +35,7 @@ describe("MCP prompts", () => {
       "author-custom-manager",
       "debug-package-rule",
       "design-renovate-config",
+      "onboard-repo",
     ]);
 
     const byName = (name: string) => prompts.find((p) => p.name === name)!;
@@ -52,6 +53,37 @@ describe("MCP prompts", () => {
     const author = byName("author-custom-manager");
     expect(requiredFlag(author, "repoPath")).toBe(true);
     expect(requiredFlag(author, "description")).toBe(true);
+
+    const onboard = byName("onboard-repo");
+    expect(requiredFlag(onboard, "repoPath")).toBe(true);
+    expect(requiredFlag(onboard, "intent")).toBeFalsy();
+  });
+
+  it("returns a user message driving the onboarding sequence for onboard-repo", async () => {
+    session = await startServer();
+    const res = await session.request<{
+      messages: Array<{ role: string; content: { type: string; text: string } }>;
+    }>("prompts/get", {
+      name: "onboard-repo",
+      arguments: { repoPath: "/tmp/new-repo" },
+    });
+    const messages = res.result?.messages ?? [];
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.role).toBe("user");
+    const text = messages[0]?.content.text ?? "";
+    for (const needle of [
+      "/tmp/new-repo",
+      "check_setup",
+      "read_config",
+      "dry_run",
+      "extract",
+      "suggest_presets",
+      "lint_config",
+      "validate_config",
+      "write_config",
+    ]) {
+      expect(text).toContain(needle);
+    }
   });
 
   it("returns a user message naming check_setup and the given repoPath for design-renovate-config", async () => {
