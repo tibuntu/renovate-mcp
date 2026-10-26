@@ -113,4 +113,38 @@ export function registerWorkflowPrompts(server: McpServer): void {
         ].join("\n"),
       ),
   );
+
+  server.registerPrompt(
+    "onboard-repo",
+    {
+      title: "Onboard a repo without a Renovate config",
+      description:
+        "Create a first Renovate config for a repo that has none: check_setup, read_config (expect none), dry_run in extract mode to detect ecosystems, suggest_presets, validate + lint, write_config on confirmation, then a full dry_run.",
+      argsSchema: {
+        repoPath: z.string().max(4096).describe("Absolute path to the repository root."),
+        intent: z
+          .string()
+          .max(2048)
+          .optional()
+          .describe('Free-text intent, e.g. "automerge patches, pin digests".'),
+      },
+    },
+    ({ repoPath, intent }) =>
+      userMessage(
+        [
+          `Onboard the repo at ${repoPath} to Renovate: it has no Renovate config yet.`,
+          "",
+          `1. Call check_setup with repoPath "${repoPath}" first to surface any token/CLI setup problems.`,
+          `2. Call read_config with repoPath "${repoPath}". A "No Renovate configuration found" error is the expected outcome. If a config is found, stop and tell the user to use the design-renovate-config prompt instead; this prompt is for repos without one.`,
+          `3. Call dry_run with repoPath "${repoPath}" and dryRunMode "extract" to list the managers and package files Renovate detects (no version lookups, so it is fast). Summarize the detected ecosystems for the user.`,
+          intent
+            ? `4. Call suggest_presets with a query combining the detected ecosystems and the user's intent "${intent}" (e.g. "npm and github-actions monorepo, automerge patch updates, pin digests"), and use the returned draft.config as the starting point.`
+            : '4. Ask the user what they want Renovate to do, then call suggest_presets with a query combining the detected ecosystems and that intent (e.g. "npm and github-actions monorepo, automerge patch updates, pin digests"), and use the returned draft.config as the starting point.',
+          "5. Call lint_config and validate_config against the draft and fix any findings.",
+          "6. Summarize the draft config and the detected ecosystems, and ask the user to confirm. dry_run has no inline config input, so the draft must be written before a full dry run can use it.",
+          "7. Only after the user explicitly confirms, call write_config with repoPath to save. Never call write_config before that confirmation.",
+          `8. Call dry_run with repoPath "${repoPath}" (default full mode) to preview the actual updates Renovate would propose with the new config, and report the result.`,
+        ].join("\n"),
+      ),
+  );
 }
