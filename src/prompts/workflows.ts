@@ -38,8 +38,8 @@ export function registerWorkflowPrompts(server: McpServer): void {
           `1. Call check_setup with repoPath "${repoPath}" first to surface any token/CLI setup problems.`,
           `2. Call read_config with repoPath "${repoPath}" to see the current config, if any.`,
           intent
-            ? `3. Call suggest_presets with repoPath and intent "${intent}" to get ranked presets and, if coverage is weak, an unvalidated draft config skeleton.`
-            : '3. Ask the user what they want Renovate to do, then call suggest_presets with repoPath and that intent.',
+            ? `3. Call suggest_presets with query "${intent}" to get ranked presets and, if coverage is weak, an unvalidated draft config skeleton.`
+            : '3. Ask the user what they want Renovate to do, then call suggest_presets with that intent as the query.',
           "4. Call resolve_config and explain_config on the resulting draft/config so you can show what it actually resolves to and which preset set each field.",
           "5. Call validate_config and lint_config against the draft to catch schema errors and Renovate-specific footguns.",
           "6. Call dry_run against the repo to preview the actual updates Renovate would propose.",
