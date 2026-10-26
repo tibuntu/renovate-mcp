@@ -1,4 +1,5 @@
 import { ALL_MANAGERS, CUSTOM_MANAGERS } from "../data/managers.generated.js";
+import { DATASOURCES } from "../data/datasources.generated.js";
 import {
   DEPRECATED_KEYS,
   type DeprecatedKeyEntry,
@@ -9,6 +10,7 @@ export type LintRuleId =
   | "dead-regex-missing-slash"
   | "unwrapped-regex"
   | "matchManagers-unknown-name"
+  | "matchDatasources-unknown-name"
   | "deprecated-key"
   | "automerge-without-automerge-type"
   | "empty-extends"
@@ -41,6 +43,8 @@ const VALID_MANAGER_NAMES: ReadonlySet<string> = new Set([
   ...ALL_MANAGERS,
   ...CUSTOM_MANAGERS.map((m) => `custom.${m}`),
 ]);
+
+const VALID_DATASOURCES: ReadonlySet<string> = new Set(DATASOURCES);
 
 const DEPRECATED_KEY_LOOKUP: ReadonlyMap<string, DeprecatedKeyEntry> = new Map(
   DEPRECATED_KEYS.map((e) => [e.oldKey, e]),
@@ -278,6 +282,7 @@ export function lintConfig(config: unknown): LintFinding[] {
   checkAutomergeIncludesMajor(config, findings);
   checkDuplicatePackageRuleMatchers(config, findings);
   checkHostRuleInlineSecret(config, findings);
+  checkDatasourceTemplates(config, findings);
   return findings;
 }
 
@@ -596,6 +601,16 @@ function walk(node: unknown, pathStr: string, findings: LintFinding[]): void {
             }
           });
         }
+      } else if (key === "matchDatasources") {
+        if (Array.isArray(value)) {
+          value.forEach((entry, i) => {
+            if (typeof entry === "string") {
+              checkDatasource(entry, `${childPath}[${i}]`, findings);
+            }
+          });
+        } else if (typeof value === "string") {
+          checkDatasource(value, childPath, findings);
+        }
       } else if (MANAGER_FIELDS.has(key)) {
         if (Array.isArray(value)) {
           value.forEach((entry, i) => {
@@ -670,7 +685,7 @@ function checkSchedule(value: string, path: string, findings: LintFinding[]): vo
 function checkManager(raw: string, path: string, findings: LintFinding[]): void {
   if (VALID_MANAGER_NAMES.has(raw)) return;
 
-  const suggestion = nearestManager(raw);
+  const suggestion = nearestName(raw, VALID_MANAGER_NAMES);
   const hint = suggestion ? ` Did you mean '${suggestion}'?` : "";
   const finding: LintFinding = {
     ruleId: "matchManagers-unknown-name",
@@ -683,10 +698,48 @@ function checkManager(raw: string, path: string, findings: LintFinding[]): void 
   findings.push(finding);
 }
 
-function nearestManager(name: string): string | null {
+function checkDatasourceTemplates(config: unknown, findings: LintFinding[]): void {
+  if (!isRecord(config) || !Array.isArray(config.customManagers)) return;
+  config.customManagers.forEach((entry, i) => {
+    if (!isRecord(entry)) return;
+    const tpl = entry.datasourceTemplate;
+    // A templated value is resolved per match; only a literal id can be checked.
+    if (typeof tpl !== "string" || tpl.includes("{{")) return;
+    checkDatasource(tpl, `customManagers[${i}].datasourceTemplate`, findings);
+  });
+}
+
+function checkDatasource(raw: string, path: string, findings: LintFinding[]): void {
+  // Renovate matches `matchDatasources` via matchRegexOrGlobList: `!` negates,
+  // `/…/` is a regex and anything with glob metachars is a glob — none of those
+  // are literal ids. `custom.<name>` routes to the user's customDatasources.
+  const name = raw.startsWith("!") ? raw.slice(1) : raw;
+  if (
+    VALID_DATASOURCES.has(name) ||
+    name.startsWith("custom.") ||
+    /^\/.+\/i?$/.test(name) ||
+    /[*?[\]{}]/.test(name)
+  ) {
+    return;
+  }
+
+  const suggestion = nearestName(name, VALID_DATASOURCES);
+  const hint = suggestion ? ` Did you mean '${suggestion}'?` : "";
+  const finding: LintFinding = {
+    ruleId: "matchDatasources-unknown-name",
+    severity: "error",
+    path,
+    value: raw,
+    message: `'${name}' is not a known Renovate datasource. Renovate does not validate datasource ids, so this silently matches (or looks up) nothing.${hint}`,
+  };
+  if (suggestion) finding.suggestion = suggestion;
+  findings.push(finding);
+}
+
+function nearestName(name: string, candidates: Iterable<string>): string | null {
   let best: string | null = null;
   let bestDistance = Infinity;
-  for (const candidate of VALID_MANAGER_NAMES) {
+  for (const candidate of candidates) {
     const d = damerauLevenshtein(name, candidate);
     if (d < bestDistance) {
       bestDistance = d;

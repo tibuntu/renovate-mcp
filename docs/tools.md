@@ -204,6 +204,7 @@ Schema validation catches structural bugs; the linter catches Renovate-specific 
 - `dead-regex-missing-slash`
 - `unwrapped-regex`
 - `matchManagers-unknown-name`
+- `matchDatasources-unknown-name`
 - `deprecated-key`
 - `automerge-without-automerge-type`
 - `empty-extends`
@@ -219,6 +220,7 @@ The ruleset is intentionally small, scoped to the regex-aware and manager-aware 
 - **`dead-regex-missing-slash`** (error) — a value starts with `/` but doesn't end with it (or vice versa), so Renovate treats it as an exact-match string rather than the intended regex. Add the missing slash, or remove the stray one if a literal match was intended.
 - **`unwrapped-regex`** (warn) — a value contains regex metacharacters but isn't wrapped in `/…/`, so Renovate treats it as an exact-match string. Wrap it (`/…/`, or `!/…/` to negate) if a regex match was intended.
 - **`matchManagers-unknown-name`** (error) — a `matchManagers` / `excludeManagers` entry isn't a name Renovate recognizes. The valid-manager list is snapshotted from the installed `renovate` runtime dependency; unknown names get a Damerau-Levenshtein "did you mean?" suggestion when something close enough exists.
+- **`matchDatasources-unknown-name`** (error) — a `matchDatasources` entry, or a literal (non-`{{ }}`) `customManagers[].datasourceTemplate`, isn't a datasource id Renovate recognizes. Renovate's own validator doesn't check these, so a typo silently matches nothing. `custom.<name>` entries, `/…/` regexes and globs are accepted (`!` negation is stripped before checking); the id list is snapshotted like the manager list (see [`renovate://datasources`](#renovatedatasources)) and gets the same "did you mean?" suggestion.
 - **`deprecated-key`** (warn) — the top level, or a `packageRules` / `hostRules` / `customManagers` entry, uses a key Renovate has renamed (e.g. `masterIssue` → `dependencyDashboard`) — the rename is embedded in the finding message and `suggestion` — or a key handled by Renovate's deprecated custom migrations (value coercions such as `stabilityDays`, structural rewrites such as `fileMatch` → `managerFilePatterns`), where the finding says Renovate migrates the key automatically. Both point at [`migrate_config`](#migrate_config) to see and apply the replacement.
 - **`automerge-without-automerge-type`** (warn) — `automerge: true` is set (at the top level or in a `packageRules` entry) without `automergeType`. Renovate defaults to `"pr"` here; set it explicitly to avoid surprises if the default ever changes.
 - **`empty-extends`** (warn) — `extends: []` is present but empty, almost always a paste error since it inherits no presets.
