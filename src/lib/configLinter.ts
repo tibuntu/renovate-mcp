@@ -19,7 +19,9 @@ export type LintRuleId =
   | "invalid-schedule"
   | "automerge-includes-major"
   | "duplicate-package-rule-matchers"
-  | "host-rule-inline-secret";
+  | "host-rule-inline-secret"
+  | "schedule-without-timezone"
+  | "package-rule-labels-overrides";
 
 export interface LintFinding {
   ruleId: LintRuleId;
@@ -283,6 +285,8 @@ export function lintConfig(config: unknown): LintFinding[] {
   checkDuplicatePackageRuleMatchers(config, findings);
   checkHostRuleInlineSecret(config, findings);
   checkDatasourceTemplates(config, findings);
+  checkScheduleWithoutTimezone(config, findings);
+  checkPackageRuleLabelsOverrides(config, findings);
   return findings;
 }
 
@@ -482,6 +486,73 @@ function checkDuplicatePackageRuleMatchers(
       });
     }
   }
+}
+
+// First `schedule` entry (anywhere in the tree, same reach as `invalid-schedule`)
+// that actually restricts timing, as [path, value].
+function findRestrictingSchedule(node: unknown, pathStr: string): [string, string] | null {
+  if (Array.isArray(node)) {
+    for (let i = 0; i < node.length; i++) {
+      const hit = findRestrictingSchedule(node[i], `${pathStr}[${i}]`);
+      if (hit) return hit;
+    }
+    return null;
+  }
+  if (!isRecord(node)) return null;
+  for (const [key, value] of Object.entries(node)) {
+    const childPath = pathStr ? `${pathStr}.${key}` : key;
+    if (key === "schedule") {
+      if (typeof value === "string" && !SCHEDULE_ANY_TIME.has(value)) {
+        return [childPath, value];
+      }
+      if (Array.isArray(value)) {
+        const i = value.findIndex(
+          (v) => typeof v === "string" && !SCHEDULE_ANY_TIME.has(v),
+        );
+        if (i !== -1) return [`${childPath}[${i}]`, value[i] as string];
+      }
+      continue;
+    }
+    const hit = findRestrictingSchedule(value, childPath);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+function checkScheduleWithoutTimezone(config: unknown, findings: LintFinding[]): void {
+  if (!isRecord(config) || config.timezone) return;
+  const hit = findRestrictingSchedule(config, "");
+  if (!hit) return;
+  const [path, value] = hit;
+  // One finding per config: the fix (a root `timezone`) is the same for all.
+  findings.push({
+    ruleId: "schedule-without-timezone",
+    severity: "warn",
+    path,
+    value,
+    message:
+      `${path} sets a schedule but the root config has no \`timezone\`, so Renovate evaluates every schedule in UTC. ` +
+      "Ignore this if an extended preset sets the timezone.",
+    suggestion: 'Set a top-level "timezone" to an IANA name, e.g. "Europe/Berlin".',
+  });
+}
+
+function checkPackageRuleLabelsOverrides(config: unknown, findings: LintFinding[]): void {
+  if (!isRecord(config)) return;
+  if (!Array.isArray(config.labels) || config.labels.length === 0) return;
+  if (!Array.isArray(config.packageRules)) return;
+  config.packageRules.forEach((entry, i) => {
+    if (!isRecord(entry) || !("labels" in entry)) return;
+    findings.push({
+      ruleId: "package-rule-labels-overrides",
+      severity: "warn",
+      path: `packageRules[${i}].labels`,
+      value: JSON.stringify(entry.labels),
+      message:
+        `packageRules[${i}].labels replaces the root labels (${JSON.stringify(config.labels)}) for matched deps instead of adding to them.`,
+      suggestion: `Use addLabels in packageRules[${i}] to append to the root labels.`,
+    });
+  });
 }
 
 const HOST_RULE_SECRET_FIELDS = ["token", "password"] as const;

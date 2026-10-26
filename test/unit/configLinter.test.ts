@@ -1312,4 +1312,87 @@ describe("lintConfig", () => {
       expect(findings).toEqual([]);
     });
   });
+
+  describe("schedule-without-timezone", () => {
+    const RULE = "schedule-without-timezone";
+
+    it("fires once for a config with two scheduled rules and no timezone", () => {
+      const findings = lintConfig({
+        packageRules: [
+          { matchPackageNames: ["a"], schedule: ["before 5am"] },
+          { matchPackageNames: ["b"], schedule: ["every weekend"] },
+        ],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toHaveLength(1);
+      expect(findings[0]).toMatchObject({
+        ruleId: RULE,
+        severity: "warn",
+        path: "packageRules[0].schedule[0]",
+        value: "before 5am",
+      });
+    });
+
+    it("fires for a top-level string schedule and for lockFileMaintenance", () => {
+      expect(
+        lintConfig({ schedule: "before 5am" }).filter((f) => f.ruleId === RULE),
+      ).toHaveLength(1);
+      const nested = lintConfig({
+        lockFileMaintenance: { enabled: true, schedule: ["before 4am on monday"] },
+      }).filter((f) => f.ruleId === RULE);
+      expect(nested).toHaveLength(1);
+      expect(nested[0]!.path).toBe("lockFileMaintenance.schedule[0]");
+    });
+
+    it("does not fire when the root config sets a timezone", () => {
+      const findings = lintConfig({
+        timezone: "Europe/Berlin",
+        schedule: ["before 5am"],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toEqual([]);
+    });
+
+    it("does not fire for 'at any time' or empty schedules", () => {
+      const findings = lintConfig({
+        schedule: ["at any time"],
+        packageRules: [{ matchPackageNames: ["a"], schedule: [] }],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toEqual([]);
+    });
+  });
+
+  describe("package-rule-labels-overrides", () => {
+    const RULE = "package-rule-labels-overrides";
+
+    it("fires for each packageRule setting labels when root has labels", () => {
+      const findings = lintConfig({
+        labels: ["dependencies"],
+        packageRules: [
+          { matchPackageNames: ["a"], labels: ["frontend"] },
+          { matchPackageNames: ["b"], addLabels: ["backend"] },
+          { matchPackageNames: ["c"], labels: ["infra"] },
+        ],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings.map((f) => f.path)).toEqual([
+        "packageRules[0].labels",
+        "packageRules[2].labels",
+      ]);
+      expect(findings[0]).toMatchObject({ severity: "warn" });
+      expect(findings[0]!.suggestion).toContain("addLabels");
+    });
+
+    it("does not fire without root labels", () => {
+      const findings = lintConfig({
+        packageRules: [{ matchPackageNames: ["a"], labels: ["frontend"] }],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toEqual([]);
+    });
+
+    it("does not fire when root labels is empty", () => {
+      const findings = lintConfig({
+        labels: [],
+        packageRules: [{ matchPackageNames: ["a"], labels: ["frontend"] }],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toEqual([]);
+    });
+  });
 });

@@ -214,6 +214,8 @@ Schema validation catches structural bugs; the linter catches Renovate-specific 
 - `automerge-includes-major`
 - `duplicate-package-rule-matchers`
 - `host-rule-inline-secret`
+- `schedule-without-timezone`
+- `package-rule-labels-overrides`
 
 The ruleset is intentionally small, scoped to the regex-aware and manager-aware fields plus a handful of `packageRules`-level footguns, and tuned to avoid false positives on benign exact strings containing a `.`:
 
@@ -230,6 +232,8 @@ The ruleset is intentionally small, scoped to the regex-aware and manager-aware 
 - **`automerge-includes-major`** (warn) — a `packageRules` entry has `automerge: true` with `matchUpdateTypes` absent or including `"major"`, so major bumps merge automatically without review. Suppressed for the whole config only when a later entry pairs `matchUpdateTypes: ["major"]` with `automerge: false` as an explicit guard (a heuristic that doesn't verify the guard actually covers the same deps).
 - **`duplicate-package-rule-matchers`** (warn) — a `packageRules` entry's selector keys and values exactly match an earlier entry's (array order ignored); the later entry's action keys silently win over the earlier one's wherever they overlap.
 - **`host-rule-inline-secret`** (warn) — a `hostRules` entry has a plain-string `token` or `password` (anything not wrapped as a `{{ }}` template). Since repo config is committed and readable by everyone with repo access, the secret belongs in the `encrypted` sub-object, a `{{ secrets.NAME }}` template, or the self-hosted/global config instead.
+- **`schedule-without-timezone`** (warn) — a `schedule` (top level, in a `packageRules` entry, in `lockFileMaintenance`, or anywhere else `invalid-schedule` looks) restricts timing, but the root config has no `timezone`, so Renovate evaluates it in UTC. Reported once per config, at the first offending path; set a top-level `timezone` to an IANA name such as `Europe/Berlin`. `"at any time"` / empty schedules don't count. The linter doesn't expand `extends`, so ignore the finding if a preset sets the timezone.
+- **`package-rule-labels-overrides`** (warn) — a `packageRules` entry sets `labels` while the root config has a non-empty `labels` array. Inside a rule `labels` replaces the inherited labels; `addLabels` appends to them. Doesn't fire when the root has no labels.
 
 ## `dry_run`
 
