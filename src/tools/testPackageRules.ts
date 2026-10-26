@@ -10,6 +10,7 @@ import {
   loadConfigSource,
   MATCH_PREVIEW_DISCLAIMER,
   TEST_PACKAGE_RULES_FAITHFUL_DISCLAIMER,
+  NETWORK_READ_ONLY_ANNOTATIONS,
 } from "../lib/toolInputs.js";
 
 const optString = (description: string) => z.string().max(2048).optional().describe(description);
@@ -21,6 +22,7 @@ export function registerTestPackageRules(server: McpServer): void {
     "test_package_rules",
     {
       title: "Test which packageRules match a dependency",
+      annotations: NETWORK_READ_ONLY_ANNOTATIONS,
       description:
         "Offline \"what-if\": given a hypothetical dependency context and a config, report which `packageRules` match (in order), which matcher decided each, and what each matched rule contributes. Answers \"why didn't my rule match?\". Rules are evaluated with Renovate's REAL matchers in a worker thread (faithful), classified against the fields you actually supplied — a matcher that needs a field you didn't pass is reported as `unevaluatable`, never silently treated as a non-match. Matchers needing post-lookup data (matchUpdateTypes, matchCurrentVersion, matchNewValue, matchCurrentAge) or the merge-confidence API (matchConfidence) are unevaluatable offline; matchJsonata is advisory. Pass either `repoPath` (reads + expands the repo's config) or `configContent` (an inline config); `externalPresets`/`endpoint`/`platform` opt into external preset expansion so `extends`-provided rules are included (same semantics as resolve_config). Deprecated matcher keys (matchPackagePatterns, …) are warned about — run migrate_config first. Run dry_run for full-fidelity confirmation.",
       inputSchema: {

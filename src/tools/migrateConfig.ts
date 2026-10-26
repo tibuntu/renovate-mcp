@@ -3,12 +3,14 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import JSON5 from "json5";
 import { runMigration } from "../lib/migrationWorker.js";
 import { configRecord, pathString } from "../lib/inputLimits.js";
+import { OFFLINE_READ_ONLY_ANNOTATIONS } from "../lib/toolInputs.js";
 
 export function registerMigrateConfig(server: McpServer): void {
   server.registerTool(
     "migrate_config",
     {
       title: "Migrate Renovate config to current schema",
+      annotations: OFFLINE_READ_ONLY_ANNOTATIONS,
       description:
         "Apply Renovate's built-in config migrations (deprecated key renames, template-variable rewrites, packageRules consolidation, host-rules unification, etc.) to a config and return the migrated result. Pass either configPath (file on disk, JSON or JSON5) or configContent (inline JSON object). Returns { isMigrated, migrated, diff }. Does not write — chain with write_config to persist. First call has higher latency than other tools (Renovate's migration library cold-loads in a worker thread).",
       inputSchema: {

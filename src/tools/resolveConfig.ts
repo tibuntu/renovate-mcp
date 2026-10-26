@@ -6,6 +6,7 @@ import {
   loadConfigSource,
   MERGE_PREVIEW_DISCLAIMER,
   RESOLVE_CONFIG_FAITHFUL_DISCLAIMER,
+  NETWORK_READ_ONLY_ANNOTATIONS,
 } from "../lib/toolInputs.js";
 
 export function registerResolveConfig(server: McpServer): void {
@@ -13,6 +14,7 @@ export function registerResolveConfig(server: McpServer): void {
     "resolve_config",
     {
       title: "Resolve Renovate config (expand presets)",
+      annotations: NETWORK_READ_ONLY_ANNOTATIONS,
       description:
         "Expand every preset referenced by `extends` and return the fully resolved config. Built-in presets resolve offline against the committed catalogue. Pass `externalPresets: true` to fetch `github>` and `gitlab>` presets over HTTPS (with optional `RENOVATE_TOKEN` — or `GITHUB_TOKEN` / `GITLAB_TOKEN` as platform-specific fallbacks — for private repos). For GitHub Enterprise or self-hosted GitLab, pass `endpoint` (API base URL, e.g. `https://ghe.example.com/api/v3` or `https://gitlab.example.com/api/v4`); pass `platform` in addition to route `local>` presets through the same endpoint. `bitbucket>`, `gitea>`, and npm presets are structurally unsupported and remain in `presetsUnresolved` regardless. Endpoint and platform are **tool inputs only** — env vars like `RENOVATE_ENDPOINT` are not read, since the MCP server runs under Claude rather than in your shell. Pass either `repoPath` (reads the repo's config) or `configContent` (an inline config object). The response includes `mergeQuality` (`\"faithful\"` — presets are merged with Renovate's own mergeChildConfig in a worker thread; `\"preview\"` only if that worker was unavailable and a simplified in-process merge was used) plus a `disclaimer` and a `warnings` array. Handlebars expressions other than `{{argN}}` are left verbatim; run `dry_run` for full config resolution.",
       inputSchema: {

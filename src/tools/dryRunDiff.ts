@@ -3,6 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { diffDryRunReports } from "../lib/dryRunDiff.js";
 import { pathString, reportRecord } from "../lib/inputLimits.js";
 import { readReportPath } from "../lib/reportInput.js";
+import { OFFLINE_READ_ONLY_ANNOTATIONS } from "../lib/toolInputs.js";
 
 const reportShape = reportRecord(
   "A Renovate dry-run report. Pass either the raw report (an object with a `repositories` key) or the full `dry_run` tool summary (an object with a `report` key); the tool unwraps `report` automatically.",
@@ -52,6 +53,7 @@ export function registerDryRunDiff(server: McpServer): void {
     "dry_run_diff",
     {
       title: "Diff two Renovate dry-run reports",
+      annotations: OFFLINE_READ_ONLY_ANNOTATIONS,
       description:
         "Compute a semantic diff between two `dry_run` reports — the proposed updates that were added, removed, or changed. Stateless: pass both reports as inputs. Each side accepts either the inline report (raw `{ repositories }` or a full `dry_run` summary with a `report` key) or `{ reportPath: \"<absolute path>\" }` pointing at a file produced by `dry_run`'s `reportOutputPath`. Mix and match freely. Updates are keyed by `(manager, packageFile, depName)`, so a version bump on the same dep shows up under `changed` rather than as `removed + added`. Compared fields per identity: `newValue`, `newVersion`, `updateType`, `branchName`, `groupName`, `schedule`. Returns a structured summary object plus a compact human-readable text rendering.",
       inputSchema: {

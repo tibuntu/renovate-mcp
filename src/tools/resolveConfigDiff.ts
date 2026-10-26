@@ -3,7 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { resolveConfig, type ResolveResult } from "../lib/presetResolver.js";
 import { diffResolvedConfigs } from "../lib/resolveConfigDiff.js";
 import { configRecord, endpointString, pathString } from "../lib/inputLimits.js";
-import { loadConfigSource } from "../lib/toolInputs.js";
+import { loadConfigSource, NETWORK_READ_ONLY_ANNOTATIONS } from "../lib/toolInputs.js";
 
 const sideSchema = z
   .object({
@@ -38,6 +38,7 @@ export function registerResolveConfigDiff(server: McpServer): void {
     "resolve_config_diff",
     {
       title: "Diff two resolved Renovate configs",
+      annotations: NETWORK_READ_ONLY_ANNOTATIONS,
       description:
         "Compute a structural diff between two *fully-resolved* Renovate configs — the `before` and `after` of a config refactor — entirely offline. This is the resolve-level counterpart to `dry_run_diff`: where `dry_run_diff` shows how the *proposed PRs* change (and collapses to a vacuous 0-vs-0 when the environment can't reach registries), this answers \"does the new config produce the same effective settings as the old one, modulo the intended changes?\". Each side accepts `repoPath` (locates the repo's config) OR `configContent` (an inline config object); both sides are resolved with `resolve_config`'s preset expansion + faithful merge. Non-array top-level keys are deep-compared and reported with before/after values; array-valued top-level keys (`packageRules`, `customManagers`, `matchManagers`, …) get an order-insensitive set diff (members only in `before` are `removed`, only in `after` are `added` — a tweaked rule shows as one of each). Shared `externalPresets` / `endpoint` / `platform` knobs apply to both sides. Returns a structured diff (`summary`, `fieldChanges`, `arrayChanges`) plus a human-readable `text` rendering and per-side `resolution` metadata (`mergeQuality`, `presetsUnresolved`, `warnings`).",
       inputSchema: {

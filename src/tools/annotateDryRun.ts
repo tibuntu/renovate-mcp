@@ -13,6 +13,7 @@ import {
   loadConfigSource,
   MATCH_PREVIEW_DISCLAIMER,
   ANNOTATE_DRY_RUN_FAITHFUL_DISCLAIMER,
+  NETWORK_READ_ONLY_ANNOTATIONS,
 } from "../lib/toolInputs.js";
 
 // Matcher-relevant fields we try to lift off each report upgrade entry.
@@ -82,6 +83,7 @@ export function registerAnnotateDryRun(server: McpServer): void {
     "annotate_dry_run",
     {
       title: "Attribute dry_run updates to packageRules",
+      annotations: NETWORK_READ_ONLY_ANNOTATIONS,
       description:
         "Given a `dry_run` report and a config, attribute EACH proposed update to the `packageRules` that matched it — answering \"which of my rules produced these updates?\". Stateless and offline: run `dry_run` first, then pass its report here (inline `report` or `reportPath`, same shapes as `dry_run_diff`) plus a config source (`repoPath` or `configContent`). Each update is matched with Renovate's REAL matchers in a worker thread against the facts present in the report; fields the report doesn't carry (e.g. datasource, depType) are reported under each update's `unevaluatable` and aggregated in `fieldGaps` rather than silently treated as non-matches. `rulesNeverMatched` flags likely-dead rules. Deprecated matcher keys are warned about — run migrate_config first. Run dry_run for full-fidelity confirmation.",
       inputSchema: {

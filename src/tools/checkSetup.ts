@@ -1,12 +1,14 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { checkSetup, describeSetup } from "../lib/setupCheck.js";
 import { pathString } from "../lib/inputLimits.js";
+import { NETWORK_READ_ONLY_ANNOTATIONS } from "../lib/toolInputs.js";
 
 export function registerCheckSetup(server: McpServer): void {
   server.registerTool(
     "check_setup",
     {
       title: "Check Renovate MCP setup",
+      annotations: NETWORK_READ_ONLY_ANNOTATIONS,
       description:
         "Report whether the Renovate CLI and config validator are reachable, their versions, and any env overrides in effect. Pass an optional `repoPath` to also diagnose the target repo's environment: parses the `.git/config` origin remote, reads any `endpoint`/`platform` in the repo's renovate config, probes endpoint reachability (using the same `https://`-only public-host allowlist as `dry_run`), and cross-references all three with token presence — surfaces actionable hints like 'set GITHUB_TOKEN before running dry_run'. The probe sends no credentials. Call this first when other tools fail with a spawn error or unexpected validation output.",
       inputSchema: {

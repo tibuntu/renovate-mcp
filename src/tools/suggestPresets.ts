@@ -2,12 +2,14 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { suggestPresets } from "../lib/presetSuggester.js";
 import { pathString, queryString } from "../lib/inputLimits.js";
+import { OFFLINE_READ_ONLY_ANNOTATIONS } from "../lib/toolInputs.js";
 
 export function registerSuggestPresets(server: McpServer): void {
   server.registerTool(
     "suggest_presets",
     {
       title: "Suggest Renovate presets from a natural-language intent",
+      annotations: OFFLINE_READ_ONLY_ANNOTATIONS,
       description: [
         "Search Renovate presets by intent — fast, offline, no `renovate` invocation, no network. Given a free-text goal (e.g. \"automerge patch and minor updates and group my dev dependencies\"), it ranks matching presets from the committed built-in catalogue and, optionally, a local presets repo you point at. When no strong match exists it also sketches an unvalidated draft config from recognized intent.",
         "",

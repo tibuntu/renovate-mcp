@@ -3,12 +3,14 @@ import JSON5 from "json5";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { lintConfig } from "../lib/configLinter.js";
 import { configRecord, pathString } from "../lib/inputLimits.js";
+import { OFFLINE_READ_ONLY_ANNOTATIONS } from "../lib/toolInputs.js";
 
 export function registerLintConfig(server: McpServer): void {
   server.registerTool(
     "lint_config",
     {
       title: "Lint Renovate config for semantic footguns",
+      annotations: OFFLINE_READ_ONLY_ANNOTATIONS,
       description:
         "Run a semantic lint pass over a Renovate config. Complements validate_config: schema validation catches structural bugs, this catches Renovate-specific footguns schema validation misses — malformed '/…/' regex patterns in fields like matchPackageNames, matchDepNames, matchSourceUrls, matchCurrentVersion, plus unknown manager names in matchManagers / excludeManagers (typos that Renovate silently ignores). Each finding includes a severity ('error' | 'warn'). Offline; does not shell out. Pass either configPath (file on disk, JSON, JSONC or JSON5) or configContent (inline object).",
       inputSchema: {

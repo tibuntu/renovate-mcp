@@ -1,13 +1,14 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { locateConfig } from "../lib/configLocations.js";
 import { pathString } from "../lib/inputLimits.js";
-import { assertRepoDir } from "../lib/toolInputs.js";
+import { assertRepoDir, OFFLINE_READ_ONLY_ANNOTATIONS } from "../lib/toolInputs.js";
 
 export function registerReadConfig(server: McpServer): void {
   server.registerTool(
     "read_config",
     {
       title: "Read Renovate config",
+      annotations: OFFLINE_READ_ONLY_ANNOTATIONS,
       description:
         "Locate and parse the Renovate configuration in a repository. Searches for renovate.json, renovate.json5, .renovaterc(.json|.json5), .github/renovate.json, .gitlab/renovate.json, and the 'renovate' field of package.json — in that priority order.",
       inputSchema: {

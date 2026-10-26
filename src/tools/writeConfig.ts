@@ -44,6 +44,7 @@ export function registerWriteConfig(server: McpServer): void {
     "write_config",
     {
       title: "Write Renovate config",
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
       description:
         "Write a Renovate config to disk. Runs renovate-config-validator first — refuses to write if validation fails unless force=true (which additionally requires confirmForce).",
       inputSchema: {
