@@ -753,17 +753,26 @@ function checkSchedule(value: string, path: string, findings: LintFinding[]): vo
   });
 }
 
-function checkManager(raw: string, path: string, findings: LintFinding[]): void {
-  if (VALID_MANAGER_NAMES.has(raw)) return;
+// Renovate evaluates matchManagers and matchDatasources with
+// matchRegexOrGlobList: `/…/` (optionally `/…/i`) is a regex and anything with
+// glob metachars is a glob — neither is a literal id to check against a list.
+function isRegexOrGlobEntry(name: string): boolean {
+  return /^\/.+\/i?$/.test(name) || /[*?[\]{}]/.test(name);
+}
 
-  const suggestion = nearestName(raw, VALID_MANAGER_NAMES);
+function checkManager(raw: string, path: string, findings: LintFinding[]): void {
+  // `!` is Renovate's negation prefix for every matchRegexOrGlobList field.
+  const name = raw.startsWith("!") ? raw.slice(1) : raw;
+  if (VALID_MANAGER_NAMES.has(name) || isRegexOrGlobEntry(name)) return;
+
+  const suggestion = nearestName(name, VALID_MANAGER_NAMES);
   const hint = suggestion ? ` Did you mean '${suggestion}'?` : "";
   const finding: LintFinding = {
     ruleId: "matchManagers-unknown-name",
     severity: "error",
     path,
     value: raw,
-    message: `'${raw}' is not a known Renovate manager. Renovate will silently apply this rule to zero packages.${hint}`,
+    message: `'${name}' is not a known Renovate manager. Renovate will silently apply this rule to zero packages.${hint}`,
   };
   if (suggestion) finding.suggestion = suggestion;
   findings.push(finding);
@@ -785,12 +794,7 @@ function checkDatasource(raw: string, path: string, findings: LintFinding[]): vo
   // `/…/` is a regex and anything with glob metachars is a glob — none of those
   // are literal ids. `custom.<name>` routes to the user's customDatasources.
   const name = raw.startsWith("!") ? raw.slice(1) : raw;
-  if (
-    VALID_DATASOURCES.has(name) ||
-    name.startsWith("custom.") ||
-    /^\/.+\/i?$/.test(name) ||
-    /[*?[\]{}]/.test(name)
-  ) {
+  if (VALID_DATASOURCES.has(name) || name.startsWith("custom.") || isRegexOrGlobEntry(name)) {
     return;
   }
 

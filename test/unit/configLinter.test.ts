@@ -140,6 +140,23 @@ describe("lintConfig", () => {
       expect(findings).toEqual([]);
     });
 
+    it("does not flag regex, glob or negated entries (Renovate matches those as patterns)", () => {
+      const findings = lintConfig({
+        packageRules: [
+          { matchManagers: ["/^custom\\./", "/DOCKER/i", "docker-*", "!npm", "!/^go/"] },
+        ],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toEqual([]);
+    });
+
+    it("flags an unknown name behind the '!' negation prefix", () => {
+      const findings = lintConfig({
+        packageRules: [{ matchManagers: ["!nmp"] }],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toHaveLength(1);
+      expect(findings[0]).toMatchObject({ value: "!nmp", suggestion: "npm" });
+    });
+
     it("flags an unknown name and suggests the closest match", () => {
       const findings = lintConfig({
         packageRules: [{ matchManagers: ["nmp"] }],
