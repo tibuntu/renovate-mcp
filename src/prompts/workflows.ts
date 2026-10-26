@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { NO_CONFIG_FOUND } from "../lib/toolInputs.js";
 
 // ponytail: prompts return exactly one user-role text message each — the
 // documented GetPromptResult shape, nothing fancier (no multi-turn scripting).
@@ -135,7 +136,7 @@ export function registerWorkflowPrompts(server: McpServer): void {
           `Onboard the repo at ${repoPath} to Renovate: it has no Renovate config yet.`,
           "",
           `1. Call check_setup with repoPath "${repoPath}" first to surface any token/CLI setup problems.`,
-          `2. Call read_config with repoPath "${repoPath}". A "No Renovate configuration found" error is the expected outcome. If a config is found, stop and tell the user to use the design-renovate-config prompt instead; this prompt is for repos without one.`,
+          `2. Call read_config with repoPath "${repoPath}". A "${NO_CONFIG_FOUND}" error is the expected outcome. If a config is found, stop and tell the user to use the design-renovate-config prompt instead; this prompt is for repos without one.`,
           `3. Call dry_run with repoPath "${repoPath}" and dryRunMode "extract" to list the managers and package files Renovate detects (no version lookups, so it is fast). Summarize the detected ecosystems for the user.`,
           intent
             ? `4. Call suggest_presets with a query combining the detected ecosystems and the user's intent "${intent}" (e.g. "npm and github-actions monorepo, automerge patch updates, pin digests"), and use the returned draft.config as the starting point.`

@@ -1,7 +1,11 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { locateConfig } from "../lib/configLocations.js";
 import { pathString } from "../lib/inputLimits.js";
-import { assertRepoDir, OFFLINE_READ_ONLY_ANNOTATIONS } from "../lib/toolInputs.js";
+import {
+  assertRepoDir,
+  NO_CONFIG_FOUND,
+  OFFLINE_READ_ONLY_ANNOTATIONS,
+} from "../lib/toolInputs.js";
 
 export function registerReadConfig(server: McpServer): void {
   server.registerTool(
@@ -24,7 +28,7 @@ export function registerReadConfig(server: McpServer): void {
           content: [
             {
               type: "text",
-              text: `No Renovate configuration found in ${repoPath}. Create one with write_config.`,
+              text: `${NO_CONFIG_FOUND} in ${repoPath}. Create one with write_config.`,
             },
           ],
         };
