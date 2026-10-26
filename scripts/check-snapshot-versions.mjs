@@ -33,6 +33,10 @@ export const SNAPSHOTS = Object.freeze([
     file: "src/data/options.generated.ts",
     regenerateCmd: "npm run generate:options",
   }),
+  Object.freeze({
+    file: "src/data/datasources.generated.ts",
+    regenerateCmd: "npm run generate:datasources",
+  }),
 ]);
 
 const RENOVATE_VERSION_RE = /export const RENOVATE_VERSION\s*=\s*"([^"]+)";/;

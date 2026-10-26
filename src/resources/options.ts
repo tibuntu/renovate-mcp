@@ -13,6 +13,10 @@ import {
   CUSTOM_MANAGERS,
   RENOVATE_VERSION as MANAGERS_RENOVATE_VERSION,
 } from "../data/managers.generated.js";
+import {
+  DATASOURCES,
+  RENOVATE_VERSION as DATASOURCES_RENOVATE_VERSION,
+} from "../data/datasources.generated.js";
 
 const REPO_OPTION_NAMES: string[] = OPTION_NAMES.filter(
   (name) => !OPTIONS[name]!.globalOnly,
@@ -100,6 +104,25 @@ export function registerOptionResources(server: McpServer): void {
       ],
     }),
   );
+
+  server.registerResource(
+    "renovate-datasources",
+    "renovate://datasources",
+    {
+      title: "Renovate datasource ids",
+      description: `Markdown list of all ${DATASOURCES.length} built-in datasource ids accepted by \`matchDatasources\` and \`customManagers[].datasourceTemplate\` (from renovate v${DATASOURCES_RENOVATE_VERSION}).`,
+      mimeType: "text/markdown",
+    },
+    async () => ({
+      contents: [
+        {
+          uri: "renovate://datasources",
+          mimeType: "text/markdown",
+          text: renderDatasourcesIndex(),
+        },
+      ],
+    }),
+  );
 }
 
 /** Look up a single option's snapshot by name, with `name` folded back in. */
@@ -158,6 +181,20 @@ export function renderManagersIndex(): string {
   for (const name of CUSTOM_MANAGERS) {
     lines.push(`- \`${name}\` (also \`custom.${name}\`)`);
   }
+  lines.push("");
+  return lines.join("\n");
+}
+
+export function renderDatasourcesIndex(): string {
+  const lines: string[] = [
+    "# Renovate datasources",
+    "",
+    `Snapshot from renovate v${DATASOURCES_RENOVATE_VERSION} — **${DATASOURCES.length} datasources**.`,
+    "",
+    "Reference any of these in the `matchDatasources` field of a `packageRules` entry or as a `customManagers[].datasourceTemplate`. Custom datasources defined under `customDatasources` are referenced as `custom.<name>`.",
+    "",
+  ];
+  for (const name of DATASOURCES) lines.push(`- \`${name}\``);
   lines.push("");
   return lines.join("\n");
 }

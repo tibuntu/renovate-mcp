@@ -30,6 +30,7 @@ Detailed reference for every tool and resource exposed by `renovate-mcp`. The [R
 - [`renovate://options`](#renovateoptions)
 - [`renovate://option/{name}`](#renovateoptionname)
 - [`renovate://managers`](#renovatemanagers)
+- [`renovate://datasources`](#renovatedatasources)
 
 ## Prompt index
 
@@ -408,6 +409,10 @@ Full definition of a single Renovate config option as JSON (e.g. `renovate://opt
 ## `renovate://managers`
 
 Markdown list of all manager names accepted by `matchManagers` / `excludeManagers`, plus a "Custom managers" section noting the `custom.`-prefixed form (e.g. `custom.regex`).
+
+## `renovate://datasources`
+
+Markdown list of all built-in datasource ids accepted by `matchDatasources` and `customManagers[].datasourceTemplate`. Custom datasources defined under `customDatasources` are referenced as `custom.<name>` and are not listed.
 
 ## Prompts
 

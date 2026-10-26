@@ -39,7 +39,7 @@ Restart your client and try the prompt: *"List the namespaces available under `r
 
 ## Tools & resources
 
-Seventeen tools, six resources, and three workflow prompts. Each tool name below links to its full reference in [`docs/tools.md`](docs/tools.md).
+Seventeen tools, seven resources, and three workflow prompts. Each tool name below links to its full reference in [`docs/tools.md`](docs/tools.md).
 
 | Tool | Purpose |
 | --- | --- |
@@ -66,6 +66,7 @@ Seventeen tools, six resources, and three workflow prompts. Each tool name below
 | [`renovate://options`](docs/tools.md#renovateoptions) (resource) | Markdown index of all Renovate config options, split into repository and global/self-hosted-only sections. |
 | [`renovate://option/{name}`](docs/tools.md#renovateoptionname) (resource) | Full definition of one config option as JSON. |
 | [`renovate://managers`](docs/tools.md#renovatemanagers) (resource) | Markdown list of all manager names, including custom managers. |
+| [`renovate://datasources`](docs/tools.md#renovatedatasources) (resource) | Markdown list of all built-in datasource ids. |
 
 **Prompts.** Three workflow prompts package the tool sequences above into ready-to-run starting points. Claude Code surfaces MCP prompts as slash commands (e.g. `/mcp__renovate__design-renovate-config`); other MCP clients expose them through their own prompt picker.
 
@@ -208,6 +209,7 @@ npm run generate:presets        # regenerate src/data/presets.generated.ts
 npm run generate:managers       # regenerate src/data/managers.generated.ts
 npm run generate:migrations     # regenerate src/data/migrations.generated.ts
 npm run generate:options        # regenerate src/data/options.generated.ts
+npm run generate:datasources    # regenerate src/data/datasources.generated.ts
 npm run sync:jsonata-pin        # sync package.json's jsonata pin to Renovate's own
 npm run check:snapshot-versions # fail if any src/data/*.generated.ts is stale vs installed renovate
 ```
