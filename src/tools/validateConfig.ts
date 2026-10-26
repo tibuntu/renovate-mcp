@@ -13,12 +13,14 @@ import {
   validatorTimeoutMs,
 } from "../lib/renovateCli.js";
 import { configRecord, pathString } from "../lib/inputLimits.js";
+import { OFFLINE_READ_ONLY_ANNOTATIONS } from "../lib/toolInputs.js";
 
 export function registerValidateConfig(server: McpServer): void {
   server.registerTool(
     "validate_config",
     {
       title: "Validate Renovate config",
+      annotations: OFFLINE_READ_ONLY_ANNOTATIONS,
       description:
         "Validate a Renovate configuration against the official schema using renovate-config-validator. Pass either configPath (file on disk) or configContent (inline JSON object). Returns validation output and a boolean `valid`.",
       inputSchema: {

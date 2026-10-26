@@ -5,7 +5,7 @@ import {
   type CustomManager,
 } from "../lib/customManagerPreview.js";
 import { pathString } from "../lib/inputLimits.js";
-import { assertRepoDir } from "../lib/toolInputs.js";
+import { assertRepoDir, OFFLINE_READ_ONLY_ANNOTATIONS } from "../lib/toolInputs.js";
 
 const managerSchema = z
   .object({
@@ -36,6 +36,7 @@ export function registerPreviewCustomManager(server: McpServer): void {
     "preview_custom_manager",
     {
       title: "Preview a Renovate custom manager (regex or jsonata)",
+      annotations: OFFLINE_READ_ONLY_ANNOTATIONS,
       description: [
         "Preview a Renovate `customManagers` entry against a local repo — fast, offline, no `renovate` invocation. Designed for iterating on a regex or JSONata customManager: shows which files match `managerFilePatterns`, what each `matchStrings` entry extracts, and what dep info the template fields produce.",
         "",

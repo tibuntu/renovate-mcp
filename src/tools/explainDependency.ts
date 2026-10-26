@@ -8,7 +8,7 @@ import {
 import { explainDependency, type DependencyHit } from "../lib/dependencyExplainer.js";
 import { readReportPath } from "../lib/reportInput.js";
 import { configRecord, pathString, reportRecord } from "../lib/inputLimits.js";
-import { loadConfigSource } from "../lib/toolInputs.js";
+import { loadConfigSource, OFFLINE_READ_ONLY_ANNOTATIONS } from "../lib/toolInputs.js";
 
 const PREVIEW_NOTE =
   "The faithful matcher worker was unavailable, so matchedRules come from an approximate glob-only preview (matchPackageNames / matchDepNames / matchManagers / matchDatasources / matchFileNames / matchCategories only). Run dry_run for authoritative output.";
@@ -27,6 +27,7 @@ export function registerExplainDependency(server: McpServer): void {
     "explain_dependency",
     {
       title: "Explain why a dependency was or wasn't updated",
+      annotations: OFFLINE_READ_ONLY_ANNOTATIONS,
       description:
         "Answer \"why was/wasn't dependency X updated?\" from an existing `dry_run` report — offline, no CLI. Finds every extracted occurrence of the dependency under `packageFiles` (matched case-insensitively against `depName` and `packageName`; exact by default, `partial: true` for substring) and returns per hit its `skipReason` / `skipStage`, proposed `updates`, and `warnings`, plus a one-line `verdict` (`not found in report`, `skipped: <reason>`, `up to date`, or `N update(s) available`), remedy `hints`, and `relatedProblems` (report/repo `problems` entries mentioning the dep). Pass the report inline (`report`, raw or a full `dry_run` summary) or via `reportPath` (pair with `dry_run`'s reportOutputPath). Optionally add a config source (`repoPath` or `configContent`) to attach `matchedRules` — the packageRules that matched each hit, evaluated with Renovate's real matchers in a worker thread.",
       inputSchema: {

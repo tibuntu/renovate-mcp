@@ -1,6 +1,22 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { locateConfig } from "./configLocations.js";
+
+// MCP tool annotations (documented in docs/tools.md). Every tool except
+// write_config is read-only; "open world" marks tools that can reach the
+// network under some input (registries, platform API, external presets).
+
+export const OFFLINE_READ_ONLY_ANNOTATIONS: ToolAnnotations = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: false,
+};
+export const NETWORK_READ_ONLY_ANNOTATIONS: ToolAnnotations = {
+  ...OFFLINE_READ_ONLY_ANNOTATIONS,
+  openWorldHint: true,
+};
 
 // Input rules shared by every tool (documented under "Common input rules" in
 // docs/tools.md). Each helper returns an error message rather than an MCP
