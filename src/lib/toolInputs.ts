@@ -18,6 +18,10 @@ export const NETWORK_READ_ONLY_ANNOTATIONS: ToolAnnotations = {
   openWorldHint: true,
 };
 
+// Prefix of every "no config in this repo" message. The onboard-repo prompt
+// tells the model to expect it, so it must not drift between call sites.
+export const NO_CONFIG_FOUND = "No Renovate configuration found";
+
 // Input rules shared by every tool (documented under "Common input rules" in
 // docs/tools.md). Each helper returns an error message rather than an MCP
 // result so the tools keep one `{ isError, content }` shape at the call site.
@@ -51,7 +55,7 @@ export async function loadConfigSource(input: {
   const repoError = await assertRepoDir(repoPath);
   if (repoError) return { error: repoError };
   const located = await locateConfig(repoPath);
-  if (!located) return { error: `No Renovate configuration found in ${repoPath}.` };
+  if (!located) return { error: `${NO_CONFIG_FOUND} in ${repoPath}.` };
   return { config: located.config, path: located.relPath };
 }
 
