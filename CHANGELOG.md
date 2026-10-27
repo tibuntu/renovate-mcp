@@ -2,26 +2,37 @@
 
 ## [1.7.0](https://github.com/tibuntu/renovate-mcp/compare/v1.6.8...v1.7.0) (2026-10-27)
 
+This release adds an **eighteenth tool, `explain_schedule`**, which tells you when a schedule will actually run. `test_package_rules` now **renders the branch name, commit message and PR title** a rule produces, `resolve_config` **fetches presets from Gitea, Forgejo and Bitbucket Cloud**, and `lint_config` gains **three new rules**. There is also an `onboard-repo` prompt for repositories that have no Renovate config yet. A few lint findings are new or stricter, so check the upgrade note before you rely on a clean lint result from 1.6.
 
-### Features
+### New features
 
-* **explain_schedule:** preview the next run windows of a Renovate schedule ([#417](https://github.com/tibuntu/renovate-mcp/issues/417)) ([95cd70e](https://github.com/tibuntu/renovate-mcp/commit/95cd70e817e81cc7fb2fa0397213dad4e4abb842))
-* **lint:** add matchDatasources-unknown-name rule ([59503ec](https://github.com/tibuntu/renovate-mcp/commit/59503ecc7961495ee027fc336e885012c3c58b97))
-* **lint:** add schedule-without-timezone and package-rule-labels-overrides rules ([827fda6](https://github.com/tibuntu/renovate-mcp/commit/827fda6642682d0ee0e9d63880674459b8181561))
-* **prompts:** add onboard-repo workflow prompt for repos without a config ([d7ab9e5](https://github.com/tibuntu/renovate-mcp/commit/d7ab9e5b93a6ed3aea00ea22133dba8fdf5f3184))
-* **resolve_config:** fetch gitea&gt; and forgejo&gt; presets; route Bitbucket Cloud via local&gt; + platform ([cd9a909](https://github.com/tibuntu/renovate-mcp/commit/cd9a90909ee8bafc571d9f55454b71c47bdba5aa)), closes [#419](https://github.com/tibuntu/renovate-mcp/issues/419)
-* **resources:** add renovate://datasources backed by a generated datasource snapshot ([058fac0](https://github.com/tibuntu/renovate-mcp/commit/058fac05d77dbaed24edf66161c378927a54b3f9))
-* **test_package_rules:** render branch, commit and PR names for the synthetic dependency ([37c1e20](https://github.com/tibuntu/renovate-mcp/commit/37c1e2023d264a2015b6d5755214c036c43afc3d)), closes [#418](https://github.com/tibuntu/renovate-mcp/issues/418)
-* **tools:** annotate every tool with MCP read-only / open-world hints ([5c55990](https://github.com/tibuntu/renovate-mcp/commit/5c559903c7e76e897b7c092adca3932f3e4caaba))
+**`explain_schedule` shows the next run windows of a schedule.** `lint_config` only tells you whether a schedule parses. This tool tells you whether it is active right now and lists the next windows, in UTC and in the config's timezone. That catches the usual mistakes: a `before 4am on Monday` you meant in Berlin time that runs in UTC, a cron with the fields in the wrong order, or an entry that never fires at all. It uses Renovate's own validator and matcher in a worker thread, so it reproduces Renovate's quirks too. One example: `after 10pm and before 5am` in a single entry never matches, and the tool returns zero windows plus a warning telling you to split it into two entries. When no `timezone` is given it assumes UTC and says so.
 
+**`test_package_rules` renders the names a rule produces.** The result has a new `rendered` block with the `branchName`, `commitMessage`, `prTitle` and `groupName` you get for the synthetic dependency. You can tune `branchPrefix`, `commitMessagePrefix`, `semanticCommit*`, `prTitle` or `groupName` without a `dry_run` round trip. The new optional `newVersion` input fills `newMajor` / `newMinor` / `newPatch`. Rendering is always a preview: template variables that only a real lookup would fill are listed in `missingTemplateVariables`, and a template that doesn't compile is reported as an error for that field instead of failing the whole match.
 
-### Bug Fixes
+**`resolve_config` fetches presets from Gitea, Forgejo and Bitbucket Cloud.** With `externalPresets: true`, `gitea>` and `forgejo>` presets are fetched like `github>` and `gitlab>` ones, authenticated with `GITEA_TOKEN` / `FORGEJO_TOKEN`. Renovate has no `bitbucket>` prefix, so Bitbucket Cloud presets go through `local>` with `platform: "bitbucket"` and `BITBUCKET_TOKEN`. Writing `bitbucket>` is refused with a pointer at `local>`. `check_setup` now recognises Bitbucket, Gitea, Codeberg and Forgejo origins and tells you which token is missing.
 
-* **lint:** drift guards for PACKAGE_RULE_ACTION_KEYS, LATER_TEXT_ANCHOR_TOKENS and SKIP_HINTS ([073bb7a](https://github.com/tibuntu/renovate-mcp/commit/073bb7a5047306a24ca36bd444c32203a1386295)), closes [#420](https://github.com/tibuntu/renovate-mcp/issues/420)
-* **lint:** matchManagers-unknown-name skips regex, glob and negated entries ([ac43740](https://github.com/tibuntu/renovate-mcp/commit/ac437405d0494e21b33492c683e299b2b99cc33c))
-* **lint:** no pattern leniency for a literal datasourceTemplate; document glob permissiveness ([7ea226c](https://github.com/tibuntu/renovate-mcp/commit/7ea226c26a4b07892d71fc449825466d38c4574e))
-* **prompts:** pass suggest_presets' query input in design-renovate-config ([2499470](https://github.com/tibuntu/renovate-mcp/commit/24994708b99ddbd8de07257df505f8c3d849e6f7))
-* **test:** raise the MCP helper request budget to 25 s so worker cold starts don't flake ([7bb3780](https://github.com/tibuntu/renovate-mcp/commit/7bb3780157c9501c65ff20eb72c7d337c4634833)), closes [#421](https://github.com/tibuntu/renovate-mcp/issues/421)
+**Three new `lint_config` rules.** `matchDatasources-unknown-name` (error) catches a typo in `matchDatasources` or in a literal `datasourceTemplate`; Renovate's own validator doesn't check these, so a typo silently matches nothing. It suggests the closest real id, like the existing manager rule. `schedule-without-timezone` (warn) fires when a schedule restricts timing but the config has no `timezone`, so Renovate evaluates it in UTC. `package-rule-labels-overrides` (warn) fires when a package rule sets `labels` while the root config has labels too: inside a rule, `labels` replaces the inherited list, and `addLabels` is what appends.
+
+**An `onboard-repo` prompt for repositories without a config.** It walks from `check_setup` through an extract-only `dry_run`, `suggest_presets`, lint and validation to `write_config` once you confirm, then a full `dry_run`.
+
+**`renovate://datasources` lists every built-in datasource id**, generated from the installed Renovate like the manager list.
+
+**Every tool now carries MCP annotations** (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`), so clients can decide which calls need a permission prompt. `write_config` is the only tool that writes; the tools that can reach the network are marked open-world.
+
+### Fixes & improvements
+
+* `matchManagers-unknown-name` no longer flags regex, glob or `!`-negated entries, which Renovate matches as patterns.
+* The lint allow-lists that mirror Renovate by hand are now checked against the installed Renovate in a test, and that check found drift. `vulnerabilityAlerts` and `dependencyDashboardLabels` no longer count as actions in `package-rule-without-action`, because Renovate only honours them at the top level. `invalid-schedule` no longer accepts `noon`, `midnight`, `morning`, `evening`, `night`, `weekdays`, `weekends`, `jun`, `jul` or `sep`, which Renovate's schedule parser doesn't understand.
+* The `design-renovate-config` prompt passed the wrong input name to `suggest_presets`.
+* The install guide starts with three commands (`npm install -g`, `claude mcp add`, `claude mcp list`) instead of `curl | bash`, and shows how to pass tokens without committing them.
+* `write_config`'s temp file, validate and rename path is now tested against the real Renovate validator, and integration tests no longer time out while a worker starts cold.
+* Dependency updates: lockfile maintenance only.
+
+> **Upgrading:**
+>
+> * `lint_config` can report findings a 1.6 config didn't get: the three new rules, a `package-rule-without-action` for rules whose only action was `vulnerabilityAlerts` or `dependencyDashboardLabels` (Renovate ignored those anyway), and an `invalid-schedule` for schedules built only from the words listed above (Renovate couldn't parse those either).
+> * `resolve_config` and the other preset-resolving tools refuse `bitbucket>`; use `local>` with `platform: "bitbucket"`.
 
 ## [1.6.8](https://github.com/tibuntu/renovate-mcp/compare/v1.6.7...v1.6.8) (2026-10-25)
 
