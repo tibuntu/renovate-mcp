@@ -23,6 +23,12 @@ import { resolveBundledBinary } from "../../src/lib/renovateCli.js";
 // suite still runs on a machine without Renovate.
 const hasValidator = resolveBundledBinary("renovate-config-validator") !== null;
 
+// In CI `renovate` is installed as a runtime dependency, so a failed lookup
+// there is a regression — fail loudly instead of hiding it as a silent skip.
+it.runIf(process.env.CI)("bundled renovate-config-validator resolves", () => {
+  expect(hasValidator).toBe(true);
+});
+
 let session: McpSession;
 
 afterEach(async () => {
