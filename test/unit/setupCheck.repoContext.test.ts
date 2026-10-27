@@ -55,6 +55,10 @@ const fakeProbe = (result: Partial<EndpointProbeResult> = {}) =>
     ...result,
   });
 
+// Keyed on the hint's prose rather than its URL: CodeQL reads
+// `includes("https://…")` in a boolean as URL sanitization (js/incomplete-url-substring-sanitization).
+const isForgejoEndpointHint = (hint: string): boolean => /a Forgejo host other than/.test(hint);
+
 describe("checkSetup repoContext", () => {
   it("omits repoContext when repoPath is not provided", async () => {
     const status = await checkSetup();
@@ -178,15 +182,16 @@ describe("checkSetup repoContext", () => {
   it("hints the Codeberg API endpoint, since forgejo> defaults to code.forgejo.org", async () => {
     const dir = makeRepo({ originUrl: "https://codeberg.org/org/proj.git" });
     const status = await checkSetup({ repoPath: dir, probe: fakeProbe() });
-    const hint = status.hints.find((h) => h.includes("https://codeberg.org/api/v1"));
+    const hint = status.hints.find(isForgejoEndpointHint);
     expect(hint).toBeDefined();
+    expect(hint).toContain('endpoint: "https://codeberg.org/api/v1"');
     expect(hint).toContain("code.forgejo.org");
   });
 
   it("does not hint an endpoint for code.forgejo.org itself", async () => {
     const dir = makeRepo({ originUrl: "https://code.forgejo.org/org/proj.git" });
     const status = await checkSetup({ repoPath: dir, probe: fakeProbe() });
-    expect(status.hints.some((h) => h.includes("/api/v1"))).toBe(false);
+    expect(status.hints.some(isForgejoEndpointHint)).toBe(false);
   });
 
   it("does not hint the Codeberg endpoint when renovate.json already sets one", async () => {
@@ -195,7 +200,7 @@ describe("checkSetup repoContext", () => {
       renovateConfig: { endpoint: "https://codeberg.org/api/v1" },
     });
     const status = await checkSetup({ repoPath: dir, probe: fakeProbe() });
-    expect(status.hints.some((h) => h.includes("code.forgejo.org"))).toBe(false);
+    expect(status.hints.some(isForgejoEndpointHint)).toBe(false);
   });
 
   it("treats a self-hosted gitea.* host as gitea-flavoured and hints GITEA_TOKEN", async () => {
