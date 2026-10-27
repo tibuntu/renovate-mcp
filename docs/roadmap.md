@@ -9,7 +9,6 @@ This page is the durable public summary of what's next. The maintainer keeps a m
 Smaller items surfaced during recent work that haven't been scheduled yet:
 
 - **Multi-version nightly matrix.** The nightly workflow already re-runs the full test suite against `renovate@latest` daily; testing against more than one Renovate version per run remains unpursued.
-- **More snapshot-drift guards for hand-maintained allow-lists.** `PACKAGE_RULE_ACTION_KEYS` and `LATER_TEXT_ANCHOR_TOKENS` (both used by the `invalid-schedule` / `package-rule-without-action` lint rules) don't yet have a drift sentinel comparing them against Renovate's own schema, unlike `suggest_presets`'s facet taxonomy. `SKIP_HINTS` in the dependency-explainer library is a newer hand-maintained map with the same gap. Tracked in [#420](https://github.com/tibuntu/renovate-mcp/issues/420).
 
 ## Vetted expansion backlog
 

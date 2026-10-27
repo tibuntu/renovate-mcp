@@ -56,7 +56,9 @@ export interface ExplainDependencyOptions {
 
 // ponytail: hand-maintained remedies for the common SkipReason values; anything
 // else gets the generic hint. Extend when a new reason shows up in support questions.
-const SKIP_HINTS: Record<string, string> = {
+// Drift guard: test/unit/allowListDrift.test.ts checks every key against Renovate's
+// `SkipReason` union and pins the list of reasons still on the generic hint.
+export const SKIP_HINTS: Record<string, string> = {
   ignored: "`ignored`: the dep is listed in `ignoreDeps` — remove it there to re-enable updates.",
   disabled:
     "`disabled`: a packageRule (or the manager / depType config) sets `enabled: false` for this dep — run test_package_rules to find which rule.",
