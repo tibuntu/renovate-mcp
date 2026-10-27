@@ -262,7 +262,7 @@ export interface ResolvedRenovateTool {
  * `renovate` install (or an unusual install topology that hides it from
  * `require.resolve`) still has an escape hatch.
  */
-function resolveBundledBinary(tool: "renovate" | "renovate-config-validator"): string | null {
+export function resolveBundledBinary(tool: "renovate" | "renovate-config-validator"): string | null {
   try {
     const pkgPath = requireFromHere.resolve("renovate/package.json");
     const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8")) as { bin?: Record<string, string> };
