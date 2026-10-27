@@ -34,10 +34,34 @@ export interface PerRuleResult {
   contributedConfig?: Record<string, unknown>;
 }
 
+/**
+ * Branch / commit / PR names rendered for one context (see
+ * `test_package_rules`' `rendered` block). Always a preview: only the fields
+ * the caller supplied (plus what the worker can derive from them) fill the
+ * templates; Renovate's post-lookup fields are otherwise unavailable offline.
+ */
+export interface RenderedNames {
+  branchName: string;
+  commitMessage: string;
+  prTitle: string;
+  /** The compiled group name. Present only when the merged config sets one. */
+  groupName?: string;
+  /** Post-lookup template variables Renovate fills at run time that reached the output with no value. */
+  missingTemplateVariables: string[];
+}
+
 export interface PerContextResult {
   /** Faithful merged config — bit-identical to applyPackageRules for matchConfidence-free configs. */
   mergedConfig: Record<string, unknown>;
   rules: PerRuleResult[];
+  /** Present only when `renderBase` was supplied and rendering succeeded. */
+  rendered?: RenderedNames;
+  /**
+   * Why `rendered` is absent although `renderBase` was supplied (e.g. a
+   * Handlebars parse error in a user template). Rendering fails per context;
+   * it never fails the faithful matching above it.
+   */
+  renderError?: string;
 }
 
 /**
@@ -57,6 +81,14 @@ function workerEntry(): string | URL {
 
 export interface RunPackageRulesOptions {
   timeoutMs?: number;
+  /**
+   * The resolved top-level config (presets expanded, `packageRules` removed).
+   * When supplied, each context's merged config is layered over Renovate's
+   * option defaults and this base, and its branch / commit / PR names are
+   * rendered into `rendered`. Omit it (annotate_dry_run, explain_dependency)
+   * and the worker never loads the rendering modules.
+   */
+  renderBase?: Record<string, unknown>;
 }
 
 /**
@@ -71,9 +103,10 @@ export async function runApplyPackageRules(
   options: RunPackageRulesOptions = {},
 ): Promise<PerContextResult[]> {
   // Nothing to evaluate: skip the worker cold start entirely. With no rules,
-  // every context's merged config is itself and no rule matched.
+  // every context's merged config is itself and no rule matched — unless the
+  // caller wants names rendered, which only the worker can do.
   if (contexts.length === 0) return [];
-  if (packageRules.length === 0) {
+  if (packageRules.length === 0 && !options.renderBase) {
     return contexts.map((ctx) => ({
       mergedConfig: { ...ctx, packageRules: [] },
       rules: [],
@@ -82,7 +115,7 @@ export async function runApplyPackageRules(
 
   const { results } = await runRenovateWorker<{ results: PerContextResult[] }>(
     workerEntry(),
-    { packageRules, contexts },
+    { packageRules, contexts, renderBase: options.renderBase },
     {
       timeoutMs: options.timeoutMs ?? DEFAULT_WORKER_TIMEOUT_MS,
       label: "packageRules evaluation",

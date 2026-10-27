@@ -1,6 +1,8 @@
 import {
   runApplyPackageRules,
   type PerContextResult,
+  type RenderedNames,
+  type RunPackageRulesOptions,
 } from "./packageRulesWorker.js";
 import { resolveConfig, type ResolveOptions } from "./presetResolver.js";
 import { isRecord } from "./util.js";
@@ -101,6 +103,10 @@ export interface ContextAnalysis {
   /** Faithful merged config (worker path) or approximate (preview path). */
   mergedConfig: Record<string, unknown>;
   rules: RuleAnalysis[];
+  /** Rendered branch / commit / PR names. Only when `renderBase` was given AND the worker ran. */
+  rendered?: RenderedNames;
+  /** Why `rendered` is absent although the worker ran (a user template that does not compile). */
+  renderError?: string;
 }
 
 export interface PackageRulesAnalysis {
@@ -160,7 +166,12 @@ export function detectLegacyKeys(
 export async function resolvePackageRules(
   source: Record<string, unknown>,
   options: ResolveOptions,
-): Promise<{ packageRules: Record<string, unknown>[]; warnings: string[] }> {
+): Promise<{
+  packageRules: Record<string, unknown>[];
+  /** The whole resolved config (presets expanded), `packageRules` included. */
+  resolved: Record<string, unknown>;
+  warnings: string[];
+}> {
   const { resolved, warnings, presetsUnresolved } = await resolveConfig(source, options);
   const packageRules = Array.isArray(resolved.packageRules)
     ? resolved.packageRules.filter(isRecord)
@@ -173,7 +184,7 @@ export async function resolvePackageRules(
         .join(", ")}. See resolve_config for details.`,
     );
   }
-  return { packageRules, warnings: out };
+  return { packageRules, resolved, warnings: out };
 }
 
 /** One `matchedRules` entry, as every packageRules tool reports it. */
@@ -194,7 +205,7 @@ export function toMatchedRule(r: RuleAnalysis) {
 export async function analyzePackageRules(
   packageRules: Record<string, unknown>[],
   contexts: Record<string, unknown>[],
-  options: { timeoutMs?: number } = {},
+  options: RunPackageRulesOptions = {},
 ): Promise<PackageRulesAnalysis> {
   const warnings = detectLegacyKeys(packageRules);
 
@@ -223,6 +234,8 @@ export async function analyzePackageRules(
       rules: res.rules.map((ruleResult, index) =>
         classifyRule(ruleResult, packageRules[index] ?? {}, index, supplied),
       ),
+      ...(res.rendered ? { rendered: res.rendered } : {}),
+      ...(res.renderError ? { renderError: res.renderError } : {}),
     };
   });
 

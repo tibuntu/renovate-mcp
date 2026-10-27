@@ -143,6 +143,148 @@ describe("matcher-registry drift sentinel", () => {
   });
 });
 
+describe("runApplyPackageRules — template rendering (renderBase)", () => {
+  const MAJOR = {
+    ...BASE,
+    newValue: "^5.0.0",
+    newVersion: "5.0.0",
+    updateType: "major",
+  };
+
+  it("renders branchName / commitMessage / prTitle from Renovate's defaults, even with zero rules", async () => {
+    const [res] = await runApplyPackageRules([], [MAJOR], { renderBase: {} });
+    expect(res!.rendered).toEqual({
+      branchName: "renovate/lodash-5.x",
+      commitMessage: "Update dependency lodash to v5",
+      prTitle: "Update dependency lodash to v5",
+      missingTemplateVariables: [],
+    });
+  });
+
+  it("does not render when renderBase is absent", async () => {
+    const [res] = await runApplyPackageRules([{ matchPackageNames: ["lodash"] }], [MAJOR]);
+    expect(res!.rendered).toBeUndefined();
+  });
+
+  it("applies the top-level config and a matched rule's contribution (semantic prefix)", async () => {
+    const [res] = await runApplyPackageRules(
+      [{ matchPackageNames: ["lodash"], semanticCommitType: "fix" }],
+      [MAJOR],
+      { renderBase: { semanticCommits: "enabled", branchPrefix: "deps/" } },
+    );
+    // missingTemplateVariables must be empty: the probe never marks config
+    // options (commitMessagePrefix, groupName, prTitle), so it takes the same
+    // semantic-prefix / non-group path as the real render.
+    expect(res!.rendered).toEqual({
+      branchName: "deps/lodash-5.x",
+      commitMessage: "fix(deps): update dependency lodash to v5",
+      prTitle: "fix(deps): update dependency lodash to v5",
+      missingTemplateVariables: [],
+    });
+  });
+
+  it("reports a template error per context instead of failing the whole evaluation", async () => {
+    const [res] = await runApplyPackageRules(
+      [{ matchPackageNames: ["lodash"], automerge: true }],
+      [MAJOR],
+      { renderBase: { prTitle: "{{#if isMajor}}unclosed" } },
+    );
+    expect(res!.rules[0]!.matched).toBe(true); // matching is untouched
+    expect(res!.mergedConfig.automerge).toBe(true);
+    expect(res!.rendered).toBeUndefined();
+    expect(res!.renderError).toMatch(/Parse error/);
+  });
+
+  it("renders a groupName as a group branch (slug topic, group commit topic)", async () => {
+    const [res] = await runApplyPackageRules(
+      [{ matchPackageNames: ["lodash"], groupName: "all non-major" }],
+      [{ ...BASE, newValue: "^4.1.0", newVersion: "4.1.0", updateType: "minor" }],
+      { renderBase: {} },
+    );
+    expect(res!.rendered).toMatchObject({
+      branchName: "renovate/all-non-major",
+      commitMessage: "Update all non-major",
+      groupName: "all non-major",
+    });
+  });
+
+  it("lists only the post-lookup variables that actually reach the output", async () => {
+    // No newVersion and a range newValue: newMajor cannot be derived, so the
+    // default branchTopic / commitMessageExtra render with a hole. Variables in
+    // untaken {{#if}} branches (newMinor, newDigestShort, …) must NOT be listed.
+    const [res] = await runApplyPackageRules([], [{ ...BASE, newValue: "^5.0.0", updateType: "major" }], {
+      renderBase: {},
+    });
+    expect(res!.rendered!.branchName).toBe("renovate/lodash-.x");
+    expect(res!.rendered!.missingTemplateVariables).toEqual(["newMajor"]);
+  });
+});
+
+describe("template rendering parity oracle", () => {
+  // Prove the worker's mirror of generateBranchConfig's single-update path
+  // (semantic prefix, 3× compile, whitespace/lower-casing, prTitle fallback)
+  // matches Renovate's real output. The oracle is fed the same post-lookup
+  // fields explicitly, so this pins the compile path, not the derivation.
+  async function oracle(ctx: Record<string, unknown>) {
+    const { getConfig } = await import("renovate/dist/config/defaults.js");
+    const { mergeChildConfig } = await import("renovate/dist/config/utils.js");
+    const { applyUpdateConfig } = await import("renovate/dist/workers/repository/updates/flatten.js");
+    const { generateBranchConfig } = await import("renovate/dist/workers/repository/updates/generate.js");
+    const upgrade = applyUpdateConfig(mergeChildConfig(getConfig(), ctx));
+    const g = generateBranchConfig([upgrade]);
+    return { branchName: g.branchName, commitMessage: g.commitMessage, prTitle: g.prTitle };
+  }
+
+  const LOOKED_UP = {
+    ...BASE,
+    newValue: "^5.0.0",
+    newVersion: "5.0.0",
+    newMajor: 5,
+    newMinor: 0,
+    newPatch: 0,
+    updateType: "major",
+    isMajor: true,
+    isSingleVersion: false,
+  };
+
+  const cases: Array<{ name: string; ctx: Record<string, unknown> }> = [
+    { name: "defaults, major", ctx: LOOKED_UP },
+    {
+      name: "semantic commits with scope",
+      ctx: { ...LOOKED_UP, semanticCommits: "enabled", semanticCommitType: "fix", semanticCommitScope: "deps/{{depType}}", depType: "devDependencies" },
+    },
+    {
+      name: "custom commitMessagePrefix + prTitle template + branchNameStrict",
+      ctx: {
+        ...LOOKED_UP,
+        commitMessagePrefix: "[deps]",
+        prTitle: "bump {{depName}} to {{newVersion}} ({{updateType}})",
+        additionalBranchPrefix: "{{parentDir}}-",
+        parentDir: "web",
+        branchNameStrict: true,
+      },
+    },
+    {
+      name: "groupName with groupSingleUpdates",
+      ctx: { ...LOOKED_UP, groupName: "lodash family", groupSingleUpdates: true },
+    },
+    {
+      // Pins the mirrored sanitizeDepName quirk: only the FIRST run of dashes
+      // is collapsed (non-global replace), scope/@types stripped, slashes → dashes.
+      name: "scoped depName with repeated dashes and slashes",
+      ctx: { ...LOOKED_UP, depName: "@types/foo--bar//baz--qux", packageName: "@types/foo--bar//baz--qux" },
+    },
+  ];
+
+  for (const c of cases) {
+    it(`rendered names match Renovate: ${c.name}`, async () => {
+      const [res] = await runApplyPackageRules([], [c.ctx], { renderBase: {} });
+      const { groupName: _g, missingTemplateVariables: _m, ...names } = res!.rendered!;
+      expect(names).toEqual(await oracle(c.ctx));
+    });
+  }
+});
+
 describe("applyPackageRules parity oracle", () => {
   // Prove the worker's loop replication stays faithful: its mergedConfig must
   // deep-equal a direct applyPackageRules() call. Covers glob match, override

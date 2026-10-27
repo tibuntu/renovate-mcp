@@ -10,6 +10,7 @@ import { FETCH_PLATFORMS } from "../lib/presetResolver.js";
 import {
   loadConfigSource,
   MATCH_PREVIEW_DISCLAIMER,
+  RENDER_PREVIEW_DISCLAIMER,
   TEST_PACKAGE_RULES_FAITHFUL_DISCLAIMER,
   NETWORK_READ_ONLY_ANNOTATIONS,
 } from "../lib/toolInputs.js";
@@ -25,7 +26,7 @@ export function registerTestPackageRules(server: McpServer): void {
       title: "Test which packageRules match a dependency",
       annotations: NETWORK_READ_ONLY_ANNOTATIONS,
       description:
-        "Offline \"what-if\": given a hypothetical dependency context and a config, report which `packageRules` match (in order), which matcher decided each, and what each matched rule contributes. Answers \"why didn't my rule match?\". Rules are evaluated with Renovate's REAL matchers in a worker thread (faithful), classified against the fields you actually supplied — a matcher that needs a field you didn't pass is reported as `unevaluatable`, never silently treated as a non-match. Matchers needing post-lookup data (matchUpdateTypes, matchCurrentVersion, matchNewValue, matchCurrentAge) or the merge-confidence API (matchConfidence) are unevaluatable offline; matchJsonata is advisory. Pass either `repoPath` (reads + expands the repo's config) or `configContent` (an inline config); `externalPresets`/`endpoint`/`platform` opt into external preset expansion so `extends`-provided rules are included (same semantics as resolve_config). Deprecated matcher keys (matchPackagePatterns, …) are warned about — run migrate_config first. Run dry_run for full-fidelity confirmation.",
+        "Offline \"what-if\": given a hypothetical dependency context and a config, report which `packageRules` match (in order), which matcher decided each, and what each matched rule contributes. Answers \"why didn't my rule match?\". Rules are evaluated with Renovate's REAL matchers in a worker thread (faithful), classified against the fields you actually supplied — a matcher that needs a field you didn't pass is reported as `unevaluatable`, never silently treated as a non-match. Matchers needing post-lookup data (matchUpdateTypes, matchCurrentVersion, matchNewValue, matchCurrentAge) or the merge-confidence API (matchConfidence) are unevaluatable offline; matchJsonata is advisory. Pass either `repoPath` (reads + expands the repo's config) or `configContent` (an inline config); `externalPresets`/`endpoint`/`platform` opt into external preset expansion so `extends`-provided rules are included (same semantics as resolve_config). Deprecated matcher keys (matchPackagePatterns, …) are warned about — run migrate_config first. Also renders the effective branchName / commitMessage / prTitle (and groupName) for the synthetic dependency under `rendered` — a preview built from the fields you supplied, which lists the post-lookup template variables it could not fill. Run dry_run for full-fidelity confirmation.",
       inputSchema: {
         repoPath: pathString(
           "Absolute path to the repository root. The tool locates and expands the repo's renovate config automatically.",
@@ -65,6 +66,7 @@ export function registerTestPackageRules(server: McpServer): void {
         registryUrls: optStringArray("Registry URLs (matchRegistryUrls; static)."),
         sourceUrl: optString("Source repository URL (matchSourceUrls; static)."),
         newValue: optString("Proposed new version constraint (matchNewValue; post-lookup)."),
+        newVersion: optString("Resolved new version, e.g. 5.0.0 (templates only: fills newMajor/newMinor/newPatch in the rendered names; defaults to newValue when that is a single version)."),
         updateType: optString("Update type: major/minor/patch/pin/digest/… (matchUpdateTypes; post-lookup)."),
         isBump: z.boolean().optional().describe("Whether this is a range bump (matchUpdateTypes; post-lookup)."),
         isBreaking: z.boolean().optional().describe("Whether the update is breaking per its versioning (matchIsBreaking; post-lookup)."),
@@ -78,11 +80,10 @@ export function registerTestPackageRules(server: McpServer): void {
 
       // Expand `extends` so preset-provided packageRules are included, then test
       // against the effective set.
-      const { packageRules, warnings: presetWarnings } = await resolvePackageRules(src.config, {
-        fetchExternal: externalPresets ?? false,
-        endpoint,
-        platform,
-      });
+      const { packageRules, resolved, warnings: presetWarnings } = await resolvePackageRules(
+        src.config,
+        { fetchExternal: externalPresets ?? false, endpoint, platform },
+      );
 
       // Build the synthetic dependency context from supplied fields only.
       const context: Record<string, unknown> = {};
@@ -90,7 +91,10 @@ export function registerTestPackageRules(server: McpServer): void {
         if (v !== undefined) context[k] = v;
       }
 
-      const analysis = await analyzePackageRules(packageRules, [context]);
+      // The top-level config (branchPrefix, semanticCommits, …) is what the
+      // rendered names are layered on; the rules are applied by the worker.
+      const { packageRules: _rules, ...renderBase } = resolved;
+      const analysis = await analyzePackageRules(packageRules, [context], { renderBase });
       const result = analysis.contexts[0] ?? { mergedConfig: {}, rules: [] };
 
       const matchedRules = result.rules.filter((r) => r.matched).map(toMatchedRule);
@@ -107,6 +111,21 @@ export function registerTestPackageRules(server: McpServer): void {
       const warnings = [...analysis.warnings, ...presetWarnings];
       if (packageRules.length === 0) {
         warnings.push("The resolved config has no packageRules to test.");
+      }
+      const { rendered, renderError } = result;
+      // A semantic prefix is only ever applied when no explicit
+      // commitMessagePrefix is set, so the "auto" caveat is noise otherwise.
+      const effective = (key: string) => effectiveConfig[key] ?? renderBase[key];
+      if (renderError) {
+        warnings.push(`A template in this config does not render (${renderError}) — \`rendered\` is omitted.`);
+      } else if (!rendered) {
+        warnings.push(
+          "Template rendering needs the packageRules worker, which was unavailable — `rendered` is omitted.",
+        );
+      } else if ((effective("semanticCommits") ?? "auto") === "auto" && !effective("commitMessagePrefix")) {
+        warnings.push(
+          'semanticCommits is "auto" (the default), so the names are rendered without a semantic prefix: Renovate decides that from the repo\'s git history at run time. Set semanticCommits to "enabled" to preview the prefix.',
+        );
       }
 
       return {
@@ -127,6 +146,15 @@ export function registerTestPackageRules(server: McpServer): void {
                 unmatchedRules,
                 unevaluatable,
                 effectiveConfig,
+                ...(rendered
+                  ? {
+                      rendered: {
+                        renderQuality: "preview",
+                        disclaimer: RENDER_PREVIEW_DISCLAIMER,
+                        ...rendered,
+                      },
+                    }
+                  : {}),
                 warnings,
               },
               null,

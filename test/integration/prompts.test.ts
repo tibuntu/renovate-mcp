@@ -86,6 +86,20 @@ describe("MCP prompts", () => {
     }
   });
 
+  it("tells the model to read test_package_rules' rendered names in debug-package-rule", async () => {
+    session = await startServer();
+    const res = await session.request<{
+      messages: Array<{ role: string; content: { type: string; text: string } }>;
+    }>("prompts/get", {
+      name: "debug-package-rule",
+      arguments: { repoPath: "/tmp/example", depName: "lodash" },
+    });
+    const text = res.result?.messages[0]?.content.text ?? "";
+    for (const needle of ["test_package_rules", "rendered", "branchName", "commitMessage", "prTitle", "missingTemplateVariables"]) {
+      expect(text).toContain(needle);
+    }
+  });
+
   it("returns a user message naming check_setup and the given repoPath for design-renovate-config", async () => {
     session = await startServer();
     const res = await session.request<{
