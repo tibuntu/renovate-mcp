@@ -5,9 +5,11 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_SERVER_ENTRY = path.resolve(__dirname, "../../dist/index.js");
-// V8 coverage instrumentation inflates child cold start; allow more headroom
-// when NODE_V8_COVERAGE is set (vitest sets it for --coverage runs).
-const DEFAULT_REQUEST_TIMEOUT_MS = process.env.NODE_V8_COVERAGE ? 30_000 : 10_000;
+// Tool calls that spawn a Renovate worker pay a cold load of the renovate
+// module graph: 1-5 s alone, far more under the parallel vitest fan-out (#421).
+// Kept below the 30 s vitest testTimeout so a hung request fails here, with the
+// server stderr attached, rather than at the bare vitest timeout.
+const DEFAULT_REQUEST_TIMEOUT_MS = 25_000;
 const STDERR_CAP_BYTES = 64 * 1024;
 
 export interface JsonRpcRequest {
@@ -25,7 +27,7 @@ export interface JsonRpcResponse {
 }
 
 export interface StartServerOptions {
-  /** Per-request wall-clock timeout in milliseconds. Default: 10_000. */
+  /** Per-request wall-clock timeout in milliseconds. Default: 25_000. */
   requestTimeoutMs?: number;
   /** Override the script to spawn. Default: dist/index.js of this repo. */
   serverEntry?: string;
