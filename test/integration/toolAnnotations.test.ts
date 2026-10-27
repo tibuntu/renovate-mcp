@@ -21,7 +21,7 @@ describe("tool annotations", () => {
       "tools/list",
     );
     const tools = res.result?.tools ?? [];
-    expect(tools).toHaveLength(17);
+    expect(tools).toHaveLength(18);
 
     for (const t of tools) {
       for (const hint of ["readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"] as const) {
