@@ -89,6 +89,16 @@ This narrows the ADR-0001/0004 carve-out further: a **third** worker-isolated `r
 - `vitest.config.ts` gains `RENOVATE_MCP_PACKAGE_RULES_WORKER_ENTRY`.
 - `CLAUDE.md` Architecture carve-out amended to name `packageRulesWorker.ts` and link this ADR; docs (`docs/tools.md`, `docs/architecture.md`, `docs/operations.md`, `README.md`) updated.
 
+## Addendum (2026-10-27): rendered branch / commit / PR names in `test_package_rules`
+
+**Context.** Issue #418: people tuning `branchPrefix`, `commitMessagePrefix`, `semanticCommit*`, `prTitle` or `groupName` still had to run `dry_run` to see the rendered strings. The worker already imports `compile`, and the merged config it produces is exactly the input Renovate's naming code consumes.
+
+**Options.** (1) `compile` the default templates directly and hand-replicate the semantic-prefix / `prTitle` logic — small but drifts from Renovate. (2) Import Renovate's real `generateBranchConfig` + `applyUpdateConfig` — fully faithful, but both side-effect-import `config/index.js`, which loads every manager and datasource: measured **+5–11 s** of cold start on top of the matchers, paid by every `test_package_rules` call. (3) Import only the leaf modules that are cheap — `generateBranchName` (branch-name.js, +11 ms), `getConfig` option defaults, the versioning registry, `CommitMessage.formatPrefix` — and mirror the ~30-line single-update path of `generateBranchConfig` (`compileCommitMessage`, `compilePrTitle`, the pretty-/display- fields) around the already-imported `compile`.
+
+**Decision.** Option 3, opt-in via `renderBase` so `annotate_dry_run` / `explain_dependency` never load the extra modules. The result is marked `renderQuality: "preview"` **by construction** — templates reference post-lookup fields (`newMajor`, `prettyNewVersion`, …) that only a real lookup fills — and carries `missingTemplateVariables`, found by a second render with a sentinel in every unset post-lookup field (only sentinels that reach the output are reported, so untaken `{{#if}}` branches stay silent). A `groupName` is rendered as a multi-update group, since that is what a group exists for. `semanticCommits: "auto"` renders without a prefix plus a warning (Renovate resolves it from git history).
+
+**Guards.** The mirror is pinned by a parity-oracle test against the real `generateBranchConfig` for fully specified updates (default templates, semantic scope, custom `commitMessagePrefix` + `prTitle` + `branchNameStrict`, `groupName` + `groupSingleUpdates`), run in the test process where the heavy import is acceptable. Four new shims in `src/types/renovate-shims.d.ts`. The main process still never imports `renovate`.
+
 ## Diagram
 
 ```mermaid
@@ -100,7 +110,7 @@ flowchart TD
     Rules --> Analysis[packageRulesAnalysis]
     Updates --> Analysis
     Analysis -->|one round-trip| Worker[Worker Thread]
-    Worker -->|import at worker init| RenovateLib["renovate matchers + mergeChildConfig + compile (+ slugify)"]
+    Worker -->|import at worker init| RenovateLib["renovate matchers + mergeChildConfig + compile (+ slugify); with renderBase: generateBranchName + option defaults + versioning"]
     Worker -->|per-context: mergedConfig + per-rule matcher vector| Analysis
     Analysis -->|classify with supplied-fields knowledge| Result["matched / non-match / unevaluatable · matchQuality faithful|preview"]
     Analysis -.->|worker unavailable| Preview[in-process glob-only subset → matchQuality preview]

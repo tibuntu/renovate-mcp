@@ -116,6 +116,38 @@ describe("detectLegacyKeys", () => {
   });
 });
 
+describe("analyzePackageRules — rendered names", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("passes the worker's rendered block through when renderBase is given", async () => {
+    const { contexts } = await analyzePackageRules(
+      [{ matchPackageNames: ["lodash"], semanticCommitType: "fix" }],
+      [{ packageName: "lodash", depName: "lodash", newValue: "5.0.0", updateType: "major" }],
+      { renderBase: { semanticCommits: "enabled" } },
+    );
+    expect(contexts[0]!.rendered).toMatchObject({
+      branchName: "renovate/lodash-5.x",
+      commitMessage: "fix(deps): update dependency lodash to v5",
+    });
+  });
+
+  it("has no rendered block on the preview fallback", async () => {
+    vi.stubEnv(
+      "RENOVATE_MCP_PACKAGE_RULES_WORKER_ENTRY",
+      resolve(process.cwd(), "dist/lib/does-not-exist.js"),
+    );
+    const { matchQuality, contexts } = await analyzePackageRules(
+      [{ matchPackageNames: ["lodash"] }],
+      [{ packageName: "lodash" }],
+      { renderBase: {} },
+    );
+    expect(matchQuality).toBe("preview");
+    expect(contexts[0]!.rendered).toBeUndefined();
+  });
+});
+
 describe("analyzePackageRules — preview fallback", () => {
   afterEach(() => {
     vi.unstubAllEnvs();

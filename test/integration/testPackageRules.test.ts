@@ -37,6 +37,15 @@ interface Body {
   unmatchedRules: Array<{ index: number; decidedBy: string[] }>;
   unevaluatable: Array<{ ruleIndex: number; matcher: string; reason: string }>;
   effectiveConfig: Record<string, unknown>;
+  rendered?: {
+    renderQuality: string;
+    disclaimer: string;
+    branchName: string;
+    commitMessage: string;
+    prTitle: string;
+    groupName?: string;
+    missingTemplateVariables: string[];
+  };
   warnings: string[];
   path?: string;
 }
@@ -131,6 +140,98 @@ describe("test_package_rules", () => {
     const result = await call({ depName: "lodash" });
     expect(result.isError).toBe(true);
     expect(result.content[0]!.text).toMatch(/Provide either repoPath or configContent/);
+  });
+
+  it("renders the effective branch / commit / PR names from the repo's top-level config and matched rules", async () => {
+    await writeFile(
+      path.join(scratch, "renovate.json"),
+      JSON.stringify({
+        extends: [":semanticCommits"],
+        branchPrefix: "deps/",
+        packageRules: [{ matchPackageNames: ["lodash"], semanticCommitType: "fix" }],
+      }),
+    );
+    session = await startServer({});
+    const result = await call({
+      repoPath: scratch,
+      depName: "lodash",
+      packageName: "lodash",
+      datasource: "npm",
+      manager: "npm",
+      currentValue: "^4.0.0",
+      newValue: "^5.0.0",
+      newVersion: "5.0.0",
+      updateType: "major",
+    });
+    expect(result.isError).toBeFalsy();
+    const body = JSON.parse(result.content[0]!.text) as Body;
+    expect(body.rendered).toEqual({
+      renderQuality: "preview",
+      disclaimer: expect.stringMatching(/preview/i),
+      branchName: "deps/lodash-5.x",
+      commitMessage: "fix(deps): update dependency lodash to v5",
+      prTitle: "fix(deps): update dependency lodash to v5",
+      missingTemplateVariables: [],
+    });
+    expect(body.warnings.some((w) => /semanticCommits/.test(w))).toBe(false);
+  });
+
+  it("lists the post-lookup variables it could not fill and warns about semanticCommits auto", async () => {
+    session = await startServer({});
+    const result = await call({
+      configContent: { packageRules: [] },
+      depName: "lodash",
+      newValue: "^5.0.0",
+      updateType: "major",
+    });
+    const body = JSON.parse(result.content[0]!.text) as Body;
+    expect(body.rendered?.branchName).toBe("renovate/lodash-.x");
+    expect(body.rendered?.missingTemplateVariables).toEqual(["newMajor"]);
+    expect(body.warnings.some((w) => /semanticCommits/.test(w) && /"auto"/.test(w))).toBe(true);
+
+    // An explicit commitMessagePrefix makes semanticCommits irrelevant to the
+    // names, so the warning would be noise.
+    const prefixed = JSON.parse(
+      (
+        await call({
+          configContent: { commitMessagePrefix: "[deps]", packageRules: [] },
+          depName: "lodash",
+          newValue: "5.0.0",
+          updateType: "major",
+        })
+      ).content[0]!.text,
+    ) as Body;
+    expect(prefixed.rendered?.commitMessage).toBe("[deps] Update dependency lodash to v5");
+    expect(prefixed.warnings.some((w) => /semanticCommits/.test(w))).toBe(false);
+  });
+
+  it("keeps faithful matching and warns when a template cannot be rendered", async () => {
+    session = await startServer({});
+    const result = await call({
+      configContent: {
+        prTitle: "{{#if isMajor}}unclosed",
+        packageRules: [{ matchPackageNames: ["lodash"], automerge: true }],
+      },
+      packageName: "lodash",
+    });
+    const body = JSON.parse(result.content[0]!.text) as Body;
+    expect(body.matchQuality).toBe("faithful");
+    expect(body.matchedRuleCount).toBe(1);
+    expect(body.rendered).toBeUndefined();
+    expect(body.warnings.some((w) => /rendered/.test(w) && /Parse error/.test(w))).toBe(true);
+  });
+
+  it("omits rendered (and says so) when the worker is unavailable", async () => {
+    session = await startServer({
+      RENOVATE_MCP_PACKAGE_RULES_WORKER_ENTRY: "/nonexistent/packageRulesWorkerImpl.js",
+    });
+    const result = await call({
+      configContent: { packageRules: [{ matchPackageNames: ["lodash"], automerge: true }] },
+      packageName: "lodash",
+    });
+    const body = JSON.parse(result.content[0]!.text) as Body;
+    expect(body.rendered).toBeUndefined();
+    expect(body.warnings.some((w) => /rendered/.test(w))).toBe(true);
   });
 
   it("advertises the tool in the server instructions", async () => {

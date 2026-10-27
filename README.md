@@ -41,7 +41,7 @@ Seventeen tools, seven resources, and four workflow prompts. Each tool name belo
 | [`resolve_config`](docs/tools.md#resolve_config) | Expand every `extends` preset offline. Opt in to fetching `github>` / `gitlab>` / `gitea>` / `forgejo>` presets over HTTPS, or Bitbucket Cloud presets via `local>` + `platform`. |
 | [`explain_config`](docs/tools.md#explain_config) | Inverse of `resolve_config`: annotate every leaf field with the chain of presets that set it. |
 | [`resolve_config_diff`](docs/tools.md#resolve_config_diff) | Offline structural diff of two fully-resolved configs — changed fields plus an order-insensitive set diff of array keys (`packageRules`, `customManagers`, …). The refactor-friendly counterpart to `dry_run_diff`. |
-| [`test_package_rules`](docs/tools.md#test_package_rules) | Offline what-if: which `packageRules` match a hypothetical dependency, which matcher decided each, and what each contributes. Faithful (Renovate's real matchers in a worker); fields you don't supply are reported as unevaluatable, not non-matches. |
+| [`test_package_rules`](docs/tools.md#test_package_rules) | Offline what-if: which `packageRules` match a hypothetical dependency, which matcher decided each, and what each contributes — plus the `branchName` / `commitMessage` / `prTitle` the matched config would render for it. Faithful matching (Renovate's real matchers in a worker); fields you don't supply are reported as unevaluatable, not non-matches, and the rendered names list the post-lookup template variables they could not fill. |
 | [`preview_custom_manager`](docs/tools.md#preview_custom_manager) | Preview a `customManagers` entry (regex or JSONata) against a local repo. Offline. |
 | [`validate_config`](docs/tools.md#validate_config) | Run `renovate-config-validator` against a file or inline object. |
 | [`lint_config`](docs/tools.md#lint_config) | Semantic lint pass for Renovate-specific footguns the schema validator declares valid. Offline. |
@@ -64,7 +64,7 @@ Seventeen tools, seven resources, and four workflow prompts. Each tool name belo
 | Prompt | Drives |
 | --- | --- |
 | [`design-renovate-config`](docs/tools.md#design-renovate-config) | `check_setup` → `read_config` → `suggest_presets` → `resolve_config`/`explain_config` → `validate_config`/`lint_config` → `dry_run` → `write_config` on confirmation. |
-| [`debug-package-rule`](docs/tools.md#debug-package-rule) | `check_setup` → `read_config` → `test_package_rules` → `dry_run` (with `reportOutputPath`) → `annotate_dry_run` → `explain_dependency` → a verdict naming rule indices and matchers. |
+| [`debug-package-rule`](docs/tools.md#debug-package-rule) | `check_setup` → `read_config` → `test_package_rules` (matches + rendered names) → `dry_run` (with `reportOutputPath`) → `annotate_dry_run` → `explain_dependency` → a verdict naming rule indices and matchers. |
 | [`author-custom-manager`](docs/tools.md#author-custom-manager) | Draft a `customManagers` entry → `preview_custom_manager` iteratively → `validate_config`/`lint_config` → `dry_run` → `write_config` on confirmation. |
 | [`onboard-repo`](docs/tools.md#onboard-repo) | For repos without a config: `check_setup` → `read_config` (expect none) → `dry_run` (extract mode) → `suggest_presets` → `lint_config`/`validate_config` → `write_config` on confirmation → full `dry_run`. |
 

@@ -73,14 +73,14 @@ export function registerWorkflowPrompts(server: McpServer): void {
           `1. Call check_setup with repoPath "${repoPath}" first to surface any token/CLI setup problems.`,
           `2. Call read_config with repoPath "${repoPath}" to load the current config.`,
           depName
-            ? `3. Call test_package_rules with repoPath and depName "${depName}" (plus any other known fields — datasource, manager, currentValue, …) to see which packageRules match this hypothetical dependency, which matcher decided each, and what each contributes.`
-            : "3. Ask the user which dependency to investigate (and any known fields — datasource, manager, currentValue, …), then call test_package_rules with repoPath and those fields.",
+            ? `3. Call test_package_rules with repoPath and depName "${depName}" (plus any other known fields — datasource, manager, currentValue, newValue, newVersion, updateType, …) to see which packageRules match this hypothetical dependency, which matcher decided each, and what each contributes. Its \`rendered\` block shows the branchName, commitMessage and prTitle the matched config produces; treat it as a preview and read its missingTemplateVariables before quoting a name.`
+            : "3. Ask the user which dependency to investigate (and any known fields — datasource, manager, currentValue, newValue, newVersion, updateType, …), then call test_package_rules with repoPath and those fields. Its `rendered` block shows the branchName, commitMessage and prTitle the matched config produces; treat it as a preview and read its missingTemplateVariables before quoting a name.",
           "4. Call dry_run against the repo with reportOutputPath set to a temp file path, to get the real Renovate report without a huge inline payload.",
           "5. Call annotate_dry_run with reportPath pointing at that same file (plus repoPath) to attribute each proposed update to the packageRules that caused it, and flag rules that never matched.",
           depName
             ? `6. Call explain_dependency with reportPath pointing at that same file, depName "${depName}" and repoPath, to see whether the dependency was found at all, its skipReason, proposed updates, warnings and the rules that matched it.`
             : "6. Call explain_dependency with reportPath pointing at that same file, the chosen depName and repoPath, to see whether the dependency was found at all, its skipReason, proposed updates, warnings and the rules that matched it.",
-          "7. State the verdict: name the exact packageRules index/indices and matcher(s) that decided the outcome for this dependency, explain any skipReason, and call out any rulesNeverMatched that look like dead rules.",
+          "7. State the verdict: name the exact packageRules index/indices and matcher(s) that decided the outcome for this dependency, explain any skipReason, call out any rulesNeverMatched that look like dead rules, and quote the rendered branch / commit / PR names if the user is tuning templates.",
         ].join("\n"),
       ),
   );

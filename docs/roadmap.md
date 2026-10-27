@@ -13,7 +13,6 @@ Smaller items surfaced during recent work that haven't been scheduled yet:
 ## Vetted expansion backlog
 
 - **An `explain_schedule` tool.** `invalid-schedule` only answers "does this parse?". An offline tool that takes a `schedule` and an optional `timezone` and returns the next run windows would answer "when will this actually run?". Tracked in [#417](https://github.com/tibuntu/renovate-mcp/issues/417).
-- **Rendered templates in `test_package_rules`.** Show the effective `branchName`, `commitMessage`, `prTitle` and `groupName` rendered for the hypothetical dependency, so template tuning doesn't need a `dry_run`. Tracked in [#418](https://github.com/tibuntu/renovate-mcp/issues/418).
 
 ## Parked (deliberately not planned)
 
