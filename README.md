@@ -9,24 +9,15 @@ An MCP server for designing [Renovate](https://github.com/renovatebot/renovate) 
 
 ## Quick start
 
+Needs Node.js ≥ 24.11 on Linux or macOS. With [Claude Code](https://docs.claude.com/en/docs/claude-code):
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tibuntu/renovate-mcp/main/install.sh | bash
+npm install -g renovate-mcp
+claude mcp add renovate -s user -- renovate-mcp
+claude mcp list   # renovate should show as connected
 ```
 
-Or add this entry manually to your client's `mcpServers` config:
-
-```json
-{
-  "mcpServers": {
-    "renovate": {
-      "command": "npx",
-      "args": ["-y", "renovate-mcp"]
-    }
-  }
-}
-```
-
-Restart your client and try the prompt: *"List the namespaces available under `renovate://presets`."* A response listing `config`, `docker`, `npm`, … confirms the server is reachable. Long-form install options are under [Install](#install) below.
+Then try the prompt: *"List the namespaces available under `renovate://presets`."* A response listing `config`, `docker`, `npm`, … confirms the server is reachable. No tokens are needed for the offline tools. Other clients, tokens and upgrades are under [Install](#install) below.
 
 ## What you can do
 
@@ -95,30 +86,76 @@ Renovate ships bundled — the `renovate` package is a runtime dependency, so `v
 
 ## Install
 
-### Quick install
+### 1. Install the package
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/tibuntu/renovate-mcp/main/install.sh | bash
+npm install -g renovate-mcp
 ```
 
-The script checks Node ≥ 24, asks whether you want `npx`-on-demand or a global install, runs an MCP `initialize` handshake to verify the binary works, and — when the Claude Code CLI is on PATH — auto-registers `renovate` in user scope via `claude mcp add`. Useful flags (pass after `bash -s --`): `--global`, `--npx`, `--no-mcp-add`, `--mcp-scope=user|project|local`, `--version=X.Y.Z`. The same flags are also accepted as env vars (`RENOVATE_MCP_GLOBAL=1`, `RENOVATE_MCP_NO_MCP_ADD=1`, `RENOVATE_MCP_VERSION=…`).
+Install before you register the server. The package bundles Renovate (about 670 packages, 350 MB), so a client that starts `npx -y renovate-mcp` against a cold npm cache downloads all of that during server startup and can time out.
 
-### Manual install
+Upgrade with `npm install -g renovate-mcp@latest` and restart your client. With nvm or fnm, global packages belong to one Node version — reinstall after switching.
 
-`npx` fetches the [published package](https://www.npmjs.com/package/renovate-mcp) on demand — no manual install needed. For local development, clone and build first:
+### 2. Register it with your client
+
+**Claude Code:**
 
 ```bash
-npm install
-npm run build
+claude mcp add renovate -s user -- renovate-mcp
 ```
 
-### Client config locations
+`-s user` makes the server available in every project. Leave it out to register it for the current project only, or use `-s project` to write a shared `.mcp.json`.
 
-- **Claude Code** — `.mcp.json` (project) or `~/.claude.json` (user).
-- **Claude Desktop** — `~/Library/Application Support/Claude/claude_desktop_config.json`.
-- **Other MCP clients** — any client that can launch a stdio MCP server works; point it at the same `npx -y renovate-mcp` command.
+**Claude Desktop and other GUI clients** don't load your shell's PATH, so with nvm, fnm or Homebrew they may find no Node or an older one. Use absolute paths:
 
-For local development, swap to `"command": "node"` with `"args": ["/absolute/path/to/renovate-mcp/dist/index.js"]`.
+```bash
+which node                                        # → "command"
+echo "$(npm root -g)/renovate-mcp/dist/index.js"  # → "args"
+```
+
+Claude Desktop reads `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "renovate": {
+      "command": "/Users/you/.nvm/versions/node/v24.14.1/bin/node",
+      "args": ["/Users/you/.nvm/versions/node/v24.14.1/lib/node_modules/renovate-mcp/dist/index.js"]
+    }
+  }
+}
+```
+
+Any other client that can launch a stdio MCP server works with the same command.
+
+### 3. Add tokens (optional)
+
+The offline tools need nothing. Add env vars only for what you use:
+
+| Use case | Env vars |
+| --- | --- |
+| Local `dry_run` on a repo with github.com dependencies | `GITHUB_COM_TOKEN` (read-only PAT, avoids anonymous rate limits) |
+| `dry_run` against GitHub, or private `github>` presets | `RENOVATE_PLATFORM=github` + `GITHUB_TOKEN` |
+| `dry_run` against GitLab, or private `gitlab>` presets | `RENOVATE_PLATFORM=gitlab` + `GITLAB_TOKEN` |
+
+Self-hosted GitLab and GitHub Enterprise also need `RENOVATE_ENDPOINT` — see [Platform setup](#platform-setup).
+
+In Claude Code, re-register with `-e`:
+
+```bash
+claude mcp remove renovate -s user
+claude mcp add renovate -s user -e GITHUB_COM_TOKEN=ghp_xxx -- renovate-mcp
+```
+
+- `-e` stores the value in plain text in `~/.claude.json`. Keep tokens in `user` or `local` scope, never in a `project`-scope `.mcp.json` that gets committed.
+- `-e` accepts several values, so keep the `--` before `renovate-mcp`.
+- Other clients take the same variables in an `"env": { … }` block next to `"args"`.
+
+### Alternatives
+
+- **npx without a global install** — register `npx -y renovate-mcp` instead, after warming the npm cache once with `npm exec --yes --package=renovate-mcp -- node -e 0`.
+- **Installer script** — `curl -fsSL https://raw.githubusercontent.com/tibuntu/renovate-mcp/main/install.sh | bash` runs steps 1 and 2 interactively: it checks Node, asks for `npx` or global mode, verifies the server with an MCP `initialize` handshake, and registers it via `claude mcp add` when the Claude Code CLI is on PATH. Flags (after `bash -s --`): `--global`, `--npx`, `--no-mcp-add`, `--mcp-scope=user|project|local`, `--version=X.Y.Z`; also accepted as env vars (`RENOVATE_MCP_GLOBAL=1`, `RENOVATE_MCP_NO_MCP_ADD=1`, `RENOVATE_MCP_VERSION=…`).
+- **From source** — clone, run `npm install && npm run build`, and point your client at `node /absolute/path/to/renovate-mcp/dist/index.js`.
 
 ## Platform setup
 
