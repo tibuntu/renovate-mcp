@@ -1,5 +1,6 @@
 import { PRESETS } from "../data/presets.generated.js";
 import { fetchExternalPreset, type FetchResult } from "./externalPresetFetcher.js";
+import { HOSTED_PLATFORMS, type HostedPlatform } from "./gitRemote.js";
 import { runMerge } from "./mergeWorker.js";
 import { isRecord } from "./util.js";
 
@@ -53,25 +54,32 @@ export interface CollectResult {
   warnings: PresetWarning[];
 }
 
-export type FetchPlatform = "github" | "gitlab";
+/**
+ * Platforms `local>` presets can be routed through via the `platform` input.
+ * Same list the git-remote classifier uses, so `check_setup`'s hints and the
+ * fetcher can never disagree about which platforms exist.
+ */
+export const FETCH_PLATFORMS = HOSTED_PLATFORMS;
+export type FetchPlatform = HostedPlatform;
 
 export interface ResolveOptions {
-  /** When true, fetch external presets (github>, gitlab>, …) over the network. */
+  /** When true, fetch external presets (github>, gitlab>, gitea>, forgejo>, …) over the network. */
   fetchExternal?: boolean;
   /** Per-request fetch timeout; forwarded to the external fetcher. */
   timeoutMs?: number;
   /**
-   * Override the API base URL used for `github>` / `gitlab>` fetches — e.g.
-   * `https://ghe.example.com/api/v3` for GitHub Enterprise or
-   * `https://gitlab.example.com/api/v4` for self-hosted GitLab. When unset,
-   * defaults to `https://api.github.com` and `https://gitlab.com/api/v4`.
+   * Override the API base URL used for external fetches — e.g.
+   * `https://ghe.example.com/api/v3` for GitHub Enterprise,
+   * `https://gitlab.example.com/api/v4` for self-hosted GitLab, or
+   * `https://forgejo.example.com/api/v1` for self-hosted Gitea/Forgejo. When
+   * unset, each platform's public API base is used.
    */
   endpoint?: string;
   /**
    * Platform flavour of `endpoint`. Required only when it's not derivable from
    * the preset source (e.g. to resolve `local>` presets against a self-hosted
-   * GitHub/GitLab). When set, `local>owner/repo` is fetched as if it were
-   * `<platform>>owner/repo`.
+   * GitHub/GitLab/Gitea/Forgejo, or against Bitbucket Cloud). When set,
+   * `local>owner/repo` is fetched as if it were `<platform>>owner/repo`.
    */
   platform?: FetchPlatform;
 }
@@ -79,8 +87,9 @@ export interface ResolveOptions {
 export type ExternalSource =
   | "github"
   | "gitlab"
-  | "bitbucket"
   | "gitea"
+  | "forgejo"
+  | "bitbucket"
   | "local"
   | "npm";
 
@@ -95,35 +104,33 @@ export type SourceClassification =
  * flag is on) — so a `local>` preset, say, returns the identical unresolved
  * reason regardless of the flag.
  *
- * - `github`, `gitlab`: fetchable over HTTPS.
- * - `local`: structurally unsupported — requires platform/repo context the
- *   tool does not have.
- * - `bitbucket`, `gitea`, `npm`: unsupported by resolve_config — the reason
- *   points users at `dry_run` (the Renovate CLI resolves these) rather than at
- *   a tracking issue.
+ * - `github`, `gitlab`, `gitea`, `forgejo`: fetchable over HTTPS.
+ * - `bitbucket`: fetchable over HTTPS, but only ever reached through `local>`
+ *   plus `platform: "bitbucket"` — Renovate has no `bitbucket>` prefix, so
+ *   `parsePreset` refuses that spelling before classification.
+ * - `local`: structurally unsupported without a `platform` to route through.
+ * - `npm`: unsupported by resolve_config — would need a registry fetch plus
+ *   tarball extraction; the reason points users at `dry_run` instead.
  */
 export function classifyExternalSource(source: ExternalSource): SourceClassification {
   switch (source) {
     case "github":
     case "gitlab":
+    case "gitea":
+    case "forgejo":
+    case "bitbucket":
       return { fetchable: true };
     case "local":
       return {
         fetchable: false,
         reason:
-          "local> presets need a platform context. Pass `platform` (`github` or `gitlab`) plus `endpoint` to resolve_config so they're routed through your platform's API. For full-fidelity merging (hostRules, regexManagers, etc.), run `dry_run` with the same params instead.",
-      };
-    case "bitbucket":
-    case "gitea":
-      return {
-        fetchable: false,
-        reason: `${source}> presets are not supported by resolve_config. Run dry_run (with platform + endpoint) for full external-preset resolution via the Renovate CLI, or host the preset on GitHub or GitLab.`,
+          "local> presets need a platform context. Pass `platform` (one of github, gitlab, gitea, forgejo, bitbucket) plus `endpoint` to resolve_config so they're routed through your platform's API. For full-fidelity merging (hostRules, regexManagers, etc.), run `dry_run` with the same params instead.",
       };
     case "npm":
       return {
         fetchable: false,
         reason:
-          "npm-hosted presets are not supported by resolve_config. Run dry_run for full-fidelity resolution via the Renovate CLI, or host the preset on GitHub or GitLab.",
+          "npm-hosted presets are not supported by resolve_config. Run dry_run for full-fidelity resolution via the Renovate CLI, or host the preset on a git platform (github>, gitlab>, gitea>, forgejo>).",
       };
   }
 }
@@ -356,7 +363,7 @@ export async function loadPresetBody(
 
   // If a `platform` is configured, route `local>` presets through it — the
   // self-hosted case where the user's "local" presets actually live on their
-  // private GitHub/GitLab at `endpoint`.
+  // private GitHub/GitLab/Gitea/Forgejo at `endpoint`, or on Bitbucket Cloud.
   const effective =
     parsed.source === "local" && ctx.platform
       ? { ...parsed, source: ctx.platform }
@@ -372,7 +379,7 @@ export async function loadPresetBody(
     unresolvedList.push({
       preset: parsed.original,
       reason:
-        "External preset (github>, gitlab>). Fetching requires network access and potentially credentials; pass externalPresets: true to enable.",
+        "External preset (github>, gitlab>, gitea>, forgejo>, or local> routed via `platform`). Fetching requires network access and potentially credentials; pass externalPresets: true to enable.",
     });
     return null;
   }
@@ -391,11 +398,13 @@ export async function loadPresetBody(
 }
 
 const SOURCE_PREFIX_RE = /^([a-z]+)>/i;
+// Mirrors Renovate's own `<source>>` prefixes. `bitbucket` is a routing target
+// for `local>` only, never a prefix — see `parseExternal`.
 const KNOWN_SOURCES = new Set<ExternalSource>([
   "github",
   "gitlab",
-  "bitbucket",
   "gitea",
+  "forgejo",
   "local",
   "npm",
 ]);
@@ -443,6 +452,18 @@ function parseExternal(
   args: string[],
   sourceRaw: string,
 ): ParsedPreset {
+  // Renovate has no `bitbucket>` prefix: Bitbucket-hosted presets are `local>`
+  // presets resolved through the bitbucket platform. Say so instead of the
+  // generic "unknown source".
+  if (sourceRaw === "bitbucket") {
+    const spec = rest.slice(sourceRaw.length + 1);
+    return {
+      key: original,
+      original,
+      args,
+      unresolvableReason: `bitbucket> is not a Renovate preset source. Reference the preset as \`local>${spec}\` and pass \`platform: "bitbucket"\` (plus \`endpoint\` for a non-default API base) to resolve_config with external fetching enabled.`,
+    };
+  }
   if (!KNOWN_SOURCES.has(sourceRaw as ExternalSource)) {
     return {
       key: original,

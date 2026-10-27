@@ -9,6 +9,7 @@ import {
   toMatchedRule,
 } from "../lib/packageRulesAnalysis.js";
 import { configRecord, endpointString, pathString, reportRecord } from "../lib/inputLimits.js";
+import { FETCH_PLATFORMS } from "../lib/presetResolver.js";
 import {
   loadConfigSource,
   MATCH_PREVIEW_DISCLAIMER,
@@ -103,13 +104,13 @@ export function registerAnnotateDryRun(server: McpServer): void {
           .boolean()
           .optional()
           .describe(
-            "When true, fetch external presets (github>, gitlab>) so their packageRules are included — same semantics as resolve_config. Default false.",
+            "When true, fetch external presets (github>, gitlab>, gitea>, forgejo>) so their packageRules are included — same semantics as resolve_config. Default false.",
           ),
         endpoint: endpointString(
-          "API base URL for github>/gitlab> fetches — same semantics as resolve_config.",
+          "API base URL for external preset fetches — same semantics as resolve_config.",
         ).optional(),
         platform: z
-          .enum(["github", "gitlab"])
+          .enum(FETCH_PLATFORMS)
           .optional()
           .describe("Platform flavour of `endpoint` — same semantics as resolve_config."),
       },

@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { explainConfig } from "../lib/configExplainer.js";
 import { configRecord, endpointString, pathString } from "../lib/inputLimits.js";
+import { FETCH_PLATFORMS } from "../lib/presetResolver.js";
 import {
   loadConfigSource,
   MERGE_PREVIEW_DISCLAIMER,
@@ -28,13 +29,13 @@ export function registerExplainConfig(server: McpServer): void {
           .boolean()
           .optional()
           .describe(
-            "When true, fetch external presets (github>, gitlab>) over HTTPS — same credentials and behaviour as resolve_config. Default false.",
+            "When true, fetch external presets (github>, gitlab>, gitea>, forgejo>) over HTTPS — same credentials and behaviour as resolve_config. Default false.",
           ),
         endpoint: endpointString(
-          "API base URL for github>/gitlab> fetches. Use for GitHub Enterprise or self-hosted GitLab — same semantics as resolve_config.",
+          "API base URL for external preset fetches. Use for GitHub Enterprise or self-hosted GitLab — same semantics as resolve_config.",
         ).optional(),
         platform: z
-          .enum(["github", "gitlab"])
+          .enum(FETCH_PLATFORMS)
           .optional()
           .describe(
             "Platform flavour of `endpoint`. When set, `local>owner/repo` presets are routed through the same endpoint — same semantics as resolve_config.",

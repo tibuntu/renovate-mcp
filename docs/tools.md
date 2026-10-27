@@ -67,7 +67,7 @@ Compares the running Node version against the bundled Renovate's declared `engin
 
 Pass an absolute `repoPath` to add a `repoContext` block. Three signals are combined into actionable hints *before* the user runs `dry_run`:
 
-1. **Git origin remote** — read directly from `.git/config` (no `git` spawn). Both SSH (`git@host:owner/repo.git`) and HTTPS (`https://host/owner/repo`) forms parse; nested GitLab subgroup paths are preserved. The host is classified as `github` (`github.com`), `gitlab` (`gitlab.com`), or `self-hosted` with a best-effort flavor (`github` / `gitlab` / `unknown`).
+1. **Git origin remote** — read directly from `.git/config` (no `git` spawn). Both SSH (`git@host:owner/repo.git`) and HTTPS (`https://host/owner/repo`) forms parse; nested GitLab subgroup paths are preserved. The host is classified as `github` (`github.com`), `gitlab` (`gitlab.com`), `bitbucket` (`bitbucket.org`), `gitea` (`gitea.com`), `forgejo` (`codeberg.org`, `code.forgejo.org`), or `self-hosted` with a best-effort flavor (`github` / `gitlab` / `gitea` / `forgejo` / `unknown` — never `bitbucket`, since a self-hosted Bitbucket is Server/Data Center with a different API).
 2. **Repo config endpoint / platform** — uses the same discovery path as [`read_config`](#read_config) to locate `renovate.json` / `renovate.json5` / etc., then pulls top-level `endpoint` and `platform` if present. Mismatches against the origin host land in `repoContext.inconsistencies`.
 3. **Endpoint reachability** — best-effort HEAD (fallback GET on 405) against the resolved endpoint. Probe URL precedence: `config.endpoint` → `RENOVATE_ENDPOINT` → defaults derived from origin (`https://api.github.com`, `https://gitlab.com/api/v4/version`). Self-hosted with no configured endpoint deliberately skips the probe — the tool won't guess a path on a private host.
 
@@ -76,6 +76,7 @@ Pass an absolute `repoPath` to add a `repoContext` block. Three signals are comb
 **Hint synthesis.** Examples of the hints the cross-reference can emit:
 
 - Origin is `github.com` and no `GITHUB_TOKEN` / `RENOVATE_TOKEN` is set → "your github-actions deps will be skipped at `dry_run` time."
+- Origin is `bitbucket.org`, `gitea.com`, or `codeberg.org` (or a self-hosted `gitea.`/`forgejo.` host) and neither the matching `BITBUCKET_TOKEN` / `GITEA_TOKEN` / `FORGEJO_TOKEN` nor `RENOVATE_TOKEN` is set → names the var and the `resolve_config` `platform` value that routes `local>` presets through that host. A Forgejo origin other than `code.forgejo.org` (Codeberg, say) without an `endpoint` in the repo config additionally gets the `endpoint: "https://<host>/api/v1"` to pass, since `forgejo>` defaults to `code.forgejo.org`.
 - Origin is `github.com` and the default `dry_run` `platform: local` would be used without `GITHUB_COM_TOKEN` → flags that the platform token (even when set) is **not** applied to github.com *datasource* lookups under a local run, and points at the two remedies (set `GITHUB_COM_TOKEN`, or run `platform: "github"`). This reconciles the otherwise-confusing split between `repoContext.effectivePlatform` (origin-derived, can read `github`) and `platformContext.effectiveDryRunPlatform` (what `dry_run` actually defaults to: `local`). See [Security — `GITHUB_COM_TOKEN`](security.md#github_com_token--a-separate-role).
 - Origin is `gitlab.example.com` (self-hosted) and no `endpoint` is configured → "set `endpoint` in renovate.json or `RENOVATE_ENDPOINT` in the MCP server's env."
 - Origin and `config.endpoint` point at different hosts → recorded under `inconsistencies` (Renovate will use the config endpoint).
@@ -133,17 +134,17 @@ See also: [Operational notes — `suggest_presets` caps](operations.md#suggest_p
 
 ## `resolve_config`
 
-Expand every `extends` preset offline. Opt in to fetching `github>` / `gitlab>` presets over HTTPS with `externalPresets: true`.
+Expand every `extends` preset offline. Opt in to fetching `github>` / `gitlab>` / `gitea>` / `forgejo>` presets over HTTPS with `externalPresets: true`; Bitbucket Cloud presets are reached through `local>` + `platform: "bitbucket"`.
 
 **Inputs:**
 
 - `repoPath` (optional, string, max 4096 bytes) — absolute path to the repository root; the tool locates the repo's config automatically. Use instead of `configContent`.
 - `configContent` (optional, object, max ~1,000,000 bytes serialized) — inline config object to resolve. Use instead of `repoPath`. (One of `repoPath` / `configContent` is required, never both — see [Common input rules](#common-input-rules).)
-- `externalPresets` (optional boolean, default `false`) — fetch `github>` / `gitlab>` presets over HTTPS.
-- `endpoint` (optional, string, max 2048 bytes) — API base URL for `github>`/`gitlab>` fetches (GitHub Enterprise / self-hosted GitLab). Defaults to `https://api.github.com` and `https://gitlab.com/api/v4`.
-- `platform` (optional, enum `"github"` | `"gitlab"`) — platform flavour of `endpoint`; when set, `local>owner/repo` presets are fetched as `<platform>>owner/repo`.
+- `externalPresets` (optional boolean, default `false`) — fetch `github>` / `gitlab>` / `gitea>` / `forgejo>` presets (and `local>` presets routed via `platform`) over HTTPS.
+- `endpoint` (optional, string, max 2048 bytes) — API base URL for external fetches (GitHub Enterprise / self-hosted GitLab / self-hosted Gitea or Forgejo, e.g. `https://forgejo.example.com/api/v1`). Defaults to `https://api.github.com`, `https://gitlab.com/api/v4`, `https://gitea.com/api/v1`, `https://code.forgejo.org/api/v1`, and `https://api.bitbucket.org`.
+- `platform` (optional, enum `"github"` | `"gitlab"` | `"gitea"` | `"forgejo"` | `"bitbucket"`) — platform flavour of `endpoint`; when set, `local>owner/repo` presets are fetched as `<platform>>owner/repo`.
 
-Built-in presets expand against a committed snapshot of Renovate's catalogue (`src/data/presets.generated.ts`). External `github>` / `gitlab>` fetching is opt-in, uses each platform's contents API with a 10 s timeout, and caches results per call. The `endpoint` input swaps in a custom API base for GHE / self-hosted GitLab; `platform` additionally rewrites `local>` presets to be fetched against that endpoint. `bitbucket>`, `gitea>`, and npm presets still land in `presetsUnresolved` with a reason.
+Built-in presets expand against a committed snapshot of Renovate's catalogue (`src/data/presets.generated.ts`). External `github>` / `gitlab>` / `gitea>` / `forgejo>` fetching is opt-in, uses each platform's raw-contents API with a 10 s timeout, and caches results per call. Tokens come from `RENOVATE_TOKEN` or the per-platform `GITHUB_TOKEN` / `GITLAB_TOKEN` / `GITEA_TOKEN` / `FORGEJO_TOKEN` / `BITBUCKET_TOKEN` (see [Security & secrets — token resolution](security.md#token-resolution)). The `endpoint` input swaps in a custom API base for GHE / self-hosted GitLab / self-hosted Gitea or Forgejo; `platform` additionally rewrites `local>` presets to be fetched against that endpoint. Renovate has no `bitbucket>` prefix — Bitbucket Cloud presets are `local>workspace/repo` resolved with `platform: "bitbucket"` (Bitbucket Server / Data Center is not supported), and a literal `bitbucket>` entry lands in `presetsUnresolved` with a pointer at that spelling. npm presets still land in `presetsUnresolved` with a reason. Rate limiting: a GitHub `403` with `X-RateLimit-Remaining: 0` and a GitLab `429` surface as a dedicated reason naming the reset time and the token to set; Gitea / Forgejo / Bitbucket `429`s surface as the generic `HTTP 429 … when fetching <preset>` reason.
 
 Merging uses Renovate's own `mergeChildConfig`, run in a worker thread so the main process never imports `renovate` — mergeable arrays (`packageRules`, `hostRules`, `addLabels`, …) concatenate, non-mergeable arrays (`assignees`, `labels`, `schedule`, …) overwrite, objects recurse, `constraints` object-merges, and `force` applies last. Responses carry `mergeQuality: "faithful"` plus a `disclaimer`. A config that pulls in ≥2 sources spawns the worker, so the first such call pays a one-time cold start (~1-3 s); configs that don't actually merge skip it. If the worker is unavailable the tool falls back to a simplified in-process merge (arrays concat, objects merge, scalars overwrite), appends a warning, and reports `mergeQuality: "preview"`. `resolve_config` still doesn't run datasource lookups — run `dry_run` for full config resolution.
 
@@ -155,7 +156,7 @@ See also: [Security & secrets — Endpoint validation](security.md#endpoint-vali
 
 Inverse of `resolve_config`: walk the same preset tree but annotate every leaf field with the chain of presets that touched it. Each leaf is `{ value, setBy }` where `setBy` lists every contribution in merge order — last entry wins for scalars and overwritten (non-mergeable) arrays; for mergeable arrays each entry adds its own slice.
 
-**Inputs:** same shape as [`resolve_config`](#resolve_config) — `repoPath` (optional, string, max 4096 bytes; use instead of `configContent`), `configContent` (optional, object, max ~1,000,000 bytes serialized; use instead of `repoPath`; one of the two is required, never both — see [Common input rules](#common-input-rules)), `externalPresets` (optional boolean, default `false`), `endpoint` (optional, string, max 2048 bytes), `platform` (optional, enum `"github"` | `"gitlab"`).
+**Inputs:** same shape as [`resolve_config`](#resolve_config) — `repoPath` (optional, string, max 4096 bytes; use instead of `configContent`), `configContent` (optional, object, max ~1,000,000 bytes serialized; use instead of `repoPath`; one of the two is required, never both — see [Common input rules](#common-input-rules)), `externalPresets` (optional boolean, default `false`), `endpoint` (optional, string, max 2048 bytes), `platform` (optional, enum `"github"` | `"gitlab"` | `"gitea"` | `"forgejo"` | `"bitbucket"`).
 
 Same offline-by-default behaviour and same `externalPresets` / `endpoint` / `platform` opt-ins as `resolve_config`. Both tools share one expansion-and-merge core (`collectMergeSteps` plus the same worker-isolated faithful merge), so their resolved values are identical by construction. `explain_config` reconstructs provenance by diffing the merge's per-step snapshots: each contribution is pinned with a source name (literal `extends` entry, or `<own>` for the user's input config) and a `via` chain naming every parent preset traversed to reach it.
 
@@ -288,7 +289,7 @@ The shared `externalPresets` / `endpoint` / `platform` knobs mirror [`resolve_co
 - `after` (required, object `{ repoPath?, configContent? }`) — the other side.
 - `externalPresets` (optional boolean, default `false`) — applies to both sides.
 - `endpoint` (optional, string, max 2048 bytes) — applies to both sides.
-- `platform` (optional, enum `"github"` | `"gitlab"`) — applies to both sides.
+- `platform` (optional, enum `"github"` | `"gitlab"` | `"gitea"` | `"forgejo"` | `"bitbucket"`) — applies to both sides.
 
 **Diff semantics (top-level keys only):**
 
@@ -307,7 +308,7 @@ Pass `repoPath` (locates + expands the repo's config via the same discovery orde
 
 - `repoPath` (optional, string, max 4096 bytes) — absolute path to the repository root; the tool locates and expands its config. Use instead of `configContent`.
 - `configContent` (optional, object, max ~1,000,000 bytes serialized) — inline config whose `packageRules` to test. Use instead of `repoPath`. (One of `repoPath` / `configContent` is required, never both — see [Common input rules](#common-input-rules).)
-- `externalPresets` (optional boolean, default `false`), `endpoint` (optional, string, max 2048 bytes), `platform` (optional, enum `"github"` | `"gitlab"`) — same semantics as [`resolve_config`](#resolve_config).
+- `externalPresets` (optional boolean, default `false`), `endpoint` (optional, string, max 2048 bytes), `platform` (optional, enum `"github"` | `"gitlab"` | `"gitea"` | `"forgejo"` | `"bitbucket"`) — same semantics as [`resolve_config`](#resolve_config).
 - Synthetic dependency-context fields — all optional, all strings unless noted, supply whichever you're testing: `depName`, `packageName`, `datasource`, `manager`, `depType` (max 2048 bytes each), `depTypes` (string array, max 256 items), `currentValue`, `currentVersion`, `lockedVersion`, `versioning`, `packageFile`, `lockFiles` (array), `categories` (array), `repository`, `baseBranch`, `registryUrls` (array), `sourceUrl`, `newValue`, `updateType`, `isBump` (boolean), `isBreaking` (boolean), `currentVersionTimestamp`, `mergeConfidenceLevel` (see each field's tool description for which matcher it feeds).
 
 **Faithful by construction.** Rules are evaluated with Renovate's **real matchers** in a worker thread (see [Architecture — worker isolation for packageRules](architecture.md#worker-isolation-for-packagerules)), so match decisions are bit-faithful for the fields you supply. The crucial subtlety: a matcher returns `false` identically for "supplied-but-no-match" and "field-absent", so results are classified against what you actually passed:
@@ -332,7 +333,7 @@ Takes a report (inline `report` — raw `{ repositories }` or a full `dry_run` s
 - `reportPath` (optional, string, max 4096 bytes) — absolute path to a JSON report file (pair with `dry_run`'s `reportOutputPath`). Use instead of `report`. (One of `report` / `reportPath` is required, never both — see [Common input rules](#common-input-rules).)
 - `repoPath` (optional, string, max 4096 bytes) — locates and expands the repo's config for its `packageRules`. Use instead of `configContent`.
 - `configContent` (optional, object, max ~1,000,000 bytes serialized) — inline config whose `packageRules` to attribute against. Use instead of `repoPath`. (One of `repoPath` / `configContent` is required, never both — see [Common input rules](#common-input-rules).)
-- `externalPresets` (optional boolean, default `false`), `endpoint` (optional, string, max 2048 bytes), `platform` (optional, enum `"github"` | `"gitlab"`) — same semantics as [`resolve_config`](#resolve_config).
+- `externalPresets` (optional boolean, default `false`), `endpoint` (optional, string, max 2048 bytes), `platform` (optional, enum `"github"` | `"gitlab"` | `"gitea"` | `"forgejo"` | `"bitbucket"`) — same semantics as [`resolve_config`](#resolve_config).
 
 Returns one `annotation` per update (`manager`, `packageFile`, `depName`, `currentVersion`, `newVersion`, `updateType`, plus `matchedRules` and `unevaluatable` with the same shapes as [`test_package_rules`](#test_package_rules)), and two aggregate signals:
 

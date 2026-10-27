@@ -13,9 +13,9 @@ This is the single most common setup mistake. If `dry_run` returns 0 updates sil
 **Env-var auth is the preferred path.** Precedence is:
 
 1. `RENOVATE_TOKEN` (wins when set)
-2. `GITHUB_TOKEN` / `GITLAB_TOKEN` (platform-specific fallback)
+2. `GITHUB_TOKEN` / `GITLAB_TOKEN` / `GITEA_TOKEN` / `FORGEJO_TOKEN` / `BITBUCKET_TOKEN` (platform-specific fallback)
 
-For `dry_run`, the platform-specific var is auto-translated to `RENOVATE_TOKEN` for the spawned Renovate CLI (Renovate itself only reads that one var). `resolve_config` follows the same precedence.
+For `dry_run`, the platform-specific var is auto-translated to `RENOVATE_TOKEN` for the spawned Renovate CLI (Renovate itself only reads that one var). `resolve_config` follows the same precedence. `dry_run` only knows the GitHub / GitLab vars (it runs Renovate as `local` / `github` / `gitlab`); the Gitea / Forgejo / Bitbucket vars are read by the `resolve_config` fetcher only. Gitea / Forgejo tokens go out as `Authorization: Bearer …`; Bitbucket tokens as HTTP Basic auth under the `x-token-auth` pseudo-user (Atlassian API tokens starting with `ATAT` under `x-bitbucket-api-token-auth`), mirroring the Bitbucket platform in Renovate itself.
 
 ## Other env vars the server reads
 
@@ -54,13 +54,13 @@ Anything that isn't an `https://` URL with a non-empty public host is refused:
 - Userinfo (`user:pass@host`)
 - Any RFC 1918 / loopback / link-local literal: `localhost`, `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16` (incl. cloud-metadata), `0.0.0.0/8`, `::1`, `::`, `::ffff:*`, `fc00::/7`, `fe80::/10`
 
-Self-hosted GitHub Enterprise / GitLab on public-DNS https URLs is unaffected.
+Self-hosted GitHub Enterprise / GitLab / Gitea / Forgejo on public-DNS https URLs is unaffected.
 
 ## Redirects and auth headers
 
-External preset fetches refuse to follow HTTP redirects (`redirect: "manual"`) and never attach `Authorization: Bearer …` / `PRIVATE-TOKEN: …` headers to non-`https://` URLs.
+External preset fetches refuse to follow HTTP redirects (`redirect: "manual"`) and never attach `Authorization: Bearer …` / `Authorization: Basic …` / `PRIVATE-TOKEN: …` headers to non-`https://` URLs.
 
-Following redirects with custom auth headers can leak `RENOVATE_TOKEN` / `GITHUB_TOKEN` / `GITLAB_TOKEN` cross-host (undici only strips the standard `Authorization` header on cross-*origin* redirects, not `PRIVATE-TOKEN`); rejecting them outright avoids the leak path and matches the fact that the GitHub/GitLab content APIs don't normally redirect for valid presets.
+Following redirects with custom auth headers can leak `RENOVATE_TOKEN` / `GITHUB_TOKEN` / `GITLAB_TOKEN` / `GITEA_TOKEN` / `FORGEJO_TOKEN` / `BITBUCKET_TOKEN` cross-host (undici only strips the standard `Authorization` header on cross-*origin* redirects, not `PRIVATE-TOKEN`); rejecting them outright avoids the leak path and matches the fact that the GitHub / GitLab / Gitea / Bitbucket content APIs do not normally redirect for valid presets.
 
 ## Response body caps
 

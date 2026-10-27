@@ -24,6 +24,9 @@ const PLATFORM_ENV_KEYS = [
   "GITHUB_TOKEN",
   "GITLAB_TOKEN",
   "GITHUB_COM_TOKEN",
+  "GITEA_TOKEN",
+  "FORGEJO_TOKEN",
+  "BITBUCKET_TOKEN",
 ] as const;
 
 afterEach(() => {
@@ -39,6 +42,9 @@ function emptyPlatformContext(): PlatformContext {
       GITHUB_TOKEN: false,
       GITLAB_TOKEN: false,
       GITHUB_COM_TOKEN: false,
+      GITEA_TOKEN: false,
+      FORGEJO_TOKEN: false,
+      BITBUCKET_TOKEN: false,
     },
     effectiveDryRunPlatform: "local",
     notes: [],
@@ -390,6 +396,9 @@ describe("inspectPlatformContext", () => {
       GITHUB_TOKEN: false,
       GITLAB_TOKEN: false,
       GITHUB_COM_TOKEN: false,
+      GITEA_TOKEN: false,
+      FORGEJO_TOKEN: false,
+      BITBUCKET_TOKEN: false,
     });
     expect(ctx.effectiveDryRunPlatform).toBe("local");
     expect(ctx.notes).toEqual([]);
@@ -406,6 +415,9 @@ describe("inspectPlatformContext", () => {
       GITHUB_TOKEN: false,
       GITLAB_TOKEN: true,
       GITHUB_COM_TOKEN: false,
+      GITEA_TOKEN: false,
+      FORGEJO_TOKEN: false,
+      BITBUCKET_TOKEN: false,
     });
     const serialized = JSON.stringify(ctx);
     expect(serialized).not.toContain("shh-secret-1");
@@ -570,6 +582,9 @@ describe("describeSetup platform context block", () => {
           GITHUB_TOKEN: false,
           GITLAB_TOKEN: true,
           GITHUB_COM_TOKEN: false,
+          GITEA_TOKEN: false,
+          FORGEJO_TOKEN: false,
+          BITBUCKET_TOKEN: false,
         },
         effectiveDryRunPlatform: "gitlab",
         notes: ["RENOVATE_ENDPOINT looks like a UI URL"],

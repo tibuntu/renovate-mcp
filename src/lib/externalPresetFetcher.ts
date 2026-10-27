@@ -1,15 +1,19 @@
 import { resolveCredential, type Credential } from "./credentialResolver.js";
 import { validateEndpoint } from "./endpointValidator.js";
-import { classifyExternalSource, type ParsedPreset } from "./presetResolver.js";
+import {
+  classifyExternalSource,
+  type FetchPlatform,
+  type ParsedPreset,
+} from "./presetResolver.js";
 
 export interface FetchOptions {
   timeoutMs?: number;
   cache?: Map<string, Promise<FetchResult>>;
   /**
-   * Override the API base URL. For `github>` presets, defaults to
-   * `https://api.github.com` (pass `https://ghe.example.com/api/v3` for GitHub
-   * Enterprise). For `gitlab>`, defaults to `https://gitlab.com/api/v4` (pass
-   * `https://gitlab.example.com/api/v4` for self-hosted).
+   * Override the API base URL (see `DEFAULT_API_BASE` for each platform's
+   * default) — e.g. `https://ghe.example.com/api/v3` for GitHub Enterprise,
+   * `https://gitlab.example.com/api/v4` for self-hosted GitLab, or
+   * `https://forgejo.example.com/api/v1` for self-hosted Gitea/Forgejo.
    */
   endpoint?: string;
   /** Injectable for tests. Defaults to globalThis.fetch. */
@@ -21,8 +25,13 @@ export type FetchResult =
   | { ok: false; reason: string };
 
 const DEFAULT_TIMEOUT_MS = 10_000;
-const DEFAULT_GITHUB_API_BASE = "https://api.github.com";
-const DEFAULT_GITLAB_API_BASE = "https://gitlab.com/api/v4";
+const DEFAULT_API_BASE: Record<FetchPlatform, string> = {
+  github: "https://api.github.com",
+  gitlab: "https://gitlab.com/api/v4",
+  gitea: "https://gitea.com/api/v1",
+  forgejo: "https://code.forgejo.org/api/v1",
+  bitbucket: "https://api.bitbucket.org",
+};
 const MAX_PRESET_BYTES = 1_000_000;
 const MAX_AUTH_BODY_BYTES = 8_192;
 
@@ -45,6 +54,9 @@ export async function fetchExternalPreset(
 }
 
 function dispatch(parsed: ParsedPreset, options: FetchOptions): Promise<FetchResult> {
+  if (parsed.unresolvableReason) {
+    return Promise.resolve({ ok: false, reason: parsed.unresolvableReason });
+  }
   if (!parsed.source) {
     return Promise.resolve({ ok: false, reason: "Unknown preset source: (none)" });
   }
@@ -63,13 +75,23 @@ function dispatch(parsed: ParsedPreset, options: FetchOptions): Promise<FetchRes
     endpoint = trimTrailingSlash(options.endpoint);
   }
 
-  // `fetchable` is only ever true for github / gitlab.
-  return parsed.source === "github"
-    ? fetchGitHub(parsed, timeoutMs, fetchImpl, endpoint)
-    : fetchGitLab(parsed, timeoutMs, fetchImpl, endpoint);
+  switch (parsed.source) {
+    case "github":
+      return fetchGitHub(parsed, timeoutMs, fetchImpl, endpoint);
+    case "gitlab":
+      return fetchGitLab(parsed, timeoutMs, fetchImpl, endpoint);
+    case "gitea":
+    case "forgejo":
+      return fetchGitea(parsed, timeoutMs, fetchImpl, endpoint, parsed.source);
+    case "bitbucket":
+      return fetchBitbucket(parsed, timeoutMs, fetchImpl, endpoint);
+    default:
+      // Unreachable: `classifyExternalSource` already refused local / npm.
+      return Promise.resolve({ ok: false, reason: `Unknown preset source: ${parsed.source}` });
+  }
 }
 
-type Platform = "github" | "gitlab";
+type Platform = FetchPlatform;
 
 async function fetchGitHub(
   parsed: ParsedPreset,
@@ -82,7 +104,7 @@ async function fetchGitHub(
   }
   const file = presetFileName(parsed);
   const ref = parsed.ref ?? "HEAD";
-  const apiBase = endpoint ?? DEFAULT_GITHUB_API_BASE;
+  const apiBase = endpoint ?? DEFAULT_API_BASE.github;
   const url = `${apiBase}/repos/${parsed.repoPath}/contents/${encodeFilePath(
     file,
   )}?ref=${encodeURIComponent(ref)}`;
@@ -115,7 +137,7 @@ async function fetchGitLab(
   }
   const file = presetFileName(parsed);
   const ref = parsed.ref ?? "HEAD";
-  const apiBase = endpoint ?? DEFAULT_GITLAB_API_BASE;
+  const apiBase = endpoint ?? DEFAULT_API_BASE.gitlab;
   const url = `${apiBase}/projects/${encodeURIComponent(
     parsed.repoPath,
   )}/repository/files/${encodeURIComponent(file)}/raw?ref=${encodeURIComponent(ref)}`;
@@ -132,6 +154,89 @@ async function fetchGitLab(
     "gitlab",
     sendAuth ? credential : suppressCredential(credential),
   );
+}
+
+/** Gitea and Bitbucket address repositories as exactly two path segments (nested groups are a GitLab thing). */
+const OWNER_REPO_RE = /^[^/]+\/[^/]+$/;
+
+/** Gitea's raw-contents API, which Forgejo serves unchanged; the two differ only in default host and token var. */
+async function fetchGitea(
+  parsed: ParsedPreset,
+  timeoutMs: number,
+  fetchImpl: typeof fetch,
+  endpoint: string | undefined,
+  platform: "gitea" | "forgejo",
+): Promise<FetchResult> {
+  if (!parsed.repoPath || !OWNER_REPO_RE.test(parsed.repoPath)) {
+    return { ok: false, reason: `Invalid ${platform} preset: ${parsed.original}` };
+  }
+  const file = presetFileName(parsed);
+  const apiBase = endpoint ?? DEFAULT_API_BASE[platform];
+  // No `ref` means the repository's default branch, as in Renovate.
+  const refQuery = parsed.ref ? `?ref=${encodeURIComponent(parsed.ref)}` : "";
+  const url = `${apiBase}/repos/${encodeFilePath(parsed.repoPath)}/raw/${encodeFilePath(file)}${refQuery}`;
+  const credential = resolveCredential([
+    "RENOVATE_TOKEN",
+    platform === "gitea" ? "GITEA_TOKEN" : "FORGEJO_TOKEN",
+  ]);
+  const headers: Record<string, string> = { "User-Agent": "renovate-mcp" };
+  const sendAuth = Boolean(credential.token) && isHttpsUrl(url);
+  if (sendAuth) headers.Authorization = `Bearer ${credential.token}`;
+  return fetchJson(
+    url,
+    headers,
+    timeoutMs,
+    parsed.original,
+    fetchImpl,
+    platform,
+    sendAuth ? credential : suppressCredential(credential),
+  );
+}
+
+/**
+ * Bitbucket Cloud's `src` API; `HEAD` is Renovate's own default ref. Only
+ * reachable through `local>` + `platform: "bitbucket"` (Renovate has no
+ * `bitbucket>` prefix).
+ * ponytail: Bitbucket Server / Data Center (`/rest/api/1.0/projects/…/raw/…`)
+ * is a different API and is not modelled; add a `bitbucket-server` platform
+ * if anyone needs it.
+ */
+async function fetchBitbucket(
+  parsed: ParsedPreset,
+  timeoutMs: number,
+  fetchImpl: typeof fetch,
+  endpoint: string | undefined,
+): Promise<FetchResult> {
+  if (!parsed.repoPath || !OWNER_REPO_RE.test(parsed.repoPath)) {
+    return { ok: false, reason: `Invalid bitbucket preset: ${parsed.original}` };
+  }
+  const file = presetFileName(parsed);
+  const apiBase = endpoint ?? DEFAULT_API_BASE.bitbucket;
+  const ref = encodeURIComponent(parsed.ref ?? "HEAD");
+  const url = `${apiBase}/2.0/repositories/${encodeFilePath(parsed.repoPath)}/src/${ref}/${encodeFilePath(file)}`;
+  const credential = resolveCredential(["RENOVATE_TOKEN", "BITBUCKET_TOKEN"]);
+  const headers: Record<string, string> = { "User-Agent": "renovate-mcp" };
+  const sendAuth = Boolean(credential.token) && isHttpsUrl(url);
+  if (sendAuth) headers.Authorization = bitbucketBasicAuth(credential.token!);
+  return fetchJson(
+    url,
+    headers,
+    timeoutMs,
+    parsed.original,
+    fetchImpl,
+    "bitbucket",
+    sendAuth ? credential : suppressCredential(credential),
+  );
+}
+
+/**
+ * Mirrors Renovate's Bitbucket platform auth: access tokens go out as Basic
+ * auth under the `x-token-auth` pseudo-user, Atlassian API tokens (`ATAT…`)
+ * under `x-bitbucket-api-token-auth`.
+ */
+function bitbucketBasicAuth(token: string): string {
+  const user = token.startsWith("ATAT") ? "x-bitbucket-api-token-auth" : "x-token-auth";
+  return `Basic ${Buffer.from(`${user}:${token}`).toString("base64")}`;
 }
 
 function isHttpsUrl(url: string): boolean {

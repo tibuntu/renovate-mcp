@@ -1,10 +1,10 @@
 # Platform setup
 
-Configure `renovate-mcp` for github.com, GitHub Enterprise, gitlab.com, or self-hosted GitLab. Only needed if you'll use `dry_run` against a remote platform, or the `resolve_config` family with `externalPresets: true` — the fully offline tools (`read_config`, `suggest_presets`, `resolve_config`, `explain_config`, `resolve_config_diff`, `test_package_rules`, `preview_custom_manager`, `lint_config`, `dry_run_diff`, `annotate_dry_run`, `explain_dependency`, `migrate_config`) don't need any of this — the `resolve_config` family only when `externalPresets` stays unset.
+Configure `renovate-mcp` for github.com, GitHub Enterprise, gitlab.com, self-hosted GitLab, Gitea / Forgejo (hosted or self-hosted), or Bitbucket Cloud. Only needed if you'll use `dry_run` against a remote platform, or the `resolve_config` family with `externalPresets: true` — the fully offline tools (`read_config`, `suggest_presets`, `resolve_config`, `explain_config`, `resolve_config_diff`, `test_package_rules`, `preview_custom_manager`, `lint_config`, `dry_run_diff`, `annotate_dry_run`, `explain_dependency`, `migrate_config`) don't need any of this — the `resolve_config` family only when `externalPresets` stays unset.
 
 ## The matrix
 
-The four common configurations differ in three settings: `RENOVATE_PLATFORM`, `RENOVATE_ENDPOINT`, and which token env var you set. Pick the row that matches your environment and put the values in your client's `mcpServers.renovate.env` block.
+The common configurations differ in three settings: `RENOVATE_PLATFORM`, `RENOVATE_ENDPOINT`, and which token env var you set. Pick the row that matches your environment and put the values in your client's `mcpServers.renovate.env` block.
 
 > **Verify before you run.** Call [`check_setup`](tools.md#check_setup) with the absolute path to the repo you'll be operating on. It reads `.git/config`, cross-references with the env you've set here, and probes endpoint reachability — so you can confirm the matrix row matches your repo *before* `dry_run` discovers the mismatch the slow way.
 
@@ -14,6 +14,9 @@ The four common configurations differ in three settings: `RENOVATE_PLATFORM`, `R
 | GitHub Enterprise | `github` | `https://github.example.com/api/v3/` | `RENOVATE_TOKEN` *or* `GITHUB_TOKEN` |
 | gitlab.com | `gitlab` | (omit — defaults to `https://gitlab.com/api/v4`) | `RENOVATE_TOKEN` *or* `GITLAB_TOKEN` |
 | Self-hosted GitLab | `gitlab` | `https://gitlab.example.com/api/v4/` | `RENOVATE_TOKEN` *or* `GITLAB_TOKEN` |
+| gitea.com / Forgejo (code.forgejo.org) | — (`resolve_config` only) | (omit — defaults to `https://gitea.com/api/v1` / `https://code.forgejo.org/api/v1`) | `RENOVATE_TOKEN` *or* `GITEA_TOKEN` / `FORGEJO_TOKEN` |
+| Self-hosted Gitea / Forgejo | — (`resolve_config` only) | `https://forgejo.example.com/api/v1/` | `RENOVATE_TOKEN` *or* `GITEA_TOKEN` / `FORGEJO_TOKEN` |
+| Bitbucket Cloud | — (`resolve_config` only) | (omit — defaults to `https://api.bitbucket.org`) | `RENOVATE_TOKEN` *or* `BITBUCKET_TOKEN` |
 
 ## Notes that apply to every row
 
@@ -44,12 +47,30 @@ This is enough for both `dry_run` (remote-platform runs) and `resolve_config` (p
 
 For `resolve_config`, `platform` and `endpoint` are tool **inputs** (not env vars) — pass them when you need `local>` presets routed through your host, since `resolve_config` is in-process and doesn't read `RENOVATE_*` env vars itself.
 
+## Worked example — self-hosted Forgejo (`resolve_config` family only)
+
+```jsonc
+{
+  "mcpServers": {
+    "renovate": {
+      "command": "npx",
+      "args": ["-y", "renovate-mcp"],
+      "env": {
+        "FORGEJO_TOKEN": "<your token>"
+      }
+    }
+  }
+}
+```
+
+Then call `resolve_config` (or `explain_config`, `resolve_config_diff`, `test_package_rules`, `annotate_dry_run`) with `externalPresets: true`, `platform: "forgejo"`, and `endpoint: "https://forgejo.example.com/api/v1"`. `forgejo>org/repo` entries are fetched from that endpoint, and `local>org/repo` entries are rewritten to `forgejo>org/repo` first. Hosted Gitea (`gitea>` + `GITEA_TOKEN`) works the same way without an `endpoint`. Codeberg is a Forgejo host too, but the `forgejo>` default is `code.forgejo.org` (Renovate's own default), so Codeberg-hosted presets need `endpoint: "https://codeberg.org/api/v1"`; `check_setup` points this out for a `codeberg.org` origin. For Bitbucket Cloud set `BITBUCKET_TOKEN` (a repository / workspace access token, or an Atlassian API token) and pass `platform: "bitbucket"` — Renovate has no `bitbucket>` prefix, so the preset must be spelled `local>workspace/repo`. `dry_run` does not support these platforms; it runs Renovate as `local` / `github` / `gitlab` only.
+
 ## `local>` presets
 
 A config that extends `local>owner/repo:preset` only resolves when there's a platform context to expand it against:
 
 - **For `dry_run`** — pass `platform` + `endpoint` + `repository` (token falls back to env). Use `dryRunMode=extract` if you only need manifest extraction; the preset preflight is skipped in that mode.
-- **For `resolve_config`** — pass `platform` + `endpoint` as inputs and the tool rewrites `local>` into `<platform>>` and fetches over HTTPS. Without these inputs, `local>` stays in `presetsUnresolved` with a pointer to the workaround. Run `dry_run` afterwards for full-fidelity merging.
+- **For `resolve_config`** — pass `platform` (`github`, `gitlab`, `gitea`, `forgejo`, or `bitbucket`) + `endpoint` as inputs and the tool rewrites `local>` into `<platform>>` and fetches over HTTPS. Without these inputs, `local>` stays in `presetsUnresolved` with a pointer to the workaround. `platform: "bitbucket"` is the only way to reach Bitbucket Cloud presets, since Renovate has no `bitbucket>` prefix. Run `dry_run` afterwards for full-fidelity merging.
 
 ## Private-registry credentials for `dry_run`
 

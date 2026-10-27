@@ -38,7 +38,7 @@ Seventeen tools, seven resources, and four workflow prompts. Each tool name belo
 | [`get_version`](docs/tools.md#get_version) | Report the renovate-mcp server version and whether it's a released or local/dev build. |
 | [`read_config`](docs/tools.md#read_config) | Locate and parse a repo's Renovate config in Renovate's own discovery order. |
 | [`suggest_presets`](docs/tools.md#suggest_presets) | Search built-in (and optional local-repo) presets by natural-language intent; ranks matches and sketches an unvalidated draft config skeleton for multi-facet or weakly-covered intents. Offline. |
-| [`resolve_config`](docs/tools.md#resolve_config) | Expand every `extends` preset offline. Opt in to fetching `github>` / `gitlab>` presets over HTTPS. |
+| [`resolve_config`](docs/tools.md#resolve_config) | Expand every `extends` preset offline. Opt in to fetching `github>` / `gitlab>` / `gitea>` / `forgejo>` presets over HTTPS, or Bitbucket Cloud presets via `local>` + `platform`. |
 | [`explain_config`](docs/tools.md#explain_config) | Inverse of `resolve_config`: annotate every leaf field with the chain of presets that set it. |
 | [`resolve_config_diff`](docs/tools.md#resolve_config_diff) | Offline structural diff of two fully-resolved configs — changed fields plus an order-insensitive set diff of array keys (`packageRules`, `customManagers`, …). The refactor-friendly counterpart to `dry_run_diff`. |
 | [`test_package_rules`](docs/tools.md#test_package_rules) | Offline what-if: which `packageRules` match a hypothetical dependency, which matcher decided each, and what each contributes. Faithful (Renovate's real matchers in a worker); fields you don't supply are reported as unevaluatable, not non-matches. |
@@ -167,6 +167,11 @@ For `dry_run` against a remote platform or `resolve_config` with `externalPreset
 | GitHub Enterprise | `github` | `https://github.example.com/api/v3/` | `RENOVATE_TOKEN` *or* `GITHUB_TOKEN` |
 | gitlab.com | `gitlab` | (omit) | `RENOVATE_TOKEN` *or* `GITLAB_TOKEN` |
 | Self-hosted GitLab | `gitlab` | `https://gitlab.example.com/api/v4/` | `RENOVATE_TOKEN` *or* `GITLAB_TOKEN` |
+| gitea.com / Forgejo (code.forgejo.org) | — | (omit) | `RENOVATE_TOKEN` *or* `GITEA_TOKEN` / `FORGEJO_TOKEN` |
+| Self-hosted Gitea / Forgejo | — | `https://forgejo.example.com/api/v1/` | `RENOVATE_TOKEN` *or* `GITEA_TOKEN` / `FORGEJO_TOKEN` |
+| Bitbucket Cloud | — | (omit) | `RENOVATE_TOKEN` *or* `BITBUCKET_TOKEN` |
+
+The Gitea / Forgejo / Bitbucket Cloud rows apply to the `resolve_config` family only: `dry_run` runs Renovate as `local` / `github` / `gitlab` and never reads those tokens. Pass `platform` (`gitea` / `forgejo` / `bitbucket`) and `endpoint` as tool inputs instead of `RENOVATE_PLATFORM` / `RENOVATE_ENDPOINT`.
 
 See [`docs/platform-setup.md`](docs/platform-setup.md) for a worked self-hosted GitLab example, `local>` preset handling, and private-registry credentials.
 

@@ -63,7 +63,7 @@ export function validateEndpoint(endpoint: string): string | null {
     return (
       `Invalid endpoint \`${shown}\`: host \`${host}\` is in a private, loopback, or link-local range. ` +
       "Refused to prevent SSRF and accidental exposure of the attached auth token to internal services. " +
-      "If you need a self-hosted GitHub/GitLab, use its public-DNS https URL."
+      "If you need a self-hosted GitHub/GitLab/Gitea/Forgejo, use its public-DNS https URL."
     );
   }
   return null;
