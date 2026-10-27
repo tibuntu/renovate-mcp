@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.7.0](https://github.com/tibuntu/renovate-mcp/compare/v1.6.8...v1.7.0) (2026-10-27)
+
+
+### Features
+
+* **explain_schedule:** preview the next run windows of a Renovate schedule ([#417](https://github.com/tibuntu/renovate-mcp/issues/417)) ([95cd70e](https://github.com/tibuntu/renovate-mcp/commit/95cd70e817e81cc7fb2fa0397213dad4e4abb842))
+* **lint:** add matchDatasources-unknown-name rule ([59503ec](https://github.com/tibuntu/renovate-mcp/commit/59503ecc7961495ee027fc336e885012c3c58b97))
+* **lint:** add schedule-without-timezone and package-rule-labels-overrides rules ([827fda6](https://github.com/tibuntu/renovate-mcp/commit/827fda6642682d0ee0e9d63880674459b8181561))
+* **prompts:** add onboard-repo workflow prompt for repos without a config ([d7ab9e5](https://github.com/tibuntu/renovate-mcp/commit/d7ab9e5b93a6ed3aea00ea22133dba8fdf5f3184))
+* **resolve_config:** fetch gitea&gt; and forgejo&gt; presets; route Bitbucket Cloud via local&gt; + platform ([cd9a909](https://github.com/tibuntu/renovate-mcp/commit/cd9a90909ee8bafc571d9f55454b71c47bdba5aa)), closes [#419](https://github.com/tibuntu/renovate-mcp/issues/419)
+* **resources:** add renovate://datasources backed by a generated datasource snapshot ([058fac0](https://github.com/tibuntu/renovate-mcp/commit/058fac05d77dbaed24edf66161c378927a54b3f9))
+* **test_package_rules:** render branch, commit and PR names for the synthetic dependency ([37c1e20](https://github.com/tibuntu/renovate-mcp/commit/37c1e2023d264a2015b6d5755214c036c43afc3d)), closes [#418](https://github.com/tibuntu/renovate-mcp/issues/418)
+* **tools:** annotate every tool with MCP read-only / open-world hints ([5c55990](https://github.com/tibuntu/renovate-mcp/commit/5c559903c7e76e897b7c092adca3932f3e4caaba))
+
+
+### Bug Fixes
+
+* **lint:** drift guards for PACKAGE_RULE_ACTION_KEYS, LATER_TEXT_ANCHOR_TOKENS and SKIP_HINTS ([073bb7a](https://github.com/tibuntu/renovate-mcp/commit/073bb7a5047306a24ca36bd444c32203a1386295)), closes [#420](https://github.com/tibuntu/renovate-mcp/issues/420)
+* **lint:** matchManagers-unknown-name skips regex, glob and negated entries ([ac43740](https://github.com/tibuntu/renovate-mcp/commit/ac437405d0494e21b33492c683e299b2b99cc33c))
+* **lint:** no pattern leniency for a literal datasourceTemplate; document glob permissiveness ([7ea226c](https://github.com/tibuntu/renovate-mcp/commit/7ea226c26a4b07892d71fc449825466d38c4574e))
+* **prompts:** pass suggest_presets' query input in design-renovate-config ([2499470](https://github.com/tibuntu/renovate-mcp/commit/24994708b99ddbd8de07257df505f8c3d849e6f7))
+* **test:** raise the MCP helper request budget to 25 s so worker cold starts don't flake ([7bb3780](https://github.com/tibuntu/renovate-mcp/commit/7bb3780157c9501c65ff20eb72c7d337c4634833)), closes [#421](https://github.com/tibuntu/renovate-mcp/issues/421)
+
 ## [1.6.8](https://github.com/tibuntu/renovate-mcp/compare/v1.6.7...v1.6.8) (2026-10-25)
 
 
