@@ -19,6 +19,7 @@ Detailed reference for every tool and resource exposed by `renovate-mcp`. The [R
 - [`test_package_rules`](#test_package_rules)
 - [`annotate_dry_run`](#annotate_dry_run)
 - [`explain_dependency`](#explain_dependency)
+- [`explain_schedule`](#explain_schedule)
 - [`migrate_config`](#migrate_config)
 - [`write_config`](#write_config)
 
@@ -46,7 +47,7 @@ Rules every tool applies the same way (implemented once in `src/lib/toolInputs.t
 - **`repoPath` must be an absolute path to an existing directory.** A relative path, a nonexistent path, or a file returns `isError` with `repoPath must be an absolute path to an existing directory (got: <value>)` before the tool does anything else. No tool creates a missing `repoPath`. (`check_setup` is the one exception: a diagnostic never returns `isError`.)
 - **A config source is `repoPath` or `configContent`, never both.** The tools that read a config this way (`resolve_config`, `explain_config`, each side of `resolve_config_diff`, `test_package_rules`, `annotate_dry_run`, `explain_dependency`) return `isError` for both inputs together (`Pass either repoPath or configContent, not both.`), for neither (`Provide either repoPath or configContent.`), and for a repo with no Renovate config (`No Renovate configuration found in <repoPath>.`). `resolve_config_diff` prefixes the failing side (`before: …` / `after: …`). `read_config` is the exception on the last point: there, no config is an ordinary result that points at `write_config`.
 - **A path input and its inline twin are never passed together.** The same rule covers `validate_config`, `lint_config` and `migrate_config` (`configPath` / `configContent`) and the report of `annotate_dry_run` and `explain_dependency` (`reportPath` / `report`): both at once is `isError` with `Pass either <a> or <b>, not both.`; neither keeps each tool's existing `Provide either …` message.
-- **Every tool carries MCP annotations** (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) so clients can decide which calls need a permission prompt. `write_config` is the only tool that writes (`readOnlyHint: false`, `destructiveHint: true`); every other tool is read-only and idempotent. Open-world (`openWorldHint: true`) are the tools that can reach the network under some input: `check_setup` (endpoint probe), `dry_run` (registries and the platform API), and the tools that accept `externalPresets` (`resolve_config`, `explain_config`, `resolve_config_diff`, `test_package_rules`, `annotate_dry_run`). The rest are offline — `validate_config` and `migrate_config` spawn a local validator / worker but never touch the network.
+- **Every tool carries MCP annotations** (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) so clients can decide which calls need a permission prompt. `write_config` is the only tool that writes (`readOnlyHint: false`, `destructiveHint: true`); every other tool is read-only and idempotent. Open-world (`openWorldHint: true`) are the tools that can reach the network under some input: `check_setup` (endpoint probe), `dry_run` (registries and the platform API), and the tools that accept `externalPresets` (`resolve_config`, `explain_config`, `resolve_config_diff`, `test_package_rules`, `annotate_dry_run`). The rest are offline — `validate_config`, `migrate_config` and `explain_schedule` spawn a local validator / worker but never touch the network.
 - **Symlinked config targets are written through.** When the file `write_config` targets is a symlink, the write lands on the link's real path — the link survives and the file it points at changes (a dangling link, whose target does not exist, is replaced by a regular file instead). The escape check runs against that real path, so a link pointing outside `repoPath` is refused with `filename escapes repoPath` and nothing is written. Format decisions — the `package.json` nested round-trip and the `.json5` refusal — follow the requested `filename`, not the link's real name.
 
 ---
@@ -365,6 +366,30 @@ The report already carries the answer: every extracted dependency under `reposit
 - **`hints`** — remedies. `not found` points at `enabledManagers`, `fileMatch` / `managerFilePatterns`, `ignorePaths`, and a `dryRunMode: "extract"` re-run; a small hand-maintained map turns the common skip reasons (`ignored`, `disabled`, `invalid-value`, `unsupported-datasource`, `github-token-required`, `internal-package`, …) into a one-line fix, and unknown reasons get a generic hint.
 - **`relatedProblems`** — report-level and per-repository `problems` entries whose message (or structured `depName` / `packageName`) mentions the dependency; repo-level entries carry a `repository` key.
 - **`reportSource`** (`"inline"` / `"reportPath"`), `configPath` and `matchQuality` (`"faithful"` / `"preview"`, only when a config source was given), and `warnings`. If the matcher worker is unavailable the tool degrades to the same approximate glob-only preview as `annotate_dry_run` and says so in `warnings`.
+
+## `explain_schedule`
+
+Answer "when will this schedule actually run?". [`lint_config`](#lint_config)'s `invalid-schedule` rule only says whether a schedule parses; this tool reports whether it is active right now and the next run windows, in both UTC and the config's timezone — the usual way to catch a `before 4am on Monday` that was meant in Berlin time but runs in UTC, a cron with the wrong field order, or an entry that never fires.
+
+**Inputs:**
+
+- `schedule` (required, string or string array, max 32 entries × 256 bytes) — the schedule exactly as written in the config: later-text (`before 4am on Monday`, `every weekend`, `after 10pm`) and/or cron with `*` as minutes (`* 0-3 * * 1`). Same shape as the `schedule` / `automergeSchedule` options and a `packageRules` entry's `schedule`.
+- `timezone` (optional, string, max 128 bytes) — IANA zone, e.g. `Europe/Berlin`: the config's `timezone`. When omitted the schedule is evaluated in **UTC** — which is what Renovate does when the config sets no `timezone` and its runner's clock is UTC (the hosted app and most containers) — and the result says so (`timezoneAssumed: true` plus a `warnings` entry).
+- `from` (optional, string, max 64 bytes) — ISO 8601 instant to evaluate from, e.g. `2026-10-29T12:00:00Z`. Defaults to now. An unparseable value is `isError` (`from must be an ISO 8601 timestamp`).
+- `count` (optional, integer 1–50, default 5) — how many upcoming windows to return.
+
+**Output** (JSON):
+
+- `schedule` (normalised to an array), `timezone` (the effective zone), `timezoneAssumed`, `from` (`{ utc, local }`).
+- `valid` — Renovate's own verdict. When `false`, `error` carries Renovate's message verbatim (`Invalid schedule: "0 3 * * *" has cron syntax, but doesn't have * as minutes`, `Invalid schedule: Unsupported timezone …`, …) and `renovateBehavior` spells out the consequence: Renovate logs a warning and **ignores the schedule**, updating on every run. This is a result, not `isError`.
+- `alwaysActive` — `true` for `at any time` / an empty schedule (Renovate never consults the clock; `windows` is empty).
+- `activeNow` — whether the schedule matches at `from`; when it does, `activeUntil` (`{ utc, local }`) is the end of the current window (absent if it is still active at the end of the horizon).
+- `windows` — the next `count` windows that **start after** `from`, in order: `{ start: { utc, local }, end: { utc, local }, hours }` with an exclusive `end`.
+- `horizonDays` (366), `truncated` (`true` when fewer than `count` windows start inside the horizon), `warnings`, `disclaimer`.
+
+**Faithful by construction.** The windows are computed with Renovate's **own** validator and matcher — `hasValidSchedule`, `hasValidTimezone`, `cronMatches` and the `@breejs/later` text matcher Renovate ships — in a worker thread (see [Architecture — worker isolation for schedules](architecture.md#worker-isolation-for-schedules)). Renovate's `isScheduledNow` reads the wall clock, so the worker replicates its per-entry check with an injectable instant and probes every local hour over a 366-day horizon; Renovate forbids minutes in both schedule forms, so hourly probes are exact and every window edge lies on a local hour. A parity test pins the replication against `isScheduledNow` itself. Quirks are reproduced on purpose: the `at any time` short-circuit looks at the **first** entry only, `every month` / `monthly` expand to `before 5am on the first day of the month`, and a single entry combining `after …` and `before …` (`after 10pm and before 5am`) is ANDed by the parser and never fires — the tool reports zero windows and a warning telling you to split it.
+
+Keep in mind that Renovate only *starts* work on a run that falls inside a window: the real PR time also depends on how often your Renovate runs. There is no approximate fallback — if the worker cannot load, the call is `isError` with `explain_schedule failed: …`. First call carries a one-time cold-load cost of a few seconds.
 
 ## `migrate_config`
 

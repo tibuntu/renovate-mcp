@@ -42,6 +42,12 @@ Rule *matching* runs Renovate's real `packageRules` matchers inside a `worker_th
 
 **Timeout / fallback.** The worker has a 30 s wall-clock budget (`WorkerTimeoutError`). On timeout — or any worker failure, including a missing or corrupt bundled `renovate` — both tools **fall back** to an approximate in-process glob-only matcher (only `matchPackageNames` / `matchDepNames` / `matchManagers` / `matchDatasources` / `matchFileNames` / `matchCategories`; rules using any other matcher are reported as unevaluatable), append a `warnings` entry, and report `matchQuality: "preview"` instead of `"faithful"`. A worker problem never hard-fails the call. `matchConfidence` is always unevaluatable offline (it needs the merge-confidence API), and matchers needing post-lookup data the caller didn't supply are reported as unevaluatable, never as silent non-matches.
 
+## `explain_schedule` schedule worker
+
+Schedule evaluation runs Renovate's real schedule validator and matcher inside a `worker_threads` worker (so the main process never imports `renovate`). One round-trip per call: the worker probes every local hour over a fixed **366-day horizon** (one full year, so an annual schedule shows up at least once) and stops as soon as `count` windows are found, so a weekly schedule with the default `count` of 5 costs a few hundred probes; a sparse or never-firing schedule walks the whole horizon (well under 5 s, cron entries being the slower kind because `cronMatches` re-parses per probe). Cold start is the same ~1-3 s as the other workers; the worker is terminated after each call.
+
+**Timeout / no fallback.** The worker has the shared 30 s wall-clock budget (`WorkerTimeoutError`). On timeout — or any worker failure, including a missing or corrupt bundled `renovate` — the tool returns `isError` (`explain_schedule failed: …`). Unlike the merge and packageRules workers there is **no** approximate in-process fallback: nothing outside the worker can evaluate a later-text schedule, and a guessed window would be worse than none.
+
 ## `check_setup` bundled-binary fast path
 
 Each Renovate CLI binary is `node node_modules/renovate/dist/<cli>.js`, and a cold `--version` spawn loads Renovate's full ESM graph (~2 s per binary). Two of those at every MCP session start used to dominate cold-start latency and could blow past clients' `initialize` timeout.

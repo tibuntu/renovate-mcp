@@ -13,6 +13,10 @@
 //   - `dist/workers/repository/updates/flatten.js`
 //     `dist/workers/repository/updates/generate.js`
 //                                           — rendering parity test oracle only
+//   - `dist/workers/repository/update/branch/schedule.js`
+//                                           — ADR-0007 (schedule worker;
+//                                             `isScheduledNow` is the parity
+//                                             test oracle only)
 // These shims give `tsc` typed signatures for those entry points.
 declare module "renovate/dist/config/migration.js" {
   export function migrateConfig(
@@ -22,6 +26,19 @@ declare module "renovate/dist/config/migration.js" {
     isMigrated: boolean;
     migratedConfig: Record<string, unknown>;
   };
+  /** Rewrites `4am`-style hours into the form `@breejs/later` parses. */
+  export function fixShortHours(input: string): string;
+}
+
+declare module "renovate/dist/workers/repository/update/branch/schedule.js" {
+  export function hasValidSchedule(schedule: string[]): [true] | [false, string];
+  export function hasValidTimezone(timezone: string): [true] | [false, string];
+  /** `now` is a luxon DateTime (structurally typed: luxon ships no types here). */
+  export function cronMatches(cron: string, now: object, timezone?: string): boolean;
+  export function isScheduledNow(
+    config: { schedule?: string | string[]; timezone?: string },
+    scheduleKey?: string,
+  ): boolean;
 }
 
 declare module "renovate/dist/util/package-rules/matchers.js" {

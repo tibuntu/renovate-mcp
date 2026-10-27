@@ -211,7 +211,7 @@ describe("OFFLINE_TOOLS drift guard", () => {
         return [...src.matchAll(/registerTool\(\s*"([a-z_]+)"/g)].map((m) => m[1]!);
       })
       .sort();
-    expect(registered).toHaveLength(17);
+    expect(registered).toHaveLength(18);
 
     const cliBacked = ["validate_config", "dry_run", "write_config"];
     const union = [...OFFLINE_TOOLS, ...cliBacked].sort();

@@ -26,7 +26,7 @@ For `dry_run`, the platform-specific var is auto-translated to `RENOVATE_TOKEN` 
 
 ### Test/debug hooks — never set these in production
 
-`RENOVATE_MCP_MIGRATION_WORKER_ENTRY`, `RENOVATE_MCP_MERGE_WORKER_ENTRY`, and `RENOVATE_MCP_PACKAGE_RULES_WORKER_ENTRY` redirect which compiled worker file `migrate_config`, `resolve_config`/`explain_config`, and `test_package_rules`/`annotate_dry_run`/`explain_dependency` spawn, respectively. The test suite points them at the compiled `dist/lib/*WorkerImpl.js` files so vitest's TS-source worker entry (which has no sibling `.js` until after a build) still resolves. Because they redirect which code actually executes, treat them like any other code-injection vector — never set them outside the test suite.
+`RENOVATE_MCP_MIGRATION_WORKER_ENTRY`, `RENOVATE_MCP_MERGE_WORKER_ENTRY`, `RENOVATE_MCP_PACKAGE_RULES_WORKER_ENTRY`, and `RENOVATE_MCP_SCHEDULE_WORKER_ENTRY` redirect which compiled worker file `migrate_config`, `resolve_config`/`explain_config`, `test_package_rules`/`annotate_dry_run`/`explain_dependency`, and `explain_schedule` spawn, respectively. The test suite points them at the compiled `dist/lib/*WorkerImpl.js` files so vitest's TS-source worker entry (which has no sibling `.js` until after a build) still resolves. Because they redirect which code actually executes, treat them like any other code-injection vector — never set them outside the test suite.
 
 ### `GITHUB_COM_TOKEN` — a separate role
 

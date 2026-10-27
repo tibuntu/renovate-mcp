@@ -10,10 +10,6 @@ Smaller items surfaced during recent work that haven't been scheduled yet:
 
 - **Multi-version nightly matrix.** The nightly workflow already re-runs the full test suite against `renovate@latest` daily; testing against more than one Renovate version per run remains unpursued.
 
-## Vetted expansion backlog
-
-- **An `explain_schedule` tool.** `invalid-schedule` only answers "does this parse?". An offline tool that takes a `schedule` and an optional `timezone` and returns the next run windows would answer "when will this actually run?". Tracked in [#417](https://github.com/tibuntu/renovate-mcp/issues/417).
-
 ## Parked (deliberately not planned)
 
 - **Per-rule lint suppression** for `lint_config` findings.

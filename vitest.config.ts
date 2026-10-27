@@ -22,6 +22,11 @@ export default defineConfig({
         process.cwd(),
         "dist/lib/packageRulesWorkerImpl.js",
       ),
+      // Same again for the schedule worker (explain_schedule).
+      RENOVATE_MCP_SCHEDULE_WORKER_ENTRY: resolve(
+        process.cwd(),
+        "dist/lib/scheduleWorkerImpl.js",
+      ),
     },
     coverage: {
       provider: "v8",
