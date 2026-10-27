@@ -57,17 +57,21 @@ const DEPRECATED_KEY_LOOKUP: ReadonlyMap<string, DeprecatedKeyEntry> = new Map(
 // deps). Source of truth: `node_modules/renovate/dist/config/options/index.js` —
 // entries whose `parents` array includes `"packageRules"`, plus the broader set of
 // inheritable config options Renovate allows inside a packageRules entry
-// (groupName, automerge, labels, schedule, …). Reconciled against renovate@43.150.0.
-// Bumping the `renovate` devDep should prompt a manual re-check. We deliberately do
-// NOT generate this list at build time: per CLAUDE.md, the linter must stay
-// independent of the runtime `renovate` import, so this stays a curated snapshot
-// — analogous to the other allow-lists under `src/data/`.
+// (groupName, automerge, labels, schedule, …). We deliberately do NOT generate this
+// list at build time: per CLAUDE.md, the linter must stay independent of the runtime
+// `renovate` import, so this stays a curated snapshot — analogous to the other
+// allow-lists under `src/data/`. Drift guard: test/unit/allowListDrift.test.ts checks
+// every entry against the installed Renovate's option registry (real option, not
+// global-only, `scopes` allow packageRules) and that every packageRules-only option
+// is listed, so a `renovate` bump fails there instead of leaving this stale.
 //
 // Explicitly NOT in this set (kept here as documentation):
 //   - `description` (metadata)
 //   - every `match*` / `exclude*` key (selectors)
 //   - `paths` / `excludePaths` (path-scope selectors)
 //   - `matchJsonata`, `matchNewValue`, `matchCurrentAge` etc. (selectors)
+//   - `vulnerabilityAlerts`, `dependencyDashboardLabels` (Renovate's option `scopes`
+//     restrict them to the top level; its validator warns inside a packageRule)
 //   - `changelogUrl`, `sourceDirectory`, `sourceUrl` (metadata/locator overrides —
 //     treated as actions below since they actively override resolved fields)
 export const PACKAGE_RULE_ACTION_KEYS: ReadonlySet<string> = new Set([
@@ -90,7 +94,6 @@ export const PACKAGE_RULE_ACTION_KEYS: ReadonlySet<string> = new Set([
   "commitMessageSuffix",
   "commitMessageTopic",
   "dependencyDashboardApproval",
-  "dependencyDashboardLabels",
   "draftPR",
   "enabled",
   "extends",
@@ -141,7 +144,6 @@ export const PACKAGE_RULE_ACTION_KEYS: ReadonlySet<string> = new Set([
   "sourceUrl",
   "stopUpdatingLabel",
   "versioning",
-  "vulnerabilityAlerts",
 ]);
 
 const DEPRECATED_KEY_CONTAINERS = ["packageRules", "hostRules", "customManagers"] as const;
@@ -162,6 +164,9 @@ const DEPRECATED_KEY_CONTAINERS = ["packageRules", "hostRules", "customManagers"
 // a deliberate bias toward false negatives over false positives: a non-later
 // string that happens to contain one of these anchor tokens gets a free pass,
 // but every plausible later-text input will contain at least one of them.
+// Drift guard: test/unit/allowListDrift.test.ts parses each token (in a minimal
+// phrase) with the `@breejs/later` Renovate ships, so a token the grammar does
+// not know can't sneak in or linger after a bump.
 
 // Special-cased sentinels meaning "no schedule". Renovate treats these as
 // always-on.
@@ -176,12 +181,10 @@ const SCHEDULE_MAPPING_LITERALS: ReadonlySet<string> = new Set([
 
 // Lowercase tokens. Presence of at least one (whole-word, case-insensitive)
 // makes a non-cron string plausibly-later-text. Curated from later's grammar.
-const LATER_TEXT_ANCHOR_TOKENS: ReadonlySet<string> = new Set([
+export const LATER_TEXT_ANCHOR_TOKENS: ReadonlySet<string> = new Set([
   // Time anchors
   "am",
   "pm",
-  "noon",
-  "midnight",
   "before",
   "after",
   "between",
@@ -225,10 +228,7 @@ const LATER_TEXT_ANCHOR_TOKENS: ReadonlySet<string> = new Set([
   "feb",
   "mar",
   "apr",
-  "jun",
-  "jul",
   "aug",
-  "sep",
   "sept",
   "oct",
   "nov",
@@ -239,9 +239,7 @@ const LATER_TEXT_ANCHOR_TOKENS: ReadonlySet<string> = new Set([
   "week",
   "weeks",
   "weekday",
-  "weekdays",
   "weekend",
-  "weekends",
   "month",
   "months",
   "year",
@@ -250,9 +248,6 @@ const LATER_TEXT_ANCHOR_TOKENS: ReadonlySet<string> = new Set([
   "hours",
   "minute",
   "minutes",
-  "morning",
-  "evening",
-  "night",
 ]);
 
 // Cron-shape: 5 or 6 whitespace-separated fields, every char in `[0-9*/,\-]`,

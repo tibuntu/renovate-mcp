@@ -16,6 +16,8 @@ The main server process never imports the `renovate` package at runtime — only
 
 `npm run check:snapshot-versions` (also run in CI) compares the embedded version against `node_modules/renovate/package.json#version` and fails fast naming the stale file(s) and the `npm run generate:*` command to fix them. `npm run sync:jsonata-pin` keeps the `jsonata` dependency pin in `package.json` matching Renovate's own pin (see CLAUDE.md's JSONata worker-isolation note).
 
+Three hand-maintained allow-lists in `src/lib` mirror Renovate without a generated snapshot — `PACKAGE_RULE_ACTION_KEYS` and `LATER_TEXT_ANCHOR_TOKENS` in `configLinter.ts` (the `package-rule-without-action` / `invalid-schedule` lint rules) and `SKIP_HINTS` in `dependencyExplainer.ts` (`explain_dependency`). `test/unit/allowListDrift.test.ts` checks each against the installed `renovate` (its option registry, the `@breejs/later` it bundles, and its `SkipReason` type), the same way `test/unit/presetSuggester.test.ts` guards the `suggest_presets` facet taxonomy — so the nightly `renovate@latest` run surfaces an upstream addition or rename before the dependency bump lands.
+
 ## Release flow
 
 Releases are driven by [Conventional Commits](https://www.conventionalcommits.org/) and [release-please](https://github.com/googleapis/release-please):

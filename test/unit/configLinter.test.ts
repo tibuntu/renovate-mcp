@@ -596,17 +596,23 @@ describe("lintConfig", () => {
         "additionalBranchPrefix",
         "milestone",
         "prTitle",
-        "vulnerabilityAlerts",
         "platformAutomerge",
         "prBodyColumns",
         "prBodyNotes",
-        "dependencyDashboardLabels",
         "stopUpdatingLabel",
         "keepUpdatedLabel",
         "reviewersFromCodeOwners",
         "assigneesFromCodeOwners",
       ]) {
         expect(PACKAGE_RULE_ACTION_KEYS.has(key)).toBe(true);
+      }
+    });
+
+    it("excludes options Renovate only honours at the top level", () => {
+      // Pinned by the drift guard in allowListDrift.test.ts: Renovate's own validator
+      // warns when these appear inside a packageRule, so they are not actions there.
+      for (const key of ["vulnerabilityAlerts", "dependencyDashboardLabels"]) {
+        expect(PACKAGE_RULE_ACTION_KEYS.has(key)).toBe(false);
       }
     });
 
