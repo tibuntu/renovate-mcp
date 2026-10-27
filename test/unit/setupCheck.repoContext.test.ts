@@ -10,6 +10,9 @@ const ENV_KEYS = [
   "GITHUB_TOKEN",
   "GITLAB_TOKEN",
   "GITHUB_COM_TOKEN",
+  "GITEA_TOKEN",
+  "FORGEJO_TOKEN",
+  "BITBUCKET_TOKEN",
   "RENOVATE_PLATFORM",
   "RENOVATE_ENDPOINT",
 ] as const;
@@ -139,6 +142,69 @@ describe("checkSetup repoContext", () => {
     const status = await checkSetup({ repoPath: dir, probe: fakeProbe() });
     expect(status.repoContext?.remote?.classified).toBe("gitlab");
     expect(status.hints.some((h) => h.includes("GITLAB_TOKEN"))).toBe(true);
+  });
+
+  it("classifies bitbucket.org origin and hints missing BITBUCKET_TOKEN", async () => {
+    const dir = makeRepo({ originUrl: "git@bitbucket.org:ws/proj.git" });
+    const status = await checkSetup({ repoPath: dir, probe: fakeProbe() });
+    expect(status.repoContext?.remote?.classified).toBe("bitbucket");
+    expect(status.repoContext?.effectivePlatform).toBe("bitbucket");
+    const hint = status.hints.find((h) => h.includes("BITBUCKET_TOKEN"));
+    expect(hint).toBeDefined();
+    expect(hint).toContain('platform: "bitbucket"');
+  });
+
+  it("does not hint BITBUCKET_TOKEN when RENOVATE_TOKEN covers it", async () => {
+    process.env.RENOVATE_TOKEN = "rnv_dummy";
+    const dir = makeRepo({ originUrl: "https://bitbucket.org/ws/proj.git" });
+    const status = await checkSetup({ repoPath: dir, probe: fakeProbe() });
+    expect(status.hints.some((h) => h.includes("BITBUCKET_TOKEN"))).toBe(false);
+  });
+
+  it("classifies gitea.com origin and hints missing GITEA_TOKEN", async () => {
+    const dir = makeRepo({ originUrl: "git@gitea.com:org/proj.git" });
+    const status = await checkSetup({ repoPath: dir, probe: fakeProbe() });
+    expect(status.repoContext?.remote?.classified).toBe("gitea");
+    expect(status.hints.some((h) => h.includes("GITEA_TOKEN"))).toBe(true);
+  });
+
+  it("classifies codeberg.org origin as forgejo and hints missing FORGEJO_TOKEN", async () => {
+    const dir = makeRepo({ originUrl: "https://codeberg.org/org/proj.git" });
+    const status = await checkSetup({ repoPath: dir, probe: fakeProbe() });
+    expect(status.repoContext?.remote?.classified).toBe("forgejo");
+    expect(status.hints.some((h) => h.includes("FORGEJO_TOKEN"))).toBe(true);
+  });
+
+  it("hints the Codeberg API endpoint, since forgejo> defaults to code.forgejo.org", async () => {
+    const dir = makeRepo({ originUrl: "https://codeberg.org/org/proj.git" });
+    const status = await checkSetup({ repoPath: dir, probe: fakeProbe() });
+    const hint = status.hints.find((h) => h.includes("https://codeberg.org/api/v1"));
+    expect(hint).toBeDefined();
+    expect(hint).toContain("code.forgejo.org");
+  });
+
+  it("does not hint an endpoint for code.forgejo.org itself", async () => {
+    const dir = makeRepo({ originUrl: "https://code.forgejo.org/org/proj.git" });
+    const status = await checkSetup({ repoPath: dir, probe: fakeProbe() });
+    expect(status.hints.some((h) => h.includes("/api/v1"))).toBe(false);
+  });
+
+  it("does not hint the Codeberg endpoint when renovate.json already sets one", async () => {
+    const dir = makeRepo({
+      originUrl: "https://codeberg.org/org/proj.git",
+      renovateConfig: { endpoint: "https://codeberg.org/api/v1" },
+    });
+    const status = await checkSetup({ repoPath: dir, probe: fakeProbe() });
+    expect(status.hints.some((h) => h.includes("code.forgejo.org"))).toBe(false);
+  });
+
+  it("treats a self-hosted gitea.* host as gitea-flavoured and hints GITEA_TOKEN", async () => {
+    const dir = makeRepo({ originUrl: "git@gitea.example.com:org/proj.git" });
+    const status = await checkSetup({ repoPath: dir, probe: fakeProbe() });
+    expect(status.repoContext?.remote?.classified).toBe("self-hosted");
+    expect(status.repoContext?.remote?.flavor).toBe("gitea");
+    expect(status.repoContext?.effectivePlatform).toBe("gitea");
+    expect(status.hints.some((h) => h.includes("GITEA_TOKEN"))).toBe(true);
   });
 
   it("flags self-hosted gitlab without configured endpoint", async () => {

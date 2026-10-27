@@ -91,24 +91,44 @@ export function parseGitConfigOriginUrl(content: string): string | null {
   return null;
 }
 
-export type RemoteClassification = "github" | "gitlab" | "self-hosted" | "unknown";
-export type SelfHostedFlavor = "github" | "gitlab" | "unknown";
+/**
+ * Git platforms this server knows how to talk to: `resolve_config` can fetch
+ * presets from each over HTTPS, and `check_setup` classifies origin hosts
+ * against the same list so its token hints line up with the fetcher.
+ */
+export const HOSTED_PLATFORMS = ["github", "gitlab", "gitea", "forgejo", "bitbucket"] as const;
+export type HostedPlatform = (typeof HOSTED_PLATFORMS)[number];
+
+export type RemoteClassification = HostedPlatform | "self-hosted" | "unknown";
+export type SelfHostedFlavor = "github" | "gitlab" | "gitea" | "forgejo" | "unknown";
 
 export interface ClassifiedRemote {
   classified: RemoteClassification;
   flavor?: SelfHostedFlavor;
 }
 
+const HOSTED_BY_HOSTNAME: Record<string, HostedPlatform> = {
+  "github.com": "github",
+  "www.github.com": "github",
+  "gitlab.com": "gitlab",
+  "www.gitlab.com": "gitlab",
+  "bitbucket.org": "bitbucket",
+  "gitea.com": "gitea",
+  "codeberg.org": "forgejo",
+  "code.forgejo.org": "forgejo",
+};
+
+// Self-hosted flavours we can infer from hostname conventions. Bitbucket is
+// deliberately absent: a self-hosted Bitbucket is Server/Data Center, whose
+// API differs from the Cloud one the preset fetcher speaks.
+const SELF_HOSTED_FLAVORS = ["gitlab", "github", "gitea", "forgejo"] as const;
+
 export function classifyRemoteHost(host: string): ClassifiedRemote {
   const h = host.toLowerCase();
-  if (h === "github.com" || h === "www.github.com") return { classified: "github" };
-  if (h === "gitlab.com" || h === "www.gitlab.com") return { classified: "gitlab" };
+  const hosted = HOSTED_BY_HOSTNAME[h];
+  if (hosted) return { classified: hosted };
   // Heuristics for self-hosted: hostname prefix/suffix conventions.
-  let flavor: SelfHostedFlavor = "unknown";
-  if (/(^|\.)gitlab\./.test(h) || h.startsWith("gitlab-") || h.startsWith("gitlab.")) {
-    flavor = "gitlab";
-  } else if (/(^|\.)github\./.test(h) || h.startsWith("github-") || h.startsWith("github.")) {
-    flavor = "github";
-  }
+  const flavor: SelfHostedFlavor =
+    SELF_HOSTED_FLAVORS.find((name) => new RegExp(`(^|\\.)${name}[.-]`).test(h)) ?? "unknown";
   return { classified: "self-hosted", flavor };
 }

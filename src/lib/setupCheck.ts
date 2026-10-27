@@ -10,6 +10,8 @@ import {
   type ClassifiedRemote,
   type ParsedRemote,
   type RemoteClassification,
+  HOSTED_PLATFORMS,
+  type HostedPlatform,
 } from "./gitRemote.js";
 import { run, resolveRenovateTool } from "./renovateCli.js";
 import { dedupeRuntimeWarnings, type RuntimeWarning } from "./runtimeWarnings.js";
@@ -54,6 +56,10 @@ export interface PlatformContext {
     GITLAB_TOKEN: boolean;
     /** github.com *datasource* token (release notes, github-tags/-releases/-actions). Distinct from the platform token; never auto-derived from the others. */
     GITHUB_COM_TOKEN: boolean;
+    /** `resolve_config` platform fallbacks for `gitea>` / `forgejo>` / `local>`-via-`platform` fetches; `dry_run` does not read them. */
+    GITEA_TOKEN: boolean;
+    FORGEJO_TOKEN: boolean;
+    BITBUCKET_TOKEN: boolean;
   };
   /**
    * What `dry_run` would pick for `--platform=` when its `platform` input is
@@ -66,7 +72,7 @@ export interface PlatformContext {
   notes: string[];
 }
 
-export type EffectivePlatform = "github" | "gitlab" | "local" | "unknown";
+export type EffectivePlatform = HostedPlatform | "local" | "unknown";
 export type EffectivePlatformSource = "remote" | "config" | "env" | "default";
 
 export interface RepoContext {
@@ -76,7 +82,7 @@ export interface RepoContext {
     | null;
   configFile: { path: string; format: string } | null;
   configEndpoint?: string;
-  configPlatform?: "github" | "gitlab" | "local";
+  configPlatform?: HostedPlatform | "local";
   effectivePlatform: EffectivePlatform;
   effectivePlatformSource: EffectivePlatformSource;
   endpointProbe?: EndpointProbeResult & { derivedFrom: "config" | "env" | "default" };
@@ -357,7 +363,7 @@ async function gatherRepoContext(
         configEndpoint = cfgEndpoint;
       }
       const cfgPlatform = located.config.platform;
-      if (cfgPlatform === "github" || cfgPlatform === "gitlab" || cfgPlatform === "local") {
+      if (cfgPlatform === "local" || isHostedPlatform(cfgPlatform)) {
         configPlatform = cfgPlatform;
       }
     }
@@ -381,10 +387,7 @@ async function gatherRepoContext(
     }
   }
   if (remote && platformContext.renovatePlatform) {
-    const remoteSays =
-      remote.classified === "github" || remote.classified === "gitlab"
-        ? remote.classified
-        : remote.flavor;
+    const remoteSays = isHostedPlatform(remote.classified) ? remote.classified : remote.flavor;
     if (
       remoteSays
       && remoteSays !== platformContext.renovatePlatform
@@ -423,8 +426,7 @@ function derivePlatform(
   envPlatform: string | null,
 ): { platform: EffectivePlatform; source: EffectivePlatformSource } {
   if (remote) {
-    if (remote.classified === "github") return { platform: "github", source: "remote" };
-    if (remote.classified === "gitlab") return { platform: "gitlab", source: "remote" };
+    if (isHostedPlatform(remote.classified)) return { platform: remote.classified, source: "remote" };
     if (remote.classified === "self-hosted" && remote.flavor && remote.flavor !== "unknown") {
       return { platform: remote.flavor, source: "remote" };
     }
@@ -466,26 +468,55 @@ function safeHostFromUrl(url: string): string | null {
   }
 }
 
+function isHostedPlatform(value: unknown): value is HostedPlatform {
+  return (HOSTED_PLATFORMS as readonly unknown[]).includes(value);
+}
+
+/** Per-platform token fallback (same precedence the fetchers use) and the hint emitted when none is set. */
+const PLATFORM_TOKEN_HINTS: Record<HostedPlatform, { vars: string[]; hint: string }> = {
+  github: {
+    vars: ["RENOVATE_TOKEN", "GITHUB_TOKEN"],
+    hint: "This repo's origin is on GitHub. Set `GITHUB_TOKEN` (a read-only PAT is enough — used for rate-limit headroom on public deps) in the MCP server's env, or `dry_run` will skip your github-actions dependencies with `skipReason: github-token-required`.",
+  },
+  gitlab: {
+    vars: ["RENOVATE_TOKEN", "GITLAB_TOKEN"],
+    hint: "This repo's origin is on GitLab. Set `GITLAB_TOKEN` (or `RENOVATE_TOKEN`) in the MCP server's env, or private-preset / private-registry lookups will fail.",
+  },
+  gitea: {
+    vars: ["RENOVATE_TOKEN", "GITEA_TOKEN"],
+    hint: "This repo's origin is on Gitea. Set `GITEA_TOKEN` (or `RENOVATE_TOKEN`) in the MCP server's env, or private `gitea>` / `local>` preset fetches via `resolve_config` (`platform: \"gitea\"`) will fail to authenticate.",
+  },
+  forgejo: {
+    vars: ["RENOVATE_TOKEN", "FORGEJO_TOKEN"],
+    hint: "This repo's origin is on Forgejo. Set `FORGEJO_TOKEN` (or `RENOVATE_TOKEN`) in the MCP server's env, or private `forgejo>` / `local>` preset fetches via `resolve_config` (`platform: \"forgejo\"`) will fail to authenticate.",
+  },
+  bitbucket: {
+    vars: ["RENOVATE_TOKEN", "BITBUCKET_TOKEN"],
+    hint: "This repo's origin is on Bitbucket Cloud. Set `BITBUCKET_TOKEN` (a repository/workspace access token, or an Atlassian API token) or `RENOVATE_TOKEN` in the MCP server's env, or private `local>` preset fetches via `resolve_config` (`platform: \"bitbucket\"`) will fail to authenticate.",
+  },
+};
+
 function appendRepoHints(
   ctx: RepoContext,
   hints: string[],
   platformContext: PlatformContext,
 ): void {
   const platform = ctx.effectivePlatform;
-  if (platform === "github") {
-    const cred = resolveCredential(["RENOVATE_TOKEN", "GITHUB_TOKEN"]);
-    if (!cred.envVar) {
-      hints.push(
-        "This repo's origin is on GitHub. Set `GITHUB_TOKEN` (a read-only PAT is enough — used for rate-limit headroom on public deps) in the MCP server's env, or `dry_run` will skip your github-actions dependencies with `skipReason: github-token-required`.",
-      );
-    }
-  } else if (platform === "gitlab") {
-    const cred = resolveCredential(["RENOVATE_TOKEN", "GITLAB_TOKEN"]);
-    if (!cred.envVar) {
-      hints.push(
-        "This repo's origin is on GitLab. Set `GITLAB_TOKEN` (or `RENOVATE_TOKEN`) in the MCP server's env, or private-preset / private-registry lookups will fail.",
-      );
-    }
+  if (isHostedPlatform(platform)) {
+    const { vars, hint } = PLATFORM_TOKEN_HINTS[platform];
+    if (!resolveCredential(vars).envVar) hints.push(hint);
+  }
+
+  // The fetcher's `forgejo>` default is code.forgejo.org (Renovate's default
+  // too), so every other hosted Forgejo — Codeberg above all — needs `endpoint`.
+  if (
+    ctx.remote?.classified === "forgejo"
+    && ctx.remote.host !== "code.forgejo.org"
+    && !ctx.configEndpoint
+  ) {
+    hints.push(
+      `This repo's origin is \`${ctx.remote.host}\`, a Forgejo host other than code.forgejo.org. Pass \`endpoint: "https://${ctx.remote.host}/api/v1"\` to \`resolve_config\` (plus \`platform: "forgejo"\` for \`local>\` presets), or \`forgejo>\` presets will be fetched from code.forgejo.org.`,
+    );
   }
 
   // github.com *datasource* token gap. `dry_run` defaults to `platform: local`
@@ -565,6 +596,9 @@ export function inspectPlatformContext(env: NodeJS.ProcessEnv): PlatformContext 
     GITHUB_TOKEN: Boolean(env.GITHUB_TOKEN),
     GITLAB_TOKEN: Boolean(env.GITLAB_TOKEN),
     GITHUB_COM_TOKEN: Boolean(env.GITHUB_COM_TOKEN),
+    GITEA_TOKEN: Boolean(env.GITEA_TOKEN),
+    FORGEJO_TOKEN: Boolean(env.FORGEJO_TOKEN),
+    BITBUCKET_TOKEN: Boolean(env.BITBUCKET_TOKEN),
   };
 
   const allowedPlatform = DRY_RUN_PLATFORMS.find((p) => p === renovatePlatformRaw);

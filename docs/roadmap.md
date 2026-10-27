@@ -12,12 +12,12 @@ Smaller items surfaced during recent work that haven't been scheduled yet:
 
 ## Vetted expansion backlog
 
-- **Broader external preset support.** `bitbucket>`, `gitea>`, and npm preset sources currently land in `presetsUnresolved` rather than resolving. `github>` / `gitlab>` are supported today; `local>` is partly handled — see [Platform setup — `local>` presets](platform-setup.md#local-presets). Tracked in [#419](https://github.com/tibuntu/renovate-mcp/issues/419).
 - **An `explain_schedule` tool.** `invalid-schedule` only answers "does this parse?". An offline tool that takes a `schedule` and an optional `timezone` and returns the next run windows would answer "when will this actually run?". Tracked in [#417](https://github.com/tibuntu/renovate-mcp/issues/417).
 - **Rendered templates in `test_package_rules`.** Show the effective `branchName`, `commitMessage`, `prTitle` and `groupName` rendered for the hypothetical dependency, so template tuning doesn't need a `dry_run`. Tracked in [#418](https://github.com/tibuntu/renovate-mcp/issues/418).
 
 ## Parked (deliberately not planned)
 
 - **Per-rule lint suppression** for `lint_config` findings.
+- **npm-hosted presets in `resolve_config`.** They would need a registry fetch plus tarball extraction, and `dry_run` already resolves them through the Renovate CLI. Every git-hosted source is covered: `github>` / `gitlab>` / `gitea>` / `forgejo>` directly, Bitbucket Cloud through `local>` + `platform: "bitbucket"` — see [#419](https://github.com/tibuntu/renovate-mcp/issues/419).
 - **Full Handlebars templating** (helpers, conditionals) in `preview_custom_manager` — it implements positional `{{argN}}` / `{{groupName}}` substitution only, by design; see [`docs/tools.md`](tools.md#preview_custom_manager).
 - **A `preset-order-shadowing` lint rule.** Flagging a later `extends` entry that silently overrides an earlier one's fields is a real footgun, but detecting it needs preset expansion inside the linter, which would break `lint_config`'s pure/offline design. `explain_config` already exposes this provenance today.

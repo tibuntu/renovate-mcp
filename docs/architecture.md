@@ -54,7 +54,7 @@ Build-time imports of `renovate` are limited to these five scripts. The main pro
 
 ## External preset fetching
 
-External `github>` / `gitlab>` preset fetching is opt-in (`externalPresets: true`), uses each platform's contents API with a 10 s timeout, and caches results per call. The fetcher is intentionally a narrow, direct HTTP client — not routed through the Renovate CLI. Auth, redirect handling, and body caps are documented in [Security & secrets](security.md).
+External `github>` / `gitlab>` / `gitea>` / `forgejo>` preset fetching — plus Bitbucket Cloud through `local>` + `platform: "bitbucket"`, since Renovate has no `bitbucket>` prefix — is opt-in (`externalPresets: true`), uses each platform's raw-contents API with a 10 s timeout, and caches results per call. The fetcher is intentionally a narrow, direct HTTP client — not routed through the Renovate CLI. Auth, redirect handling, and body caps are documented in [Security & secrets](security.md).
 
 ## Integration testing — real spawn, fake binaries
 

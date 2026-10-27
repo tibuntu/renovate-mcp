@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { fetchExternalPreset, type FetchOptions } from "../../src/lib/externalPresetFetcher.js";
-import { parsePreset } from "../../src/lib/presetResolver.js";
+import { parsePreset, type ParsedPreset } from "../../src/lib/presetResolver.js";
 
 function makeResponse(
   body: unknown,
@@ -660,21 +660,218 @@ describe("fetchExternalPreset — response size cap", () => {
   });
 });
 
+describe("fetchExternalPreset — gitea / forgejo", () => {
+  beforeEach(() => vi.unstubAllEnvs());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it("fetches default.json from the gitea.com raw API without a ref query", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({ automerge: true }));
+    const result = await fetchExternalPreset(parsePreset("gitea>acme/cfg"), { fetchImpl });
+    const [url, init] = fetchImpl.mock.calls[0]!;
+    expect(url).toBe("https://gitea.com/api/v1/repos/acme/cfg/raw/default.json");
+    expect((init?.headers as Record<string, string>).Authorization).toBeUndefined();
+    expect(result).toEqual({ ok: true, body: { automerge: true } });
+  });
+
+  it("uses :preset as the file name and #ref as the query ref", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
+    await fetchExternalPreset(parsePreset("gitea>acme/cfg:strict#v2"), { fetchImpl });
+    expect(fetchImpl.mock.calls[0]![0]).toBe(
+      "https://gitea.com/api/v1/repos/acme/cfg/raw/strict.json?ref=v2",
+    );
+  });
+
+  it("uses //subpath as the file when provided", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
+    await fetchExternalPreset(parsePreset("gitea>acme/cfg//nested/strict"), { fetchImpl });
+    expect(fetchImpl.mock.calls[0]![0]).toBe(
+      "https://gitea.com/api/v1/repos/acme/cfg/raw/nested/strict.json",
+    );
+  });
+
+  it("attaches GITEA_TOKEN as a Bearer auth header", async () => {
+    vi.stubEnv("GITEA_TOKEN", "gitea_example");
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
+    await fetchExternalPreset(parsePreset("gitea>acme/cfg"), { fetchImpl });
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer gitea_example");
+  });
+
+  it("prefers RENOVATE_TOKEN over GITEA_TOKEN when both are set", async () => {
+    vi.stubEnv("GITEA_TOKEN", "gitea_platform");
+    vi.stubEnv("RENOVATE_TOKEN", "rnv_override");
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
+    await fetchExternalPreset(parsePreset("gitea>acme/cfg"), { fetchImpl });
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer rnv_override");
+  });
+
+  it("fetches forgejo> presets from code.forgejo.org with FORGEJO_TOKEN, ignoring GITEA_TOKEN", async () => {
+    vi.stubEnv("GITEA_TOKEN", "gitea_secret");
+    vi.stubEnv("FORGEJO_TOKEN", "forgejo_secret");
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
+    await fetchExternalPreset(parsePreset("forgejo>acme/cfg"), { fetchImpl });
+    const [url, init] = fetchImpl.mock.calls[0]!;
+    expect(url).toBe("https://code.forgejo.org/api/v1/repos/acme/cfg/raw/default.json");
+    expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer forgejo_secret");
+  });
+
+  it("names the tried env vars on a forgejo 401", async () => {
+    vi.stubEnv("RENOVATE_TOKEN", "");
+    vi.stubEnv("FORGEJO_TOKEN", "");
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(makeResponse("", { status: 401, statusText: "Unauthorized" }));
+    const result = await fetchExternalPreset(parsePreset("forgejo>acme/cfg"), { fetchImpl });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toMatch(/HTTP 401 when fetching forgejo>acme\/cfg/);
+      expect(result.reason).toMatch(/Credential:\s+none \(tried RENOVATE_TOKEN, FORGEJO_TOKEN\)/);
+    }
+  });
+
+  it("uses a self-hosted endpoint as API base for gitea> fetches", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
+    await fetchExternalPreset(parsePreset("gitea>acme/cfg:strict#main"), {
+      fetchImpl,
+      endpoint: "https://gitea.example.com/api/v1/",
+    });
+    expect(fetchImpl.mock.calls[0]![0]).toBe(
+      "https://gitea.example.com/api/v1/repos/acme/cfg/raw/strict.json?ref=main",
+    );
+  });
+
+  it("rejects a repo path that is not exactly owner/repo without fetching", async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    const result = await fetchExternalPreset(parsePreset("gitea>a/b/c"), { fetchImpl });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toMatch(/Invalid gitea preset: gitea>a\/b\/c/);
+  });
+
+  it("percent-encodes repo path segments so the preset string cannot shape the URL", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
+    await fetchExternalPreset(parsePreset("gitea>acme/c?fg"), { fetchImpl });
+    expect(fetchImpl.mock.calls[0]![0]).toBe(
+      "https://gitea.com/api/v1/repos/acme/c%3Ffg/raw/default.json",
+    );
+  });
+});
+
+/** `bitbucket` is only ever reached through `local>` + `platform: "bitbucket"` — mirror that routing. */
+function bitbucketPreset(spec: string): ParsedPreset {
+  return { ...parsePreset(`local>${spec}`), source: "bitbucket" };
+}
+
+function basic(user: string, token: string): string {
+  return `Basic ${Buffer.from(`${user}:${token}`).toString("base64")}`;
+}
+
+describe("fetchExternalPreset — bitbucket (reached via local> + platform)", () => {
+  beforeEach(() => vi.unstubAllEnvs());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it("fetches default.json at HEAD from the Bitbucket Cloud src API", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({ automerge: true }));
+    const result = await fetchExternalPreset(bitbucketPreset("acme/cfg"), { fetchImpl });
+    const [url, init] = fetchImpl.mock.calls[0]!;
+    expect(url).toBe("https://api.bitbucket.org/2.0/repositories/acme/cfg/src/HEAD/default.json");
+    expect((init?.headers as Record<string, string>).Authorization).toBeUndefined();
+    expect(result).toEqual({ ok: true, body: { automerge: true } });
+  });
+
+  it("uses :preset as the file name and #ref as the src ref", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
+    await fetchExternalPreset(bitbucketPreset("acme/cfg:strict#main"), { fetchImpl });
+    expect(fetchImpl.mock.calls[0]![0]).toBe(
+      "https://api.bitbucket.org/2.0/repositories/acme/cfg/src/main/strict.json",
+    );
+  });
+
+  it("sends BITBUCKET_TOKEN as Basic x-token-auth", async () => {
+    vi.stubEnv("BITBUCKET_TOKEN", "bb_secret");
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
+    await fetchExternalPreset(bitbucketPreset("acme/cfg"), { fetchImpl });
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect((init?.headers as Record<string, string>).Authorization).toBe(
+      basic("x-token-auth", "bb_secret"),
+    );
+  });
+
+  it("sends an ATAT… Atlassian API token as Basic x-bitbucket-api-token-auth", async () => {
+    vi.stubEnv("BITBUCKET_TOKEN", "ATATabc123");
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
+    await fetchExternalPreset(bitbucketPreset("acme/cfg"), { fetchImpl });
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect((init?.headers as Record<string, string>).Authorization).toBe(
+      basic("x-bitbucket-api-token-auth", "ATATabc123"),
+    );
+  });
+
+  it("prefers RENOVATE_TOKEN over BITBUCKET_TOKEN when both are set", async () => {
+    vi.stubEnv("BITBUCKET_TOKEN", "bb_platform");
+    vi.stubEnv("RENOVATE_TOKEN", "rnv_override");
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
+    await fetchExternalPreset(bitbucketPreset("acme/cfg"), { fetchImpl });
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect((init?.headers as Record<string, string>).Authorization).toBe(
+      basic("x-token-auth", "rnv_override"),
+    );
+  });
+
+  it("uses a custom endpoint as the API base", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
+    await fetchExternalPreset(bitbucketPreset("acme/cfg"), {
+      fetchImpl,
+      endpoint: "https://bitbucket.example.com/",
+    });
+    expect(fetchImpl.mock.calls[0]![0]).toBe(
+      "https://bitbucket.example.com/2.0/repositories/acme/cfg/src/HEAD/default.json",
+    );
+  });
+
+  it("names the tried env vars on a 401 without echoing the token", async () => {
+    vi.stubEnv("RENOVATE_TOKEN", "");
+    vi.stubEnv("BITBUCKET_TOKEN", "");
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(makeResponse("", { status: 401, statusText: "Unauthorized" }));
+    const result = await fetchExternalPreset(bitbucketPreset("acme/cfg"), { fetchImpl });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toMatch(/HTTP 401 when fetching local>acme\/cfg/);
+      expect(result.reason).toMatch(/Credential:\s+none \(tried RENOVATE_TOKEN, BITBUCKET_TOKEN\)/);
+    }
+  });
+
+  it("rejects a bitbucket> prefix with a pointer at local> + platform, without fetching", async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    const result = await fetchExternalPreset(parsePreset("bitbucket>acme/cfg"), { fetchImpl });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toMatch(/not a Renovate preset source/i);
+      expect(result.reason).toMatch(/local>acme\/cfg/);
+      expect(result.reason).toMatch(/platform: "bitbucket"/);
+    }
+  });
+
+  it("rejects a repo path that is not exactly workspace/repo without fetching", async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    const result = await fetchExternalPreset(bitbucketPreset("a/b/c"), { fetchImpl });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toMatch(/Invalid bitbucket preset: local>a\/b\/c/);
+  });
+});
+
 describe("fetchExternalPreset — unsupported sources", () => {
-  it("returns a clear error for bitbucket", async () => {
-    const result = await fetchExternalPreset(parsePreset("bitbucket>acme/cfg"));
-    expect(result.ok).toBe(false);
-    if (!result.ok)
-      expect(result.reason).toMatch(/not supported by resolve_config/i);
-  });
-
-  it("returns a clear error for gitea", async () => {
-    const result = await fetchExternalPreset(parsePreset("gitea>acme/cfg"));
-    expect(result.ok).toBe(false);
-    if (!result.ok)
-      expect(result.reason).toMatch(/not supported by resolve_config/i);
-  });
-
   it("returns a clear error for local", async () => {
     const result = await fetchExternalPreset(parsePreset("local>acme/cfg"));
     expect(result.ok).toBe(false);

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { resolveConfig, type ResolveResult } from "../lib/presetResolver.js";
+import { FETCH_PLATFORMS, resolveConfig, type ResolveResult } from "../lib/presetResolver.js";
 import { diffResolvedConfigs } from "../lib/resolveConfigDiff.js";
 import { configRecord, endpointString, pathString } from "../lib/inputLimits.js";
 import { loadConfigSource, NETWORK_READ_ONLY_ANNOTATIONS } from "../lib/toolInputs.js";
@@ -48,13 +48,13 @@ export function registerResolveConfigDiff(server: McpServer): void {
           .boolean()
           .optional()
           .describe(
-            "When true, fetch external presets (github>, gitlab>) over HTTPS for BOTH sides. Credentials come from RENOVATE_TOKEN (preferred) or GITHUB_TOKEN / GITLAB_TOKEN as platform-specific fallbacks, set on the MCP server process. Default false (fully offline).",
+            "When true, fetch external presets (github>, gitlab>, gitea>, forgejo>) over HTTPS for BOTH sides. Credentials come from RENOVATE_TOKEN (preferred) or GITHUB_TOKEN / GITLAB_TOKEN / GITEA_TOKEN / FORGEJO_TOKEN / BITBUCKET_TOKEN as platform-specific fallbacks, set on the MCP server process. Default false (fully offline).",
           ),
         endpoint: endpointString(
-          "API base URL for github>/gitlab> fetches, applied to both sides. Use for GitHub Enterprise (e.g. https://ghe.example.com/api/v3) or self-hosted GitLab (e.g. https://gitlab.example.com/api/v4).",
+          "API base URL for external preset fetches, applied to both sides. Use for GitHub Enterprise (e.g. https://ghe.example.com/api/v3) or self-hosted GitLab (e.g. https://gitlab.example.com/api/v4).",
         ).optional(),
         platform: z
-          .enum(["github", "gitlab"])
+          .enum(FETCH_PLATFORMS)
           .optional()
           .describe(
             "Platform flavour of `endpoint`, applied to both sides. When set, `local>owner/repo` presets are fetched as if they were `<platform>>owner/repo`.",

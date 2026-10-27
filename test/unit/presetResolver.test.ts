@@ -281,8 +281,7 @@ describe("structurally-unsupported sources: identical reason across flag values"
   // must not change the reason the user sees.
   const cases: Array<{ preset: string; matcher: RegExp }> = [
     { preset: "local>acme/cfg", matcher: /need a platform context/i },
-    { preset: "bitbucket>acme/cfg", matcher: /not supported by resolve_config/i },
-    { preset: "gitea>acme/cfg", matcher: /not supported by resolve_config/i },
+    { preset: "bitbucket>acme/cfg", matcher: /not a Renovate preset source/i },
     { preset: "some-npm-preset", matcher: /npm-hosted/i },
   ];
 
@@ -304,10 +303,67 @@ describe("structurally-unsupported sources: identical reason across flag values"
   it("does not make a network call for structurally-unsupported sources even with externalPresets: true", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     await resolveConfig(
-      { extends: ["local>a/b", "bitbucket>a/b", "gitea>a/b", "some-npm-preset"] },
+      { extends: ["local>a/b", "bitbucket>a/b", "some-npm-preset"] },
       { fetchExternal: true },
     );
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("resolveConfig with gitea / forgejo / bitbucket sources", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it("keeps gitea> unresolved with the opt-in hint when externalPresets is off", async () => {
+    const { presetsUnresolved } = await resolveConfig({ extends: ["gitea>acme/cfg"] });
+    expect(presetsUnresolved).toHaveLength(1);
+    expect(presetsUnresolved[0]?.reason).toMatch(/externalPresets: true/);
+  });
+
+  it("fetches gitea> presets from gitea.com when externalPresets is on", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ automerge: true }), { status: 200 }),
+    );
+    const { resolved, presetsResolved } = await resolveConfig(
+      { extends: ["gitea>acme/cfg"] },
+      { fetchExternal: true },
+    );
+    expect(fetchSpy.mock.calls[0]![0]).toBe(
+      "https://gitea.com/api/v1/repos/acme/cfg/raw/default.json",
+    );
+    expect(resolved).toMatchObject({ automerge: true });
+    expect(presetsResolved).toEqual(["gitea>acme/cfg"]);
+  });
+
+  it("routes local> through a self-hosted Forgejo endpoint when platform is forgejo", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ automerge: true }), { status: 200 }),
+    );
+    const { presetsResolved } = await resolveConfig(
+      { extends: ["local>acme/cfg:strict"] },
+      { fetchExternal: true, platform: "forgejo", endpoint: "https://forgejo.example.com/api/v1" },
+    );
+    expect(fetchSpy.mock.calls[0]![0]).toBe(
+      "https://forgejo.example.com/api/v1/repos/acme/cfg/raw/strict.json",
+    );
+    expect(presetsResolved).toEqual(["local>acme/cfg:strict"]);
+  });
+
+  it("routes local> through the Bitbucket Cloud API when platform is bitbucket", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ automerge: true }), { status: 200 }),
+    );
+    const { resolved, presetsResolved } = await resolveConfig(
+      { extends: ["local>acme/cfg"] },
+      { fetchExternal: true, platform: "bitbucket" },
+    );
+    expect(fetchSpy.mock.calls[0]![0]).toBe(
+      "https://api.bitbucket.org/2.0/repositories/acme/cfg/src/HEAD/default.json",
+    );
+    expect(resolved).toMatchObject({ automerge: true });
+    expect(presetsResolved).toEqual(["local>acme/cfg"]);
   });
 });
 
