@@ -38,6 +38,11 @@
       "enabled": false
     },
     {
+      "description": "minimatch evaluates managerFilePatterns globs in preview_custom_manager and must match Renovate's own minimatch major (Renovate pins it exactly; v11 changed glob semantics). Raise this bound only when Renovate's pin moves; a unit test fails when the majors drift.",
+      "matchPackageNames": ["minimatch"],
+      "allowedVersions": "<11"
+    },
+    {
       "description": "On every renovate dependency bump: (1) mark the commit `fix` (not config:recommended's `chore` default for it) so release-please cuts a release that ships the freshly regenerated snapshots; (2) sync the jsonata pin to Renovate's own pin and regenerate the committed snapshots under src/data/ so they stay in lockstep with the installed Renovate version. `renovate` is pinned exactly in package.json so unrelated lockfile updates (lockfile-only bumps, lockFileMaintenance) can't re-resolve it and skip this regeneration. The postUpgradeTasks require the operator's RENOVATE_ALLOWED_POST_UPGRADE_COMMANDS to permit `npm ci`, `npm install`, `npm run sync:jsonata-pin`, and the five `npm run generate:*` commands.",
       "matchPackageNames": ["renovate"],
       "semanticCommitType": "fix",

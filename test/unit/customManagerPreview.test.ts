@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, mkdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { previewCustomManager } from "../../src/lib/customManagerPreview.js";
@@ -711,5 +711,28 @@ describe("managerFilePatterns", () => {
     });
     expect([...result.filesMatched].sort()).toEqual(["Chart.yaml", "Dockerfile"]);
     expect(result.warnings.some((w) => /fileMatch is deprecated/.test(w))).toBe(true);
+  });
+});
+
+describe("minimatch major matches Renovate's pin", () => {
+  // Globs in managerFilePatterns are evaluated with our own minimatch, so it
+  // must stay on Renovate's major (matching semantics changed in v11, e.g.
+  // multi-`**` patterns). renovate.json holds Renovate's minimatch PRs below
+  // the next major; when this fails, lift that allowedVersions bound together
+  // with our package.json range.
+  it("our minimatch range has the same major as Renovate's minimatch pin", async () => {
+    const root = path.resolve(import.meta.dirname, "../..");
+    const ours = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
+    const theirs = JSON.parse(
+      await readFile(path.join(root, "node_modules/renovate/package.json"), "utf8"),
+    );
+    const major = (v: string | undefined) => v?.match(/\d+/)?.[0];
+    expect(major(ours.dependencies?.minimatch)).toBeTruthy();
+    expect(
+      major(ours.dependencies?.minimatch),
+      `minimatch drifted: ours ${ours.dependencies?.minimatch}, Renovate pins ` +
+        `${theirs.dependencies?.minimatch}; keep our package.json range and ` +
+        `renovate.json's minimatch allowedVersions on Renovate's major.`,
+    ).toBe(major(theirs.dependencies?.minimatch));
   });
 });
