@@ -28,8 +28,8 @@
       "schedule": ["* * * * 0"]
     },
     {
-      "description": "@types/node tracks the engines.node floor (Node 24, matching Renovate's own engine), not the newest Node: newer type majors let tsc accept APIs that crash on a supported Node 24 runtime. Raise this together with engines.node and .nvmrc.",
-      "matchPackageNames": ["@types/node"],
+      "description": "node (.nvmrc, which every workflow runs on) and @types/node track the engines.node floor (Node 24, matching Renovate's own engine), not the newest Node: a newer .nvmrc stops CI from testing the floor and runs Renovate outside its engine range, and newer type majors let tsc accept APIs that crash on a supported Node 24 runtime. Raise this together with engines.node once Renovate's engine moves.",
+      "matchPackageNames": ["node", "@types/node"],
       "allowedVersions": "<25"
     },
     {
