@@ -231,7 +231,7 @@ export function registerDryRun(server: McpServer): void {
           .boolean()
           .optional()
           .describe(
-            "Only meaningful together with `baseBranches`. When true (default), Renovate reads its config (renovate.json/.json5) FROM each base branch — `useBaseBranchConfig=merge` — so a config edit that only exists on that branch is actually evaluated. Set false to scan the base branches' manifests while still using the default branch's config.",
+            "Only meaningful together with `baseBranches`. When true (default), Renovate reads its config (renovate.json/.jsonc/.json5, …) FROM each base branch — `useBaseBranchConfig=merge` — so a config edit that only exists on that branch is actually evaluated. Set false to scan the base branches' manifests while still using the default branch's config.",
           ),
       },
     },

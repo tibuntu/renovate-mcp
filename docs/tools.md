@@ -97,7 +97,7 @@ Report the renovate-mcp server version and whether it's a released build (runnin
 
 ## `read_config`
 
-Locate and parse a repo's Renovate config (`renovate.json`, `renovate.jsonc`, `renovate.json5`, the same under `.github/` and `.gitlab/`, `.renovaterc*`, `package.json#renovate`) in priority order, mirroring Renovate's own discovery logic. A `.jsonc` file reports `format: "json"`. JSON, JSONC (comments, trailing commas) and JSON5 are accepted for every candidate filename, matching Renovate's own parser.
+Locate and parse a repo's Renovate config (`renovate.json`, `renovate.jsonc`, `renovate.json5`, the same under `.github/` and `.gitlab/`, `.renovaterc*`, `package.json#renovate`) in priority order, mirroring Renovate's own discovery order when no platform is set (Renovate's per-platform directories such as `.forgejo/` are not searched). A `.jsonc` file reports `format: "json"`. JSON, JSONC (comments, trailing commas) and JSON5 are accepted for every candidate filename, matching Renovate's own parser.
 
 **Inputs:**
 
