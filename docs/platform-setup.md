@@ -1,6 +1,6 @@
 # Platform setup
 
-Configure `renovate-mcp` for github.com, GitHub Enterprise, gitlab.com, self-hosted GitLab, Gitea / Forgejo (hosted or self-hosted), or Bitbucket Cloud. Only needed if you'll use `dry_run` against a remote platform, or the `resolve_config` family with `externalPresets: true` — the fully offline tools (`read_config`, `suggest_presets`, `resolve_config`, `explain_config`, `resolve_config_diff`, `test_package_rules`, `preview_custom_manager`, `lint_config`, `dry_run_diff`, `annotate_dry_run`, `explain_dependency`, `migrate_config`) don't need any of this — the `resolve_config` family only when `externalPresets` stays unset.
+Configure `renovate-mcp` for github.com, GitHub Enterprise, gitlab.com, self-hosted GitLab, Gitea / Forgejo (hosted or self-hosted), or Bitbucket Cloud. Only needed if you'll use `dry_run` against a remote platform, or the `resolve_config` family with `externalPresets: true` — the fully offline tools (`read_config`, `suggest_presets`, `resolve_config`, `explain_config`, `resolve_config_diff`, `test_package_rules`, `preview_custom_manager`, `lint_config`, `dry_run_diff`, `annotate_dry_run`, `explain_dependency`, `explain_schedule`, `migrate_config`) don't need any of this — the `resolve_config` family only when `externalPresets` stays unset.
 
 ## The matrix
 
