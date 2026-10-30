@@ -687,4 +687,107 @@ setInterval(() => {}, 1000);
     expect(files).not.toContain("renovate.json");
     expect(files.filter((f) => f.includes(".renovate-mcp-tmp-"))).toHaveLength(0);
   });
+
+  describe("default target and configConflict", () => {
+    async function write(args: Record<string, unknown>) {
+      const validator = await makeFakeValidator(repo, "fake-pass.mjs", 0);
+      session = await startServer({ RENOVATE_CONFIG_VALIDATOR_BIN: validator });
+      const res = await session.request<{
+        content: Array<{ type: string; text: string }>;
+        isError?: boolean;
+      }>("tools/call", {
+        name: "write_config",
+        arguments: { repoPath: repo, config: { extends: ["config:recommended"] }, ...args },
+      });
+      return { res, payload: JSON.parse(res.result!.content[0]!.text) };
+    }
+    const put = async (rel: string, body: string) => {
+      await mkdir(path.dirname(path.join(repo, rel)), { recursive: true });
+      await writeFile(path.join(repo, rel), body);
+    };
+
+    it("without filename writes the live .github/renovate.json, not a new renovate.json", async () => {
+      await put(".github/renovate.json", '{\n  // keep me\n  "extends": ["config:base"]\n}\n');
+      const { res, payload } = await write({});
+      expect(res.result?.isError).toBeFalsy();
+      expect(payload).toMatchObject({ wrote: true, path: ".github/renovate.json", mode: "round-trip" });
+      expect(payload.configConflict).toBeUndefined();
+      expect(await readFile(path.join(repo, ".github/renovate.json"), "utf8")).toContain("// keep me");
+      expect(await readdir(repo)).not.toContain("renovate.json");
+    });
+
+    it("without filename edits package.json#renovate in place", async () => {
+      const pkg = { name: "app", dependencies: { zod: "^4" }, renovate: { extends: ["config:base"] } };
+      await put("package.json", JSON.stringify(pkg, null, 2) + "\n");
+      const { payload } = await write({});
+      expect(payload).toMatchObject({ wrote: true, path: "package.json" });
+      const written = JSON.parse(await readFile(path.join(repo, "package.json"), "utf8"));
+      expect(written).toEqual({ ...pkg, renovate: { extends: ["config:recommended"] } });
+      expect(await readdir(repo)).not.toContain("renovate.json");
+    });
+
+    it("without filename in an empty repo writes renovate.json", async () => {
+      const { payload } = await write({});
+      expect(payload).toMatchObject({ wrote: true, path: "renovate.json", mode: "fresh-write" });
+    });
+
+    it("without filename and only an unparseable package.json writes renovate.json", async () => {
+      await put("package.json", "{not json");
+      const { payload } = await write({});
+      expect(payload).toMatchObject({ wrote: true, path: "renovate.json" });
+      expect(await readFile(path.join(repo, "package.json"), "utf8")).toBe("{not json");
+    });
+
+    it("flags renovate.json shadowing a live .github/renovate.json", async () => {
+      await put(".github/renovate.json", "{}");
+      const { res, payload } = await write({ filename: "renovate.json" });
+      expect(res.result?.isError).toBeFalsy();
+      expect(payload.wrote).toBe(true);
+      expect(payload.configConflict).toMatchObject({
+        readByRenovate: "renovate.json",
+        ignored: ".github/renovate.json",
+      });
+      expect(typeof payload.configConflict.message).toBe("string");
+    });
+
+    it("flags a lower-priority .renovaterc as ignored", async () => {
+      await put("renovate.json", "{}");
+      const { payload } = await write({ filename: ".renovaterc" });
+      expect(payload.configConflict).toMatchObject({
+        readByRenovate: "renovate.json",
+        ignored: ".renovaterc",
+      });
+    });
+
+    it("does not flag ./renovate.json when it is the only config", async () => {
+      await put("renovate.json", "{}");
+      const { payload } = await write({ filename: "./renovate.json" });
+      expect(payload.wrote).toBe(true);
+      expect(payload.configConflict).toBeUndefined();
+    });
+
+    it("does not flag a non-candidate filename", async () => {
+      await put("renovate.json", "{}");
+      const { payload } = await write({ filename: "presets/default.json" });
+      expect(payload.wrote).toBe(true);
+      expect(payload.configConflict).toBeUndefined();
+    });
+
+    it("does not flag on a validation-failure refusal", async () => {
+      await put(".github/renovate.json", "{}");
+      const validator = await makeFakeValidator(repo, "fake-fail.mjs", 1);
+      session = await startServer({ RENOVATE_CONFIG_VALIDATOR_BIN: validator });
+      const res = await session.request<{
+        content: Array<{ type: string; text: string }>;
+        isError?: boolean;
+      }>("tools/call", {
+        name: "write_config",
+        arguments: { repoPath: repo, config: { bad: 1 }, filename: "renovate.json" },
+      });
+      expect(res.result?.isError).toBe(true);
+      const payload = JSON.parse(res.result!.content[0]!.text);
+      expect(payload.reason).toBe("validation-failed");
+      expect(payload.configConflict).toBeUndefined();
+    });
+  });
 });

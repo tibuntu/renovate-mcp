@@ -97,7 +97,7 @@ function genericRefusalHint(targetPath: string): string {
 
 const PACKAGE_JSON_MISSING_HINT =
   "write_config will not create a package.json just to hold Renovate config. " +
-  "Write renovate.json instead (omit filename, or pass filename: 'renovate.json').";
+  "Write renovate.json instead (pass filename: 'renovate.json').";
 
 // Parse errors of these codes are non-fatal in JSONC: `allowTrailingComma`
 // makes the parser still emit `InvalidCommentToken` / `TrailingCommaExpected`-

@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, mkdir, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { locateConfig } from "../../src/lib/configLocations.js";
+import { locateConfig, findConfigFile } from "../../src/lib/configLocations.js";
 
 let repo: string;
 
@@ -152,5 +152,54 @@ describe("locateConfig", () => {
   it("throws on malformed JSON", async () => {
     await writeFile(path.join(repo, "renovate.json"), "{not json");
     await expect(locateConfig(repo)).rejects.toThrow();
+  });
+});
+
+describe("findConfigFile", () => {
+  const put = async (rel: string, body = "{}") => {
+    await mkdir(path.dirname(path.join(repo, rel)), { recursive: true });
+    await writeFile(path.join(repo, rel), body);
+  };
+
+  it("returns null when nothing is present", async () => {
+    expect(await findConfigFile(repo)).toBeNull();
+  });
+
+  it("follows Renovate's priority order", async () => {
+    await put(".renovaterc");
+    expect(await findConfigFile(repo)).toBe(".renovaterc");
+    await put(".github/renovate.json");
+    expect(await findConfigFile(repo)).toBe(".github/renovate.json");
+    await put("renovate.json");
+    expect(await findConfigFile(repo)).toBe("renovate.json");
+  });
+
+  it("finds a candidate without parsing it", async () => {
+    await put("renovate.json", "{not json");
+    expect(await findConfigFile(repo)).toBe("renovate.json");
+  });
+
+  it("finds package.json only when renovate is an object", async () => {
+    await put("package.json", JSON.stringify({ name: "x", renovate: { extends: [] } }));
+    expect(await findConfigFile(repo)).toBe("package.json");
+  });
+
+  it.each([
+    ["renovate is not an object", JSON.stringify({ renovate: true })],
+    ["renovate is absent", JSON.stringify({ name: "x" })],
+    ["package.json is unparseable", "{not json"],
+  ])("returns null when %s", async (_n, body) => {
+    await put("package.json", body);
+    expect(await findConfigFile(repo)).toBeNull();
+  });
+
+  it("ignores a directory named like a candidate", async () => {
+    await mkdir(path.join(repo, "renovate.json"));
+    expect(await findConfigFile(repo)).toBeNull();
+  });
+
+  it("ignores a dangling symlink", async () => {
+    await symlink(path.join(repo, "missing.json"), path.join(repo, "renovate.json"));
+    expect(await findConfigFile(repo)).toBeNull();
   });
 });

@@ -87,3 +87,32 @@ export async function locateConfig(repoPath: string): Promise<LocatedConfig | nu
 
   return null;
 }
+
+/**
+ * Relative path of the config file Renovate would read in `repoPath`, or null.
+ * Mirrors Renovate's `detectConfigFile`: first hit in `CONFIG_FILE_NAMES`
+ * order wins, and `package.json` counts only with an object `renovate` key.
+ * Existence-only: candidate files are not parsed, and untracked files count.
+ */
+export async function findConfigFile(repoPath: string): Promise<string | null> {
+  for (const candidate of CANDIDATES) {
+    try {
+      const st = await fs.stat(path.join(repoPath, candidate.path));
+      if (st.isFile()) return candidate.path;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT" && code !== "ENOTDIR") throw err;
+    }
+  }
+
+  try {
+    const raw = await fs.readFile(path.join(repoPath, "package.json"), "utf8");
+    const pkg: unknown = JSON.parse(raw);
+    if (isRecord(pkg) && isRecord(pkg.renovate)) return "package.json";
+  } catch (err) {
+    if (err instanceof SyntaxError) return null;
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== "ENOENT" && code !== "ENOTDIR") throw err;
+  }
+  return null;
+}

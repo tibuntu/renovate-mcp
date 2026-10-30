@@ -15,6 +15,7 @@ import type { RuntimeWarning } from "../lib/runtimeWarnings.js";
 import { configRecord, filenameString, pathString } from "../lib/inputLimits.js";
 import { serializeConfig, isPackageJsonTarget } from "../lib/configWriter.js";
 import { assertRepoDir } from "../lib/toolInputs.js";
+import { CONFIG_FILE_NAMES, findConfigFile } from "../lib/configLocations.js";
 
 // Resolve symlinks in `p`, walking up to the nearest existing ancestor when
 // tail components don't exist yet (e.g. a new subdir we're about to mkdir).
@@ -51,8 +52,8 @@ export function registerWriteConfig(server: McpServer): void {
         repoPath: pathString("Absolute path to the repository root"),
         config: configRecord("The Renovate config object"),
         filename: filenameString(
-          "Target filename relative to repoPath (default renovate.json)",
-        ).default("renovate.json"),
+          "Target filename relative to repoPath. Omit to write the config file Renovate already reads (same discovery as read_config), or renovate.json when the repo has none.",
+        ).optional(),
         force: z
           .boolean()
           .default(false)
@@ -90,7 +91,9 @@ export function registerWriteConfig(server: McpServer): void {
       if (repoError) return { isError: true, content: [{ type: "text", text: repoError }] };
 
       const repoAbs = path.resolve(repoPath);
-      const requested = path.resolve(repoAbs, filename);
+      const liveConfig = await findConfigFile(repoAbs);
+      const effectiveFilename = filename ?? liveConfig ?? "renovate.json";
+      const requested = path.resolve(repoAbs, effectiveFilename);
       const rel = path.relative(repoAbs, requested);
 
       // A symlinked target is written through: the rename below replaces the
@@ -237,6 +240,22 @@ export function registerWriteConfig(server: McpServer): void {
           validationOutput: valid ? undefined : validationOutput,
         };
         if (runtimeWarnings.length > 0) okPayload.warnings = runtimeWarnings;
+        const relPosix = rel.split(path.sep).join("/");
+        if (
+          liveConfig !== null &&
+          CONFIG_FILE_NAMES.includes(relPosix) &&
+          relPosix !== liveConfig
+        ) {
+          const written = CONFIG_FILE_NAMES.indexOf(relPosix);
+          const live = CONFIG_FILE_NAMES.indexOf(liveConfig);
+          const readByRenovate = written < live ? relPosix : liveConfig;
+          const ignored = written < live ? liveConfig : relPosix;
+          okPayload.configConflict = {
+            readByRenovate,
+            ignored,
+            message: `Renovate reads only the first config file it finds: ${readByRenovate} takes precedence, so ${ignored} is ignored. Remove one of them or merge them.`,
+          };
+        }
         return {
           content: [
             {
