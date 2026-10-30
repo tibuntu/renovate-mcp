@@ -30,7 +30,7 @@ The same worker pattern protects `preview_custom_manager`'s JSONata path. The `j
 
 The same worker also renders `test_package_rules`' `rendered` block (branch / commit / PR names — ADR-0006 addendum). When the caller passes `renderBase` (the resolved top-level config), the worker lazily imports Renovate's real `generateBranchName` (`dist/workers/repository/updates/branch-name.js`), its option defaults (`dist/config/defaults.js`), the versioning registry and `CommitMessage`, layers each context's merged config over defaults ← top-level config, and mirrors the ~30-line single-update path of `generateBranchConfig` (`compileCommitMessage` / `compilePrTitle`) using the already-imported `compile`. `generateBranchConfig` itself is deliberately **not** imported: its side-effect import of `config/index.js` loads every manager and datasource (measured +5–11 s cold), whereas the leaf modules cost nothing measurable. A parity-oracle test pins the mirror against the real `generateBranchConfig` for fully specified updates. `annotate_dry_run` / `explain_dependency` never pass `renderBase`, so they never load these modules.
 
-`jsonata` is pinned to exactly `2.1.0` matching Renovate's own pin — bumped only when Renovate's pin bumps, to keep the parity-test oracle stable.
+`jsonata` is pinned to exactly `2.2.1` matching Renovate's own pin — bumped only when Renovate's pin bumps, to keep the parity-test oracle stable.
 
 ## Worker isolation for schedules
 
@@ -72,6 +72,6 @@ Per-PR CI installs the pinned Renovate via `npm ci` (it's a runtime dep), but th
 
 The server uses the `registerTool(name, config, handler)`, `registerResource(name, uriOrTemplate, metadata, handler)`, and `registerPrompt(name, config, handler)` forms (current 1.x API with structured config objects). Input schemas are zod raw shapes (plain object with zod types as values — not `z.object(...)`).
 
-Tools live under `src/tools/`, resources under `src/resources/`, and prompts under `src/prompts/` — each a `register<Name>(server)` function wired into the single `McpServer` instance in `src/index.ts`. `src/prompts/workflows.ts` packages the documented multi-tool workflows (config design, packageRules debugging, custom-manager authoring) into three prompts that Claude Code surfaces as slash commands; each returns a single user-role text message rather than calling into any tool logic itself — it only tells the model which tools to call and in what order.
+Tools live under `src/tools/`, resources under `src/resources/`, and prompts under `src/prompts/` — each a `register<Name>(server)` function wired into the single `McpServer` instance in `src/index.ts`. `src/prompts/workflows.ts` packages the documented multi-tool workflows (config design, packageRules debugging, custom-manager authoring, repo onboarding) into four prompts that Claude Code surfaces as slash commands; each returns a single user-role text message rather than calling into any tool logic itself — it only tells the model which tools to call and in what order.
 
 Every tool passes MCP `annotations` in its `registerTool` config; the shared offline / network read-only sets are `OFFLINE_READ_ONLY_ANNOTATIONS` and `NETWORK_READ_ONLY_ANNOTATIONS` in `src/lib/toolInputs.ts`, and `write_config` inlines the one destructive set.
