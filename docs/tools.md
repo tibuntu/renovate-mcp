@@ -69,7 +69,7 @@ Compares the running Node version against the bundled Renovate's declared `engin
 Pass an absolute `repoPath` to add a `repoContext` block. Three signals are combined into actionable hints *before* the user runs `dry_run`:
 
 1. **Git origin remote** — read directly from `.git/config` (no `git` spawn). Both SSH (`git@host:owner/repo.git`) and HTTPS (`https://host/owner/repo`) forms parse; nested GitLab subgroup paths are preserved. The host is classified as `github` (`github.com`), `gitlab` (`gitlab.com`), `bitbucket` (`bitbucket.org`), `gitea` (`gitea.com`), `forgejo` (`codeberg.org`, `code.forgejo.org`), or `self-hosted` with a best-effort flavor (`github` / `gitlab` / `gitea` / `forgejo` / `unknown` — never `bitbucket`, since a self-hosted Bitbucket is Server/Data Center with a different API).
-2. **Repo config endpoint / platform** — uses the same discovery path as [`read_config`](#read_config) to locate `renovate.json` / `renovate.json5` / etc., then pulls top-level `endpoint` and `platform` if present. Mismatches against the origin host land in `repoContext.inconsistencies`.
+2. **Repo config endpoint / platform** — uses the same discovery path as [`read_config`](#read_config) to locate `renovate.json` / `renovate.jsonc` / `renovate.json5` / etc., then pulls top-level `endpoint` and `platform` if present. Mismatches against the origin host land in `repoContext.inconsistencies`.
 3. **Endpoint reachability** — best-effort HEAD (fallback GET on 405) against the resolved endpoint. Probe URL precedence: `config.endpoint` → `RENOVATE_ENDPOINT` → defaults derived from origin (`https://api.github.com`, `https://gitlab.com/api/v4/version`). Self-hosted with no configured endpoint deliberately skips the probe — the tool won't guess a path on a private host.
 
 **Security invariant:** every probe URL goes through the same allowlist validator (`https://`-only, no userinfo, no RFC1918 / loopback / link-local / cloud-metadata addresses) used by `dry_run`, `resolve_config`, and `externalPresetFetcher`. Blocked URLs surface as a hint with `skipped: "endpoint-blocked"` and never reach `fetch`. The probe sends no credentials — it's a bare HEAD / GET with no `Authorization` header. See [Security & secrets — endpoint validation](security.md#endpoint-validation).
@@ -97,7 +97,7 @@ Report the renovate-mcp server version and whether it's a released build (runnin
 
 ## `read_config`
 
-Locate and parse a repo's Renovate config (`renovate.json`, `renovate.json5`, `.renovaterc*`, `package.json#renovate`, …) in priority order, mirroring Renovate's own discovery logic. JSON, JSONC (comments, trailing commas) and JSON5 are accepted for every candidate filename, matching Renovate's own parser.
+Locate and parse a repo's Renovate config (`renovate.json`, `renovate.jsonc`, `renovate.json5`, the same under `.github/` and `.gitlab/`, `.renovaterc*`, `package.json#renovate`) in priority order, mirroring Renovate's own discovery logic. A `.jsonc` file reports `format: "json"`. JSON, JSONC (comments, trailing commas) and JSON5 are accepted for every candidate filename, matching Renovate's own parser.
 
 **Inputs:**
 

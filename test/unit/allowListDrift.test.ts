@@ -2,12 +2,14 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { getConfigFileNames } from "renovate/dist/config/app-strings.js";
 import { getOptions } from "renovate/dist/config/options/index.js";
 
 import {
   LATER_TEXT_ANCHOR_TOKENS,
   PACKAGE_RULE_ACTION_KEYS,
 } from "../../src/lib/configLinter.js";
+import { CONFIG_FILE_NAMES } from "../../src/lib/configLocations.js";
 import { SKIP_HINTS } from "../../src/lib/dependencyExplainer.js";
 
 // Drift guards for the hand-maintained allow-lists in src/lib that mirror Renovate
@@ -155,5 +157,13 @@ describe("SKIP_HINTS vs Renovate's SkipReason union", () => {
       "unversioned-reference",
       "version-placeholder",
     ]);
+  });
+});
+
+describe("CONFIG_FILE_NAMES vs Renovate's config-file discovery", () => {
+  it("checks exactly the filenames Renovate checks, in the same priority order", () => {
+    // No platform argument: locateConfig has no platform input, and Renovate only
+    // adds per-platform directories (e.g. .forgejo/renovate.json) when one is set.
+    expect(CONFIG_FILE_NAMES).toEqual(getConfigFileNames());
   });
 });

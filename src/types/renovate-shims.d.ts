@@ -17,6 +17,8 @@
 //                                           — ADR-0007 (schedule worker;
 //                                             `isScheduledNow` is the parity
 //                                             test oracle only)
+//   - `dist/config/app-strings.js`         — config-filename drift test
+//                                             oracle only (configLocations.ts)
 // These shims give `tsc` typed signatures for those entry points.
 declare module "renovate/dist/config/migration.js" {
   export function migrateConfig(
@@ -90,4 +92,9 @@ declare module "renovate/dist/util/package-rules/index.js" {
     config: Record<string, unknown>,
     stageName?: string,
   ): Promise<Record<string, unknown>>;
+}
+
+declare module "renovate/dist/config/app-strings.js" {
+  /** Config filenames Renovate checks, in priority order. */
+  export function getConfigFileNames(platform?: string): string[];
 }
