@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.7.1](https://github.com/tibuntu/renovate-mcp/compare/v1.7.0...v1.7.1) (2026-10-30)
+
+
+### Bug Fixes
+
+* **deps:** update dependency minimatch to v11 ([e2ff671](https://github.com/tibuntu/renovate-mcp/commit/e2ff671a356de22d1e516407e2c3c38473a53688))
+* **read_config:** discover renovate.jsonc and the other .jsonc config filenames ([73f8b12](https://github.com/tibuntu/renovate-mcp/commit/73f8b121c6ae81abe21563b98e7c3e4648d54804))
+
 ## [1.7.0](https://github.com/tibuntu/renovate-mcp/compare/v1.6.8...v1.7.0) (2026-10-27)
 
 This release adds an **eighteenth tool, `explain_schedule`**, which tells you when a schedule will actually run. `test_package_rules` now **renders the branch name, commit message and PR title** a rule produces, `resolve_config` **fetches presets from Gitea, Forgejo and Bitbucket Cloud**, and `lint_config` gains **three new rules**. There is also an `onboard-repo` prompt for repositories that have no Renovate config yet. A few lint findings are new or stricter, so check the upgrade note before you rely on a clean lint result from 1.6.
