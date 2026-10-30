@@ -50,6 +50,17 @@ describe("locateConfig", () => {
     expect(loc?.config).toMatchObject({ extends: ["config:recommended"] });
   });
 
+  it("finds renovate.jsonc with a comment and a trailing comma", async () => {
+    await writeFile(
+      path.join(repo, "renovate.jsonc"),
+      '{\n  // keep me\n  "extends": ["config:recommended"],\n}\n',
+    );
+    const loc = await locateConfig(repo);
+    expect(loc?.relPath).toBe("renovate.jsonc");
+    expect(loc?.format).toBe("json");
+    expect(loc?.config).toMatchObject({ extends: ["config:recommended"] });
+  });
+
   it("finds .github/renovate.json", async () => {
     await mkdir(path.join(repo, ".github"));
     await writeFile(path.join(repo, ".github/renovate.json"), '{"enabled":false}');
@@ -85,13 +96,17 @@ describe("locateConfig", () => {
   // pair is tested below to catch reorderings within the chain.
   const PRIORITY_CHAIN = [
     "renovate.json",
+    "renovate.jsonc",
     "renovate.json5",
     ".github/renovate.json",
+    ".github/renovate.jsonc",
     ".github/renovate.json5",
     ".gitlab/renovate.json",
+    ".gitlab/renovate.jsonc",
     ".gitlab/renovate.json5",
     ".renovaterc",
     ".renovaterc.json",
+    ".renovaterc.jsonc",
     ".renovaterc.json5",
     "package.json",
   ] as const;

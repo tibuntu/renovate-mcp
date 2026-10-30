@@ -14,7 +14,7 @@ export function registerReadConfig(server: McpServer): void {
       title: "Read Renovate config",
       annotations: OFFLINE_READ_ONLY_ANNOTATIONS,
       description:
-        "Locate and parse the Renovate configuration in a repository. Searches for renovate.json, renovate.json5, .renovaterc(.json|.json5), .github/renovate.json, .gitlab/renovate.json, and the 'renovate' field of package.json — in that priority order.",
+        "Locate and parse the Renovate configuration in a repository. Searches, in Renovate's own priority order, for renovate.json(|c|5), .github/renovate.json(|c|5), .gitlab/renovate.json(|c|5), .renovaterc, .renovaterc.json(|c|5), and finally the 'renovate' field of package.json.",
       inputSchema: {
         repoPath: pathString("Absolute path to the repository root"),
       },

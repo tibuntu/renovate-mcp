@@ -13,17 +13,32 @@ export interface LocatedConfig {
   config: Record<string, unknown>;
 }
 
+// Renovate's own discovery order (`getConfigFileNames()` in
+// renovate/dist/config/app-strings.js), minus the trailing package.json which
+// is handled separately below. `.jsonc` reports format "json": that format
+// already means "JSON, comments allowed" (see the parse note in locateConfig).
+// A drift test in test/unit/allowListDrift.test.ts pins this list to Renovate's.
 const CANDIDATES: Array<{ path: string; format: "json" | "json5" }> = [
   { path: "renovate.json", format: "json" },
+  { path: "renovate.jsonc", format: "json" },
   { path: "renovate.json5", format: "json5" },
   { path: ".github/renovate.json", format: "json" },
+  { path: ".github/renovate.jsonc", format: "json" },
   { path: ".github/renovate.json5", format: "json5" },
   { path: ".gitlab/renovate.json", format: "json" },
+  { path: ".gitlab/renovate.jsonc", format: "json" },
   { path: ".gitlab/renovate.json5", format: "json5" },
   { path: ".renovaterc", format: "json" },
   { path: ".renovaterc.json", format: "json" },
+  { path: ".renovaterc.jsonc", format: "json" },
   { path: ".renovaterc.json5", format: "json5" },
 ];
+
+/** Every filename `locateConfig` checks, in priority order. */
+export const CONFIG_FILE_NAMES: readonly string[] = Object.freeze([
+  ...CANDIDATES.map((c) => c.path),
+  "package.json",
+]);
 
 export async function locateConfig(repoPath: string): Promise<LocatedConfig | null> {
   for (const candidate of CANDIDATES) {

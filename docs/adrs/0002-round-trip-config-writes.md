@@ -15,7 +15,7 @@ This is a real problem. Renovate configs are long-lived files that humans curate
 - A deliberate key order (e.g. `extends` first, `packageRules` last) that users rely on when reviewing PRs.
 - Trailing commas in `.json5` to make line-by-line diffs cleaner.
 
-The supported on-disk shapes (per `src/lib/configLocations.ts`) are: `renovate.json`, `renovate.json5`, `.github/renovate.json`, `.gitlab/renovate.json`, `.renovaterc`, `.renovaterc.json`, and the `renovate` key inside `package.json`. Renovate itself accepts JSON-with-comments in all `.json` files (the documentation calls this out for `renovate.json`), so the practical input set is "JSONC for everything plus optional JSON5 for `.json5`."
+The supported on-disk shapes (per `src/lib/configLocations.ts`) are: `renovate.json`, `renovate.jsonc`, `renovate.json5`, `.github/renovate.json{,c,5}`, `.gitlab/renovate.json{,c,5}`, `.renovaterc`, `.renovaterc.json{,c,5}`, and the `renovate` key inside `package.json`. Renovate itself accepts JSON-with-comments in all `.json` files (the documentation calls this out for `renovate.json`), so the practical input set is "JSONC for everything plus optional JSON5 for `.json5`."
 
 Phase 4 of the v0.12 milestone requires `write_config` to preserve comments, key order, and trailing trivia when *editing* an existing file. Brand-new file writes are unchanged. The `force: true` escape hatch is also unchanged — when the user explicitly waives validation, we are equally happy to waive round-trip fidelity.
 
