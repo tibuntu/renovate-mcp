@@ -48,7 +48,11 @@ export async function locateConfig(repoPath: string): Promise<LocatedConfig | nu
       // Renovate parses every candidate JSONC-then-JSON5 regardless of
       // extension (and write_config round-trips comments into renovate.json);
       // JSON5 is a superset of JSONC, so one parser covers all of them.
-      const config: unknown = JSON5.parse(raw);
+      // A 0-length file reads as `{}`, as in Renovate's detectRepoFileConfig
+      // (`if (!configFileRaw.length) configFileRaw = "{}"`). Length only: a
+      // whitespace-only file still throws, as in Renovate. This intentionally
+      // differs from configWriter.ts, which treats whitespace-only as absent.
+      const config: unknown = raw.length === 0 ? {} : JSON5.parse(raw);
       if (!isRecord(config)) {
         throw new Error(`${candidate.path} does not contain a JSON object`);
       }
@@ -67,19 +71,39 @@ export async function locateConfig(repoPath: string): Promise<LocatedConfig | nu
   const pkgAbs = path.join(repoPath, "package.json");
   try {
     const raw = await fs.readFile(pkgAbs, "utf8");
-    const pkg: unknown = JSON.parse(raw);
-    if (
-      isRecord(pkg) &&
-      "renovate" in pkg &&
-      isRecord(pkg.renovate)
-    ) {
-      return {
-        absPath: pkgAbs,
-        relPath: "package.json",
-        format: "package.json",
-        raw,
-        config: pkg.renovate,
-      };
+    let pkg: unknown;
+    try {
+      pkg = JSON.parse(raw);
+    } catch (err) {
+      // Invalid JSON means no config, mirroring Renovate's `catch {}`. Other
+      // read errors (EACCES etc.) still throw: a deliberate divergence.
+      if (err instanceof SyntaxError) return null;
+      throw err;
+    }
+    if (isRecord(pkg) && "renovate" in pkg) {
+      const value = pkg.renovate;
+      if (isRecord(value)) {
+        return {
+          absPath: pkgAbs,
+          relPath: "package.json",
+          format: "package.json",
+          raw,
+          config: value,
+        };
+      }
+      // Renovate expands a string package.json#renovate to `extends`.
+      if (typeof value === "string" && value.length > 0) {
+        return {
+          absPath: pkgAbs,
+          relPath: "package.json",
+          format: "package.json",
+          raw,
+          config: { extends: [value] },
+        };
+      }
+      // An empty string or other non-object value (true, a number, an array)
+      // is reported as no config. Deliberate divergence for these truthy
+      // values: Renovate selects the file but ends up with no usable settings.
     }
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
