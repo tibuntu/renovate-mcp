@@ -66,9 +66,9 @@ describe("read_config", () => {
   });
 
   it("treats a non-object renovate field in package.json as no config found", async () => {
-    // Renovate only recognises package.json#renovate when it's an object.
-    // An array / string / number is silently ignored — read_config should
-    // report the config as missing rather than surfacing a parse error.
+    // A string is expanded to `extends` (see the next test). Other non-object
+    // values (array, number, boolean) are deliberately reported as no config
+    // rather than surfacing a parse error.
     await writeFile(
       path.join(repo, "package.json"),
       JSON.stringify({ name: "example", renovate: ["not", "an", "object"] }),
@@ -77,6 +77,20 @@ describe("read_config", () => {
     const result = await readConfig(repo);
     expect(result.isError).toBeFalsy();
     expect(result.content[0]!.text).toContain("No Renovate configuration found");
+  });
+
+  it("expands a string package.json#renovate to extends", async () => {
+    await writeFile(
+      path.join(repo, "package.json"),
+      JSON.stringify({ name: "example", renovate: "config:recommended" }),
+    );
+
+    const result = await readConfig(repo);
+    expect(result.isError).toBeFalsy();
+    const parsed = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+    expect(parsed.path).toBe("package.json");
+    expect(parsed.format).toBe("package.json");
+    expect(parsed.config).toEqual({ extends: ["config:recommended"] });
   });
 
   it("parses a renovate.json5 config with comments and trailing commas", async () => {
