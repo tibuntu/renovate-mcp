@@ -17,6 +17,51 @@ afterEach(async () => {
 });
 
 describe("locateConfig", () => {
+  it("reads an empty renovate.json as {}", async () => {
+    await writeFile(path.join(repo, "renovate.json"), "");
+    const loc = await locateConfig(repo);
+    expect(loc?.relPath).toBe("renovate.json");
+    expect(loc?.format).toBe("json");
+    expect(loc?.config).toEqual({});
+  });
+
+  it("prefers an empty renovate.json over a non-empty .renovaterc", async () => {
+    await writeFile(path.join(repo, "renovate.json"), "");
+    await writeFile(path.join(repo, ".renovaterc"), '{"extends":["config:recommended"]}');
+    const loc = await locateConfig(repo);
+    expect(loc?.relPath).toBe("renovate.json");
+    expect(loc?.config).toEqual({});
+  });
+
+  it("rejects a whitespace-only renovate.json", async () => {
+    await writeFile(path.join(repo, "renovate.json"), "\n");
+    await expect(locateConfig(repo)).rejects.toThrow();
+  });
+
+  it("expands a string package.json#renovate to extends", async () => {
+    await writeFile(path.join(repo, "package.json"), '{"renovate":"config:recommended"}');
+    const loc = await locateConfig(repo);
+    expect(loc?.format).toBe("package.json");
+    expect(loc?.relPath).toBe("package.json");
+    expect(loc?.config).toEqual({ extends: ["config:recommended"] });
+  });
+
+  it("expands a local> preset string in package.json#renovate", async () => {
+    await writeFile(path.join(repo, "package.json"), '{"renovate":"local>org/presets"}');
+    const loc = await locateConfig(repo);
+    expect(loc?.config).toEqual({ extends: ["local>org/presets"] });
+  });
+
+  it("returns null for an empty-string package.json#renovate", async () => {
+    await writeFile(path.join(repo, "package.json"), '{"renovate":""}');
+    expect(await locateConfig(repo)).toBeNull();
+  });
+
+  it("returns null for a malformed package.json", async () => {
+    await writeFile(path.join(repo, "package.json"), "{not json");
+    expect(await locateConfig(repo)).toBeNull();
+  });
+
   it("returns null when no config is present", async () => {
     expect(await locateConfig(repo)).toBeNull();
   });
