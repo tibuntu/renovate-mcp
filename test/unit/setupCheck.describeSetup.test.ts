@@ -152,6 +152,44 @@ describe("describeSetup repo-context block", () => {
     ]);
   });
 
+  it("renders config.endpoint and config.platform independently of each other", () => {
+    const endpointOnly = renderLines(
+      buildStatus({
+        repoContext: buildRepoContext({
+          configFile: { path: ".github/renovate.json5", format: "json5" },
+          configEndpoint: "https://ghe.example.com/api/v3",
+        }),
+      }),
+    );
+    expect(endpointOnly.slice(endpointOnly.indexOf("Repo context (/repo):"))).toEqual([
+      "Repo context (/repo):",
+      "  origin: https://github.com/acme/app.git",
+      "  host: github.com → github",
+      "  config: .github/renovate.json5 (json5)",
+      "  config.endpoint: https://ghe.example.com/api/v3",
+      "  effective platform: github (from remote)",
+    ]);
+
+    const platformOnly = renderLines(
+      buildStatus({
+        repoContext: buildRepoContext({
+          configFile: { path: "renovate.json", format: "json" },
+          configPlatform: "local",
+          effectivePlatform: "local",
+          effectivePlatformSource: "config",
+        }),
+      }),
+    );
+    expect(platformOnly.slice(platformOnly.indexOf("Repo context (/repo):"))).toEqual([
+      "Repo context (/repo):",
+      "  origin: https://github.com/acme/app.git",
+      "  host: github.com → github",
+      "  config: renovate.json (json)",
+      "  config.platform: local",
+      "  effective platform: local (from config)",
+    ]);
+  });
+
   it.each<{ name: string; ctx: Partial<RepoContext>; line: string }>([
     {
       name: "a missing git remote",
@@ -169,7 +207,7 @@ describe("describeSetup repo-context block", () => {
           url: "http://10.0.0.1/api",
           reachable: false,
           skipped: "endpoint-blocked",
-          error: "endpoint must use https://",
+          error: "Invalid endpoint `http://10.0.0.1/api`: protocol must be https: (refused http:).",
           derivedFrom: "env",
         },
       },
