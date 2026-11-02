@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.7.2](https://github.com/tibuntu/renovate-mcp/compare/v1.7.1...v1.7.2) (2026-11-02)
+
+
+### Bug Fixes
+
+* **deps:** update dependency renovate to v44.198.3 ([dcb4019](https://github.com/tibuntu/renovate-mcp/commit/dcb4019e3b86ae8512587feae66ad44e1d074d09))
+* **read_config:** read empty config files and string package.json#renovate like Renovate ([53e6422](https://github.com/tibuntu/renovate-mcp/commit/53e6422a9df152cdf7d2028b898ef032d375791b))
+
 ## [1.7.1](https://github.com/tibuntu/renovate-mcp/compare/v1.7.0...v1.7.1) (2026-10-30)
 
 
