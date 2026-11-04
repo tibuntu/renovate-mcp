@@ -390,23 +390,29 @@ function checkAutomergeIncludesMajor(
   const pkgRules = config.packageRules;
   if (!Array.isArray(pkgRules)) return;
 
-  // ponytail: suppressing the WHOLE rule on any later `matchUpdateTypes:
-  // ["major"]` + `automerge: false` guard entry, without checking that the
-  // guard's selectors actually cover the same deps as the offending entry.
-  // Ceiling: a guard scoped to a different dep subset silently suppresses
-  // findings for unrelated entries. Upgrade path: track guard ordering /
+  // Renovate applies packageRules in order and a later match overrides an
+  // earlier one, so only a `matchUpdateTypes` including "major" + `automerge:
+  // false` guard AFTER an offending entry protects it; an earlier guard is
+  // itself overridden.
+  // ponytail: an entry counts as guarded by any later guard, without checking
+  // that the guard's selectors actually cover the same deps as the offending
+  // entry. Ceiling: a guard scoped to a different dep subset silently
+  // suppresses findings for unrelated earlier entries. Upgrade path: track
   // selector overlap per-entry if false negatives show up in practice.
-  const hasLaterMajorGuard = pkgRules.some((entry) => {
-    if (!isRecord(entry)) return false;
-    if (entry.automerge !== false) return false;
-    return (
+  let lastGuardIndex = -1;
+  pkgRules.forEach((entry, j) => {
+    if (!isRecord(entry)) return;
+    if (entry.automerge !== false) return;
+    if (
       Array.isArray(entry.matchUpdateTypes) &&
       entry.matchUpdateTypes.includes("major")
-    );
+    ) {
+      lastGuardIndex = j;
+    }
   });
-  if (hasLaterMajorGuard) return;
 
   pkgRules.forEach((entry, i) => {
+    if (i < lastGuardIndex) return;
     if (!isRecord(entry)) return;
     if (entry.automerge !== true) return;
     const updateTypes = entry.matchUpdateTypes;
