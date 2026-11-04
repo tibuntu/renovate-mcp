@@ -1062,6 +1062,17 @@ describe("lintConfig", () => {
       expect(findings.map((f) => f.path)).toEqual(["packageRules[2].automerge"]);
     });
 
+    it("lets the last of several guards protect the entries before it", () => {
+      const findings = lintConfig({
+        packageRules: [
+          { matchUpdateTypes: ["major"], automerge: false },
+          { matchPackageNames: ["a"], automerge: true },
+          { matchUpdateTypes: ["major"], automerge: false },
+        ],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings).toEqual([]);
+    });
+
     it("keeps the real entry index when malformed entries sit between guard and offender", () => {
       const findings = lintConfig({
         packageRules: [
