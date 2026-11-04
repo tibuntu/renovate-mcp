@@ -1031,7 +1031,7 @@ describe("lintConfig", () => {
       expect(findings).toEqual([]);
     });
 
-    it("suppresses the whole rule when a later guard entry pairs matchUpdateTypes:['major'] with automerge:false", () => {
+    it("suppresses an entry followed by a later guard pairing matchUpdateTypes:['major'] with automerge:false", () => {
       const findings = lintConfig({
         packageRules: [
           { matchPackageNames: ["lodash"], automerge: true },
@@ -1039,6 +1039,38 @@ describe("lintConfig", () => {
         ],
       }).filter((f) => f.ruleId === RULE);
       expect(findings).toEqual([]);
+    });
+
+    it("does not suppress an entry that comes after the guard", () => {
+      const findings = lintConfig({
+        packageRules: [
+          { matchUpdateTypes: ["major"], automerge: false },
+          { matchPackageNames: ["lodash"], automerge: true },
+        ],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings.map((f) => f.path)).toEqual(["packageRules[1].automerge"]);
+    });
+
+    it("suppresses only the entries before the last guard", () => {
+      const findings = lintConfig({
+        packageRules: [
+          { matchPackageNames: ["a"], automerge: true },
+          { matchUpdateTypes: ["major"], automerge: false },
+          { matchPackageNames: ["b"], automerge: true },
+        ],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings.map((f) => f.path)).toEqual(["packageRules[2].automerge"]);
+    });
+
+    it("keeps the real entry index when malformed entries sit between guard and offender", () => {
+      const findings = lintConfig({
+        packageRules: [
+          { matchUpdateTypes: ["major"], automerge: false },
+          null,
+          { matchPackageNames: ["lodash"], automerge: true },
+        ],
+      }).filter((f) => f.ruleId === RULE);
+      expect(findings.map((f) => f.path)).toEqual(["packageRules[2].automerge"]);
     });
 
     it("does not suppress when the guard entry lacks automerge:false", () => {
