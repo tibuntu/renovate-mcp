@@ -1,3 +1,4 @@
+import JSON5 from "json5";
 import { resolveCredential, type Credential } from "./credentialResolver.js";
 import { validateEndpoint } from "./endpointValidator.js";
 import {
@@ -325,7 +326,11 @@ async function fetchJson(
       };
     }
     try {
-      const body = JSON.parse(text);
+      // Renovate parses preset files as JSONC, falling back to JSON5 (`.json5`
+      // straight to JSON5); JSON5 is a superset of JSONC, so one parser covers
+      // all of them. It also accepts JSON5 syntax in a `.jsonc` file, which
+      // Renovate rejects — matching that would need jsonc-parser here.
+      const body = JSON5.parse(text);
       if (!body || typeof body !== "object" || Array.isArray(body)) {
         return {
           ok: false,
