@@ -128,6 +128,33 @@ describe("fetchExternalPreset — github", () => {
     if (!result.ok) expect(result.reason).toMatch(/not valid JSON/);
   });
 
+  it("parses a JSONC body (comments, trailing commas) like Renovate", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      makeResponse('{\n  // shared org preset\n  "extends": ["config:recommended"],\n}\n'),
+    );
+    const result = await fetchExternalPreset(parsePreset("github>acme/cfg"), { fetchImpl });
+    expect(result).toEqual({ ok: true, body: { extends: ["config:recommended"] } });
+  });
+
+  it("parses a .json5 preset body like Renovate", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      makeResponse("{ automerge: true, labels: ['deps'] }"),
+    );
+    const result = await fetchExternalPreset(parsePreset("github>acme/cfg:strict.json5"), {
+      fetchImpl,
+    });
+    const [url] = fetchImpl.mock.calls[0]!;
+    expect(url).toBe("https://api.github.com/repos/acme/cfg/contents/strict.json5?ref=HEAD");
+    expect(result).toEqual({ ok: true, body: { automerge: true, labels: ["deps"] } });
+  });
+
+  it("surfaces a JSON5 non-object body as not a JSON object", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse("'str'"));
+    const result = await fetchExternalPreset(parsePreset("github>acme/cfg"), { fetchImpl });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toMatch(/is not a JSON object/);
+  });
+
   it("caches the result per canonical key for the same request", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({ automerge: true }));
     const cache: NonNullable<FetchOptions["cache"]> = new Map();
