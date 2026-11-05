@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.8.0](https://github.com/tibuntu/renovate-mcp/compare/v1.7.2...v1.8.0) (2026-11-05)
+
+
+### Features
+
+* **explain_paths:** show which files Renovate scans and flag dead or substring-only path patterns ([3b9fe47](https://github.com/tibuntu/renovate-mcp/commit/3b9fe4739251c3e9aa0f484cb9d237100b9b8a34)), closes [#449](https://github.com/tibuntu/renovate-mcp/issues/449)
+
+
+### Bug Fixes
+
+* **deps:** update dependency npm to v12.2.2 ([50857e5](https://github.com/tibuntu/renovate-mcp/commit/50857e516544df99d51d18e566b005adb706bd43))
+* **lint_config:** only let a later major guard suppress automerge-includes-major ([8a9d5df](https://github.com/tibuntu/renovate-mcp/commit/8a9d5df75e2ddc01e598e2484ab1f4a33b663d49))
+* **resolve_config:** parse fetched presets as JSONC/JSON5 like Renovate ([8471b6f](https://github.com/tibuntu/renovate-mcp/commit/8471b6f948a35593e5be5540f531788ce6688adb))
+
 ## [1.7.2](https://github.com/tibuntu/renovate-mcp/compare/v1.7.1...v1.7.2) (2026-11-02)
 
 
