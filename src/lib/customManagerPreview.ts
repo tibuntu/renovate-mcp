@@ -104,7 +104,7 @@ export async function parseStructured(
 const DEFAULT_MAX_FILES_WALKED = 2000;
 const DEFAULT_MAX_FILES_MATCHED = 500;
 const DEFAULT_MAX_HITS_PER_FILE = 100;
-const DEFAULT_MATCH_TIMEOUT_MS = 2000;
+export const DEFAULT_MATCH_TIMEOUT_MS = 2000;
 const DEFAULT_MAX_FILE_BYTES = 5 * 1024 * 1024;
 const SKIP_DIRS = new Set([".git", "node_modules"]);
 
@@ -209,7 +209,7 @@ function parseRegexPattern(
  * therefore ADDS its complement rather than excluding — Renovate's
  * `ignorePaths` is the exclusion mechanism. Walk order is preserved.
  */
-async function matchFilePatterns(
+export async function matchFilePatterns(
   allPaths: string[],
   patterns: string[],
   matchTimeoutMs: number,

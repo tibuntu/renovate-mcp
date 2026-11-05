@@ -93,7 +93,7 @@ export const SKIP_HINTS: Record<string, string> = {
 const NOT_FOUND_HINTS = [
   "Check `enabledManagers`: the manager that owns this dependency's file may not be enabled.",
   "Check the manager's `fileMatch` / `managerFilePatterns`: the file holding this dependency may not match the pattern.",
-  "Check `ignorePaths`: the file may live under an ignored path (defaults include `**/node_modules/**`, `**/bower_components/**`, …).",
+  "Check `ignorePaths`: the file may live under an ignored path (defaults include `**/node_modules/**`, `**/bower_components/**`, …). Run explain_paths with repoPath to see which pattern drops it.",
   'Re-run dry_run with `dryRunMode: "extract"` and search the report to see which files and dependencies Renovate extracted at all.',
 ];
 
