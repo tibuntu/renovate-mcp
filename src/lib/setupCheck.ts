@@ -684,6 +684,7 @@ export const OFFLINE_TOOLS = [
   "annotate_dry_run",
   "explain_dependency",
   "explain_schedule",
+  "explain_paths",
   "migrate_config",
 ] as const;
 

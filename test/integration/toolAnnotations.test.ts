@@ -21,7 +21,7 @@ describe("tool annotations", () => {
       "tools/list",
     );
     const tools = res.result?.tools ?? [];
-    expect(tools).toHaveLength(18);
+    expect(tools).toHaveLength(19);
 
     for (const t of tools) {
       for (const hint of ["readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"] as const) {
@@ -39,6 +39,7 @@ describe("tool annotations", () => {
       "check_setup",
       "dry_run",
       "explain_config",
+      "explain_paths",
       "resolve_config",
       "resolve_config_diff",
       "test_package_rules",

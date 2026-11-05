@@ -16,6 +16,7 @@ import { registerTestPackageRules } from "./tools/testPackageRules.js";
 import { registerAnnotateDryRun } from "./tools/annotateDryRun.js";
 import { registerExplainDependency } from "./tools/explainDependency.js";
 import { registerExplainSchedule } from "./tools/explainSchedule.js";
+import { registerExplainPaths } from "./tools/explainPaths.js";
 import { registerWriteConfig } from "./tools/writeConfig.js";
 import { registerMigrateConfig } from "./tools/migrateConfig.js";
 import { registerGetVersion } from "./tools/getVersion.js";
@@ -54,8 +55,9 @@ const BASE_INSTRUCTIONS = [
   " 12. annotate_dry_run       — attribute each proposed update in a dry_run report to the packageRules that caused it (and flag rules that never matched)",
   " 13. explain_dependency     — why was/wasn't a given dependency updated: skipReason, updates, warnings and matched rules, read from a dry_run report (offline)",
   " 14. explain_schedule       — when will a `schedule` actually run: active-now plus the next windows in UTC and the config's timezone, or Renovate's own invalid-schedule message (offline)",
-  " 15. migrate_config         — apply Renovate's built-in migrations (deprecated keys → current schema) and return the migrated config",
-  " 16. write_config           — save the agreed-upon config (validates first)",
+  " 15. explain_paths          — which files Renovate scans under includePaths / ignorePaths (presets included), with dead patterns, substring-only ignorePaths surprises and per-rule matchFileNames counts (offline)",
+  " 16. migrate_config         — apply Renovate's built-in migrations (deprecated keys → current schema) and return the migrated config",
+  " 17. write_config           — save the agreed-upon config (validates first)",
   "",
   "Before the first repo-touching tool call in a session (read_config, resolve_config, dry_run, write_config, …), call check_setup with the same repoPath. It surfaces token / endpoint / connectivity problems up front (e.g. \"set GITHUB_TOKEN or github-actions deps will be skipped\") instead of waiting for dry_run to fail. Skip if the user has already confirmed setup or is doing offline-only work that doesn't depend on git origin or registries.",
   "If any tool fails unexpectedly, call check_setup to diagnose CLI availability.",
@@ -97,6 +99,7 @@ registerTestPackageRules(server);
 registerAnnotateDryRun(server);
 registerExplainDependency(server);
 registerExplainSchedule(server);
+registerExplainPaths(server);
 registerMigrateConfig(server);
 registerWriteConfig(server);
 registerGetVersion(server);

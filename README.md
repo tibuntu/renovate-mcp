@@ -30,7 +30,7 @@ Then try the prompt: *"List the namespaces available under `renovate://presets`.
 
 ## Tools & resources
 
-Eighteen tools, seven resources, and four workflow prompts. Each tool name below links to its full reference in [`docs/tools.md`](docs/tools.md).
+Nineteen tools, seven resources, and four workflow prompts. Each tool name below links to its full reference in [`docs/tools.md`](docs/tools.md).
 
 | Tool | Purpose |
 | --- | --- |
@@ -50,6 +50,7 @@ Eighteen tools, seven resources, and four workflow prompts. Each tool name below
 | [`annotate_dry_run`](docs/tools.md#annotate_dry_run) | Attribute each proposed update in a `dry_run` report to the `packageRules` that caused it; flags rules that never matched and report fields the matchers needed but the report lacked. Stateless + offline. |
 | [`explain_dependency`](docs/tools.md#explain_dependency) | Answer "why was/wasn't dependency X updated?" from a `dry_run` report: per-occurrence `skipReason`, proposed `updates`, `warnings`, a one-line verdict and remedy hints; optionally the `packageRules` that matched it. Stateless + offline. |
 | [`explain_schedule`](docs/tools.md#explain_schedule) | Answer "when will this `schedule` actually run?": active-now plus the next run windows in UTC and the config's `timezone`, computed with Renovate's own schedule matcher; invalid schedules return Renovate's message and the fact that it then runs at any time. Offline. |
+| [`explain_paths`](docs/tools.md#explain_paths) | Show which files Renovate scans under `includePaths` / `ignorePaths` (preset-added ones included, each attributed to its source), flag dead patterns and `ignorePaths` entries that drop files only by substring (`test` dropping `src/latest/`), and count each `matchFileNames` entry against the real repo. Offline. |
 | [`migrate_config`](docs/tools.md#migrate_config) | Apply Renovate's built-in migrations and return the migrated config plus a unified diff. Does not write. |
 | [`write_config`](docs/tools.md#write_config) | Validate, then atomically write a config to disk. Preserves comments/key order on existing JSON-with-comments files; for `package.json` edits only the nested `renovate` key. |
 | [`renovate://presets`](docs/tools.md#renovatepresets) (resource) | Markdown index of all built-in presets grouped by namespace. |
@@ -74,7 +75,7 @@ Eighteen tools, seven resources, and four workflow prompts. Each tool name below
 - **Linux or macOS.** Windows is not supported — `package.json` declares `"os": ["darwin", "linux"]`, so `npm i` surfaces an `EBADPLATFORM` warning on Windows and the server exits with a clear stderr message at startup. Use WSL2 or a Linux/macOS host instead.
 - **Node.js ≥ 24.11** (aligns with Renovate's own engine requirement).
 
-Renovate ships bundled — the `renovate` package is a runtime dependency, so `validate_config`, `dry_run`, and `write_config` work out of the box with no separate install. The offline tools (`read_config`, `suggest_presets`, `resolve_config`, `explain_config`, `resolve_config_diff`, `test_package_rules`, `preview_custom_manager`, `lint_config`, `dry_run_diff`, `annotate_dry_run`, `explain_dependency`, `explain_schedule`, `migrate_config`) never spawn Renovate at all — nor do `check_setup` (by default it reads version metadata from the bundled install instead of spawning) or `get_version` (it only reports the renovate-mcp server's own version).
+Renovate ships bundled — the `renovate` package is a runtime dependency, so `validate_config`, `dry_run`, and `write_config` work out of the box with no separate install. The offline tools (`read_config`, `suggest_presets`, `resolve_config`, `explain_config`, `resolve_config_diff`, `test_package_rules`, `preview_custom_manager`, `lint_config`, `dry_run_diff`, `annotate_dry_run`, `explain_dependency`, `explain_schedule`, `explain_paths`, `migrate_config`) never spawn Renovate at all — nor do `check_setup` (by default it reads version metadata from the bundled install instead of spawning) or `get_version` (it only reports the renovate-mcp server's own version).
 
 **Optional env vars:**
 
