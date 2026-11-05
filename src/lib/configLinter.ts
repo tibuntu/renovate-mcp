@@ -399,17 +399,13 @@ function checkAutomergeIncludesMajor(
   // entry. Ceiling: a guard scoped to a different dep subset silently
   // suppresses findings for unrelated earlier entries. Upgrade path: track
   // selector overlap per-entry if false negatives show up in practice.
-  let lastGuardIndex = -1;
-  pkgRules.forEach((entry, j) => {
-    if (!isRecord(entry)) return;
-    if (entry.automerge !== false) return;
-    if (
+  const lastGuardIndex = pkgRules.findLastIndex(
+    (entry) =>
+      isRecord(entry) &&
+      entry.automerge === false &&
       Array.isArray(entry.matchUpdateTypes) &&
-      entry.matchUpdateTypes.includes("major")
-    ) {
-      lastGuardIndex = j;
-    }
-  });
+      entry.matchUpdateTypes.includes("major"),
+  );
 
   pkgRules.forEach((entry, i) => {
     if (i < lastGuardIndex) return;
