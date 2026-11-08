@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.8.1](https://github.com/tibuntu/renovate-mcp/compare/v1.8.0...v1.8.1) (2026-11-08)
+
+
+### Bug Fixes
+
+* **deps:** regenerate lockfile and snapshots for renovate v44.222.4 ([2240f3f](https://github.com/tibuntu/renovate-mcp/commit/2240f3fffe2b6c54d06bdc16e74d9385be8814dd))
+* **deps:** update dependency renovate to v44.222.4 ([8359436](https://github.com/tibuntu/renovate-mcp/commit/83594360cdfce1b2d704d54d5c80cde3486561b4))
+
 ## [1.8.0](https://github.com/tibuntu/renovate-mcp/compare/v1.7.2...v1.8.0) (2026-11-05)
 
 
