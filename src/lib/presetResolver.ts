@@ -371,7 +371,14 @@ export async function loadPresetBody(
 
   const classification = classifyExternalSource(effective.source!);
   if (!classification.fetchable) {
-    unresolvedList.push({ preset: parsed.original, reason: classification.reason });
+    const bareNote =
+      parsed.source === "local" && !/^local>/i.test(parsed.original.trim())
+        ? ` Renovate treats a prefix-less \`owner/repo\` entry as \`local>owner/repo\`.`
+        : "";
+    unresolvedList.push({
+      preset: parsed.original,
+      reason: classification.reason + bareNote,
+    });
     return null;
   }
 
@@ -409,6 +416,16 @@ const KNOWN_SOURCES = new Set<ExternalSource>([
   "npm",
 ]);
 
+// Namespaces of the committed built-in catalogue. Renovate's parser checks its
+// internal namespaces before treating a slash-containing entry as `local>`, so
+// e.g. `group:foo/bar` stays a built-in lookup.
+const BUILTIN_NAMESPACES = new Set(Object.keys(PRESETS).map((k) => k.split(":", 1)[0]!));
+
+/** True when Renovate would treat `entry` as a `local>` preset (prefixed or bare `owner/repo`). */
+export function isLocalPreset(entry: string): boolean {
+  return parsePreset(entry).source === "local";
+}
+
 export function parsePreset(raw: string): ParsedPreset {
   const original = raw;
   let rest = raw.trim();
@@ -429,10 +446,47 @@ export function parsePreset(raw: string): ParsedPreset {
     return parseExternal(rest, original, args, srcMatch[1]!.toLowerCase());
   }
 
+  // Entries without a `<source>>` prefix are classified the way Renovate's
+  // preset parser does: relative path, then http(s) URL, then `:`-prefixed
+  // built-in, then `@scope/pkg` npm, then anything else containing `/` (outside a
+  // built-in namespace) as a `local>` preset, and finally `foo:bar` built-in / bare `foo` npm.
+  if (/^\.{0,2}\//.test(rest)) {
+    return {
+      key: original,
+      original,
+      args,
+      unresolvableReason:
+        "Relative presets are not supported by resolve_config; run dry_run for full-fidelity resolution.",
+    };
+  }
+  if (/^https?:\/\//i.test(rest)) {
+    return {
+      key: original,
+      original,
+      args,
+      unresolvableReason:
+        "URL (http) presets are not supported by resolve_config; run dry_run for full-fidelity resolution.",
+    };
+  }
+  if (!rest.startsWith(":")) {
+    if (rest.startsWith("@")) {
+      return {
+        key: `npm>${rest}`,
+        original,
+        args,
+        source: "npm",
+        repoPath: rest,
+      };
+    }
+    if (rest.includes("/") && !BUILTIN_NAMESPACES.has(rest.split(":", 1)[0]!)) {
+      return parseExternal(`local>${rest}`, original, args, "local");
+    }
+  }
+
   // Built-in: `:foo` is shorthand for `default:foo`.
   const key = rest.startsWith(":") ? `default${rest}` : rest;
 
-  // An entry with no `>` prefix and no `:` namespace is an npm preset.
+  // Otherwise an entry with no `:` namespace is an npm preset.
   if (!key.includes(":")) {
     return {
       key: `npm>${key}`,

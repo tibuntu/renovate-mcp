@@ -120,6 +120,57 @@ describe("resolveConfig", () => {
 });
 
 describe("parsePreset", () => {
+  it("treats a prefix-less owner/repo as a local> preset (like Renovate)", () => {
+    const p = parsePreset("acme/cfg");
+    expect(p.source).toBe("local");
+    expect(p.repoPath).toBe("acme/cfg");
+    expect(p.key).toBe("local>acme/cfg");
+    expect(p.original).toBe("acme/cfg");
+    expect(p.unresolvableReason).toBeUndefined();
+  });
+
+  it("parses preset name and ref on a prefix-less owner/repo", () => {
+    const p = parsePreset("acme/cfg:strict#v1");
+    expect(p.source).toBe("local");
+    expect(p.repoPath).toBe("acme/cfg");
+    expect(p.presetName).toBe("strict");
+    expect(p.ref).toBe("v1");
+    expect(p.original).toBe("acme/cfg:strict#v1");
+  });
+
+  it("keeps a slash-containing entry in a built-in namespace as a built-in lookup", () => {
+    const p = parsePreset("group:foo/bar");
+    expect(p.source).toBeUndefined();
+    expect(p.key).toBe("group:foo/bar");
+  });
+
+  it("parses a subpath on a prefix-less owner/repo", () => {
+    const p = parsePreset("acme/cfg//p/x");
+    expect(p.source).toBe("local");
+    expect(p.repoPath).toBe("acme/cfg");
+    expect(p.subpath).toBe("p/x");
+  });
+
+  it("treats @scope/pkg:name as an npm preset, not a built-in", () => {
+    const p = parsePreset("@scope/pkg:name");
+    expect(p.source).toBe("npm");
+    expect(p.key).toBe("npm>@scope/pkg:name");
+    expect(p.repoPath).toBe("@scope/pkg:name");
+  });
+
+  it.each(["./foo", "../foo", "/foo"])("marks relative preset %s unresolvable", (entry) => {
+    const p = parsePreset(entry);
+    expect(p.source).toBeUndefined();
+    expect(p.unresolvableReason).toMatch(/[Rr]elative presets are not supported/);
+    expect(p.original).toBe(entry);
+  });
+
+  it.each(["https://x/y.json", "HTTP://x/y.json"])("marks URL preset %s unresolvable", (entry) => {
+    const p = parsePreset(entry);
+    expect(p.source).toBeUndefined();
+    expect(p.unresolvableReason).toMatch(/URL \(http\) presets are not supported/);
+  });
+
   it("parses a built-in preset with namespace", () => {
     const p = parsePreset("config:recommended");
     expect(p.key).toBe("config:recommended");
@@ -349,6 +400,33 @@ describe("resolveConfig with gitea / forgejo / bitbucket sources", () => {
       "https://forgejo.example.com/api/v1/repos/acme/cfg/raw/strict.json",
     );
     expect(presetsResolved).toEqual(["local>acme/cfg:strict"]);
+  });
+
+  it("leaves a bare owner/repo unresolved without platform, noting the local> treatment", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const { presetsResolved, presetsUnresolved } = await resolveConfig(
+      { extends: ["acme/cfg"] },
+      { fetchExternal: true },
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(presetsResolved).toEqual([]);
+    expect(presetsUnresolved).toHaveLength(1);
+    expect(presetsUnresolved[0]!.preset).toBe("acme/cfg");
+    expect(presetsUnresolved[0]!.reason).toMatch(/platform/);
+    expect(presetsUnresolved[0]!.reason).toContain("treats a prefix-less");
+  });
+
+  it("fetches a bare owner/repo through the configured platform", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ automerge: true }), { status: 200 }),
+    );
+    const { resolved, presetsResolved } = await resolveConfig(
+      { extends: ["acme/cfg"] },
+      { fetchExternal: true, platform: "github" },
+    );
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(resolved).toMatchObject({ automerge: true });
+    expect(presetsResolved).toEqual(["acme/cfg"]);
   });
 
   it("routes local> through the Bitbucket Cloud API when platform is bitbucket", async () => {

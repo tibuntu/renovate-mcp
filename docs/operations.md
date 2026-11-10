@@ -87,7 +87,7 @@ For the nodeEnv case, `ok` also stays `true` even when Renovate exits non-zero, 
 
 `dry_run` defaults to `--platform=local` so no host token is required, but that mode can't resolve `local>` presets (they have no platform context to expand against) and silently hides non-default-host GitHub/GitLab setups.
 
-As a guard against the silent-failure mode, `dry_run` preflight-checks the repo's config: if it extends any `local>…` preset while the effective platform is `local`, the tool fails fast with specific remediation rather than spawning a Renovate run that would opaquely report `config-validation`. The preflight is skipped for `dryRunMode=extract` so manifest-only extraction can still be attempted.
+As a guard against the silent-failure mode, `dry_run` preflight-checks the repo's config: if it extends any `local>…` preset (or its bare `owner/repo` spelling, which Renovate also treats as `local>`) while the effective platform is `local`, the tool fails fast with specific remediation rather than spawning a Renovate run that would opaquely report `config-validation`. The preflight is skipped for `dryRunMode=extract` so manifest-only extraction can still be attempted.
 
 ## Platform-source precedence is visible to callers
 

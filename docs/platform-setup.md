@@ -67,10 +67,10 @@ Then call `resolve_config` (or `explain_config`, `resolve_config_diff`, `test_pa
 
 ## `local>` presets
 
-A config that extends `local>owner/repo:preset` only resolves when there's a platform context to expand it against:
+A config that extends `local>owner/repo:preset` (or the bare `owner/repo:preset` spelling, which Renovate treats as `local>`) only resolves when there's a platform context to expand it against:
 
-- **For `dry_run`** — pass `platform` + `endpoint` + `repository` (token falls back to env). Use `dryRunMode=extract` if you only need manifest extraction; the preset preflight is skipped in that mode.
-- **For `resolve_config`** — pass `platform` (`github`, `gitlab`, `gitea`, `forgejo`, or `bitbucket`) + `endpoint` as inputs and the tool rewrites `local>` into `<platform>>` and fetches over HTTPS. Without these inputs, `local>` stays in `presetsUnresolved` with a pointer to the workaround. `platform: "bitbucket"` is the only way to reach Bitbucket Cloud presets, since Renovate has no `bitbucket>` prefix. Run `dry_run` afterwards for full-fidelity merging.
+- **For `dry_run`** — pass `platform` + `endpoint` + `repository` (token falls back to env). Use `dryRunMode=extract` if you only need manifest extraction; the preset preflight is skipped in that mode. In `lookup` / `full` mode the `--platform=local` preflight fails fast on both spellings.
+- **For `resolve_config`** — pass `platform` (`github`, `gitlab`, `gitea`, `forgejo`, or `bitbucket`) + `endpoint` as inputs and the tool rewrites `local>` into `<platform>>` and fetches over HTTPS. Without these inputs, `local>` stays in `presetsUnresolved` with a pointer to the workaround. Bare `owner/repo` entries are rewritten the same way; scoped npm presets (`@scope/pkg`) stay unresolved, and relative (`./foo`) and `http(s)://` URL presets land in `presetsUnresolved` with a pointer at `dry_run`. `platform: "bitbucket"` is the only way to reach Bitbucket Cloud presets, since Renovate has no `bitbucket>` prefix. Run `dry_run` afterwards for full-fidelity merging.
 
 ## Private-registry credentials for `dry_run`
 
