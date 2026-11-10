@@ -62,6 +62,12 @@ External preset fetches refuse to follow HTTP redirects (`redirect: "manual"`) a
 
 Following redirects with custom auth headers can leak `RENOVATE_TOKEN` / `GITHUB_TOKEN` / `GITLAB_TOKEN` / `GITEA_TOKEN` / `FORGEJO_TOKEN` / `BITBUCKET_TOKEN` cross-host (undici only strips the standard `Authorization` header on cross-*origin* redirects, not `PRIVATE-TOKEN`); rejecting them outright avoids the leak path and matches the fact that the GitHub / GitLab / Gitea / Bitbucket content APIs do not normally redirect for valid presets.
 
+## Preset path validation
+
+External preset fetches validate the parts of a preset string that become URL path segments before any request (and so before any credential is attached): the repository/project path, the preset file path (`:presetName` / `//subpath`) and, for Bitbucket where it is a path segment, the `#ref`. Empty, `.` and `..` segments are rejected, and repository paths must be exactly `owner/repo` on GitHub, Gitea, Forgejo and Bitbucket (GitLab allows nested groups but still needs a namespace). The remaining segments are percent-encoded one by one.
+
+Without this, URL normalisation would collapse dot segments, so a hostile config read via `repoPath` could reference e.g. `github>a/../../user?` and make the server issue an authenticated `GET https://api.github.com/user` and surface the response as a preset body.
+
 ## Response body caps
 
 External preset fetches cap the response body at 1 MB. A `Content-Length` over the cap is rejected up front; chunked responses without a declared length are streamed into a bounded buffer that aborts the read once the running total passes the cap. Auth-failure bodies (401/403) are read with an 8 KB cap so a misconfigured endpoint returning a giant HTML error page can't OOM the long-lived MCP process. Preset bodies are tiny in practice, so the cap is well above any legitimate value.
