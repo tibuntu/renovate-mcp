@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { locateConfig } from "./configLocations.js";
+import { parseHostTokens } from "./hostTokens.js";
 
 // MCP tool annotations (documented in docs/tools.md). Every tool except
 // write_config is read-only; "open world" marks tools that can reach the
@@ -57,6 +58,16 @@ export async function loadConfigSource(input: {
   const located = await locateConfig(repoPath);
   if (!located) return { error: `${NO_CONFIG_FOUND} in ${repoPath}.` };
   return { config: located.config, path: located.relPath };
+}
+
+/**
+ * Null unless the call fetches external presets and `RENOVATE_MCP_HOST_TOKENS`
+ * is malformed; then the error text, so the tool refuses before any fetch.
+ */
+export function hostTokensError(fetchExternal: boolean | undefined): string | null {
+  if (!fetchExternal) return null;
+  const parsed = parseHostTokens();
+  return parsed.ok ? null : parsed.error;
 }
 
 // `disclaimer` texts. The preview ones are shared by every tool on the same

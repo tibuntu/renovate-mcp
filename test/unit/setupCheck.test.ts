@@ -27,6 +27,7 @@ const PLATFORM_ENV_KEYS = [
   "GITEA_TOKEN",
   "FORGEJO_TOKEN",
   "BITBUCKET_TOKEN",
+  "RENOVATE_MCP_HOST_TOKENS",
 ] as const;
 
 afterEach(() => {
@@ -46,6 +47,8 @@ function emptyPlatformContext(): PlatformContext {
       FORGEJO_TOKEN: false,
       BITBUCKET_TOKEN: false,
     },
+    hostTokens: [],
+    hostTokensError: null,
     effectiveDryRunPlatform: "local",
     notes: [],
   };
@@ -313,6 +316,14 @@ describe("describeSetup (legacy verbose diagnostic)", () => {
     expect(out).toContain("Detail: NODE_MODULE_VERSION mismatch");
     expect(out).toContain("Fix: Run `npm rebuild re2`");
   });
+
+  it("omits the Detail line for a warning without detail", () => {
+    const out = describeSetup(buildStatus({
+      warnings: [{ kind: "re2-unusable", message: "RE2 fallback active", fix: "Run `npm rebuild re2`" }],
+    }));
+    expect(out).toContain("RE2 fallback active");
+    expect(out).not.toContain("Detail:");
+  });
 });
 
 describe("startupBanner with runtime warnings", () => {
@@ -401,6 +412,8 @@ describe("inspectPlatformContext", () => {
       BITBUCKET_TOKEN: false,
     });
     expect(ctx.effectiveDryRunPlatform).toBe("local");
+    expect(ctx.hostTokens).toEqual([]);
+    expect(ctx.hostTokensError).toBeNull();
     expect(ctx.notes).toEqual([]);
   });
 
@@ -458,19 +471,10 @@ describe("inspectPlatformContext", () => {
       RENOVATE_PLATFORM: "gitlab",
       GITLAB_TOKEN: "x",
     });
-    expect(
-      ctx.notes.some((n) =>
-        n.startsWith("Info:")
-          && n.includes("GITLAB_TOKEN")
-          && n.includes("RENOVATE_TOKEN")
-          && n.includes("auto"),
-      ) || ctx.notes.some((n) =>
-        n.startsWith("Info:")
-          && n.includes("GITLAB_TOKEN")
-          && n.includes("RENOVATE_TOKEN")
-          && n.includes("export"),
-      ),
-    ).toBe(true);
+    const info = ctx.notes.find((n) => n.startsWith("Info:"));
+    expect(info).toContain("`dry_run` exports `GITLAB_TOKEN` as `RENOVATE_TOKEN`");
+    expect(info).toContain("gitlab.com");
+    expect(info).not.toContain("accepts this fallback");
     // And the failure-mode warning should NOT fire (token IS available).
     expect(ctx.notes.some((n) => n.includes("authenticate"))).toBe(false);
   });
@@ -481,22 +485,110 @@ describe("inspectPlatformContext", () => {
       RENOVATE_PLATFORM: "github",
       GITHUB_TOKEN: "x",
     });
-    expect(
-      ctx.notes.some((n) =>
-        n.startsWith("Info:") && n.includes("GITHUB_TOKEN") && n.includes("RENOVATE_TOKEN"),
-      ),
-    ).toBe(true);
+    const info = ctx.notes.find((n) => n.startsWith("Info:"));
+    expect(info).toContain("`dry_run` exports `GITHUB_TOKEN` as `RENOVATE_TOKEN`");
+    expect(info).toContain("api.github.com");
     expect(ctx.notes.some((n) => n.includes("authenticate"))).toBe(false);
   });
 
-  it("does NOT surface the info note when RENOVATE_TOKEN is also set", () => {
+  it("adds no info note when RENOVATE_TOKEN wins over the per-platform token on the home host", () => {
     const ctx = inspectPlatformContext({
       ...clean(),
       RENOVATE_PLATFORM: "gitlab",
       GITLAB_TOKEN: "x",
       RENOVATE_TOKEN: "y",
     });
-    expect(ctx.notes.some((n) => n.startsWith("Info:"))).toBe(false);
+    expect(ctx.notes.find((n) => n.startsWith("Info:"))).toBeUndefined();
+  });
+
+  it("says RENOVATE_TOKEN is not used when a longer host-token entry wins on the API host", () => {
+    const ctx = inspectPlatformContext({
+      ...clean(),
+      RENOVATE_PLATFORM: "gitlab",
+      RENOVATE_TOKEN: "y",
+      RENOVATE_MCP_HOST_TOKENS: JSON.stringify([
+        { matchHost: "https://gitlab.com/api/v4/", hostType: "gitlab", tokenEnv: "ACME_GL" },
+      ]),
+      ACME_GL: "z",
+    });
+    const info = ctx.notes.find((n) => n.startsWith("Info:"));
+    expect(info).toContain("`ACME_GL`");
+    expect(info).toContain("`RENOVATE_TOKEN` is not used");
+  });
+
+  it("surfaces no info note when RENOVATE_TOKEN is the only token for the platform", () => {
+    const ctx = inspectPlatformContext({ ...clean(), RENOVATE_PLATFORM: "gitlab", RENOVATE_TOKEN: "y" });
+    expect(ctx.notes).toEqual([]);
+  });
+
+  it("binds the platform token to RENOVATE_ENDPOINT's host and counts a host-token entry there", () => {
+    const ctx = inspectPlatformContext({
+      ...clean(),
+      RENOVATE_PLATFORM: "gitlab",
+      RENOVATE_ENDPOINT: "https://gitlab.example.com/api/v4/",
+      RENOVATE_MCP_HOST_TOKENS: JSON.stringify([
+        { matchHost: "gitlab.example.com", hostType: "gitlab", tokenEnv: "ACME_GL" },
+      ]),
+      ACME_GL: "secret-acme-value",
+    });
+    const info = ctx.notes.find((n) => n.startsWith("Info:"));
+    expect(info).toContain("`ACME_GL`");
+    expect(info).toContain("gitlab.example.com");
+    expect(JSON.stringify(ctx)).not.toContain("secret-acme-value");
+  });
+
+  it("names the variables it tried when no token is bound to the API host", () => {
+    const ctx = inspectPlatformContext({
+      ...clean(),
+      RENOVATE_PLATFORM: "gitlab",
+      RENOVATE_ENDPOINT: "https://gitlab.example.com/api/v4/",
+      GITHUB_TOKEN: "x",
+    });
+    const warn = ctx.notes.find((n) => n.includes("authenticate"));
+    expect(warn).toContain("gitlab.example.com");
+    expect(warn).toContain("`GITLAB_TOKEN`");
+    expect(warn).toContain("`RENOVATE_TOKEN`");
+  });
+
+  it("names the raw endpoint and no variables when RENOVATE_ENDPOINT cannot be parsed", () => {
+    const ctx = inspectPlatformContext({
+      ...clean(),
+      RENOVATE_PLATFORM: "gitlab",
+      RENOVATE_ENDPOINT: "not a url",
+      GITLAB_TOKEN: "x",
+    });
+    const warn = ctx.notes.find((n) => n.includes("authenticate"));
+    expect(warn).toContain("`not a url`");
+    expect(warn).toContain("(tried none)");
+  });
+
+  it("reports host-token entries by name and presence, never by value", () => {
+    const ctx = inspectPlatformContext({
+      ...clean(),
+      RENOVATE_MCP_HOST_TOKENS: JSON.stringify([
+        { matchHost: "gitlab.example.com", hostType: "gitlab", tokenEnv: "ACME_GL" },
+        { matchHost: "npm.example.com", hostType: "npm", tokenEnv: "ACME_NPM" },
+      ]),
+      ACME_GL: "sentinel-host-token-value",
+    });
+    expect(ctx.hostTokens).toEqual([
+      { matchHost: "gitlab.example.com", hostType: "gitlab", tokenEnv: "ACME_GL", present: true },
+      { matchHost: "npm.example.com", hostType: "npm", tokenEnv: "ACME_NPM", present: false },
+    ]);
+    expect(ctx.hostTokensError).toBeNull();
+    expect(JSON.stringify(ctx)).not.toContain("sentinel-host-token-value");
+    expect(ctx.notes.some((n) => n.includes("ACME_NPM") && n.includes("not set"))).toBe(true);
+  });
+
+  it("reports a malformed RENOVATE_MCP_HOST_TOKENS without its value", () => {
+    const ctx = inspectPlatformContext({
+      ...clean(),
+      RENOVATE_MCP_HOST_TOKENS: '[{"matchHost":"x","token":"sentinel-inline-token"}]',
+    });
+    expect(ctx.hostTokens).toEqual([]);
+    expect(ctx.hostTokensError).toMatch(/RENOVATE_MCP_HOST_TOKENS\[0\]/);
+    expect(ctx.notes.some((n) => n.includes("RENOVATE_MCP_HOST_TOKENS") && n.includes("isError"))).toBe(true);
+    expect(JSON.stringify(ctx)).not.toContain("sentinel-inline-token");
   });
 
   it("flags an endpoint that looks like a UI URL", () => {
@@ -548,6 +640,19 @@ describe("versionSatisfiesRange", () => {
   it("treats unparseable input conservatively as a non-match", () => {
     expect(versionSatisfiesRange("notaversion", "^24.11.0")).toBe(false);
     expect(versionSatisfiesRange("v24.11.0", "weirdrange")).toBe(false);
+    expect(versionSatisfiesRange("v24.11.0", "   ")).toBe(false);
+    expect(versionSatisfiesRange("v24.11.0", "^x")).toBe(false);
+    expect(versionSatisfiesRange("v24.11.0", "~x")).toBe(false);
+    expect(versionSatisfiesRange("v24.11.0", ">=x")).toBe(false);
+  });
+
+  it("rejects a version below a tilde floor", () => {
+    expect(versionSatisfiesRange("v24.10.9", "~24.11.0")).toBe(false);
+  });
+
+  it("matches a bare version exactly", () => {
+    expect(versionSatisfiesRange("v24.11.0", "24.11.0")).toBe(true);
+    expect(versionSatisfiesRange("v24.11.1", "24.11.0")).toBe(false);
   });
 });
 
@@ -586,10 +691,23 @@ describe("describeSetup platform context block", () => {
           FORGEJO_TOKEN: false,
           BITBUCKET_TOKEN: false,
         },
+        hostTokens: [
+          { matchHost: "npm.example.com", hostType: "npm", tokenEnv: "ACME_NPM", present: false },
+        ],
+        hostTokensError: null,
         effectiveDryRunPlatform: "gitlab",
         notes: ["RENOVATE_ENDPOINT looks like a UI URL"],
       },
     }));
+    expect(out).toContain("Host tokens: npm.example.com (npm) via ACME_NPM=unset");
+    const withSet = describeSetup(buildStatus({
+      platformContext: {
+        ...emptyPlatformContext(),
+        hostTokens: [{ matchHost: "npm.example.com", hostType: "npm", tokenEnv: "ACME_NPM", present: true }],
+      },
+    }));
+    expect(withSet).toContain("via ACME_NPM=set");
+    expect(describeSetup(buildStatus({ platformContext: emptyPlatformContext() }))).not.toContain("Host tokens:");
     expect(out).toContain("Platform context:");
     expect(out).toContain("RENOVATE_PLATFORM: gitlab");
     expect(out).toContain("GITLAB_TOKEN=set");

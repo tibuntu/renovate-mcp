@@ -18,6 +18,10 @@ export const HOST_RULES_MAX_ITEMS = 256;
 export const HOST_RULE_JSON_MAX_BYTES = 64_000;
 export const BASE_BRANCHES_MAX_ITEMS = 50;
 export const BRANCH_NAME_MAX_BYTES = 256;
+// dry_run's temporary repo copy for local-preset flattening (ADR-0009):
+// checked against the listing and an lstat sum before anything is copied.
+export const REPO_COPY_MAX_FILES = 50_000;
+export const REPO_COPY_MAX_BYTES = 512 * 1024 * 1024;
 
 export const pathString = (description: string) =>
   z.string().max(PATH_MAX_BYTES).describe(description);

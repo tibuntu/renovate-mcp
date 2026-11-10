@@ -2,8 +2,8 @@ import { Worker } from "node:worker_threads";
 
 /**
  * Shared driver for the worker-isolated Renovate carve-outs (`migrationWorker`,
- * `mergeWorker`, `packageRulesWorker`, `scheduleWorker` — ADR-0001 / 0004 /
- * 0006 / 0007). Spawns
+ * `mergeWorker`, `packageRulesWorker`, `scheduleWorker`, `presetFlattenWorker`
+ * — ADR-0001 / 0004 / 0006 / 0007 / 0009). Spawns
  * `entry` with `workerData`, resolves with the single `{ ok: true, ... }`
  * message the worker posts, and always terminates the worker afterwards. The
  * main process never imports `renovate`; only the `*WorkerImpl` entries do.
@@ -77,7 +77,7 @@ export async function runRenovateWorker<T extends object>(
     if (!reply.ok) throw new Error(`Renovate ${label} failed: ${reply.error}`);
     return reply;
   } finally {
-    if (timer) clearTimeout(timer);
+    clearTimeout(timer);
     await worker.terminate().catch(() => undefined);
   }
 }

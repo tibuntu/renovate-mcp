@@ -45,7 +45,7 @@ Nineteen tools, seven resources, and four workflow prompts. Each tool name below
 | [`preview_custom_manager`](docs/tools.md#preview_custom_manager) | Preview a `customManagers` entry (regex or JSONata) against a local repo. Offline. |
 | [`validate_config`](docs/tools.md#validate_config) | Run `renovate-config-validator` against a file or inline object. |
 | [`lint_config`](docs/tools.md#lint_config) | Semantic lint pass for Renovate-specific footguns the schema validator declares valid. Offline. |
-| [`dry_run`](docs/tools.md#dry_run) | Run Renovate with `--dry-run` and return the structured JSON report. Local-by-default; remote with `platform` + `endpoint` + `token` + `repository`. No PRs, no pushes. |
+| [`dry_run`](docs/tools.md#dry_run) | Run Renovate with `--dry-run` and return the structured JSON report. Local-by-default, flattening `local>` presets with Renovate's own resolver into a temporary copy first; remote with `platform` + `endpoint` + `token` + `repository`. No PRs, no pushes. |
 | [`dry_run_diff`](docs/tools.md#dry_run_diff) | Stateless semantic diff between two `dry_run` reports — added / removed / changed updates. |
 | [`annotate_dry_run`](docs/tools.md#annotate_dry_run) | Attribute each proposed update in a `dry_run` report to the `packageRules` that caused it; flags rules that never matched and report fields the matchers needed but the report lacked. Stateless + offline. |
 | [`explain_dependency`](docs/tools.md#explain_dependency) | Answer "why was/wasn't dependency X updated?" from a `dry_run` report: per-occurrence `skipReason`, proposed `updates`, `warnings`, a one-line verdict and remedy hints; optionally the `packageRules` that matched it. Stateless + offline. |
@@ -81,7 +81,8 @@ Renovate ships bundled — the `renovate` package is a runtime dependency, so `v
 
 - `RENOVATE_BIN` / `RENOVATE_CONFIG_VALIDATOR_BIN` — override the bundled binaries. When set, the override always wins.
 - `RENOVATE_MCP_REQUIRE_CLI=false` — suppress the startup "partial availability" notice when you only intend to use the offline tools.
-- Platform + token env vars — see [`docs/platform-setup.md`](docs/platform-setup.md) for the per-platform matrix.
+- Platform + token env vars — see [`docs/platform-setup.md`](docs/platform-setup.md) for the per-platform matrix. Preset fetching and `dry_run` bind every token to its own host; `RENOVATE_TOKEN` only covers the home host named by `RENOVATE_PLATFORM` / `RENOVATE_ENDPOINT`. A `platform` / `endpoint` passed on a call routes requests but never moves a token.
+- `RENOVATE_MCP_HOST_TOKENS` — JSON array of `{matchHost, hostType, tokenEnv}` naming the env var that holds the token for an extra host (never the value itself). See [`docs/security.md`](docs/security.md#token-resolution).
 - `GITHUB_COM_TOKEN` — authenticates github.com *datasource* lookups (release notes, `github-tags` / `github-releases` / `github-actions`). Distinct from the platform token and never auto-derived from it; set it when github.com-hosted deps are resolved under the default `dry_run` `platform: local`. See [`docs/security.md`](docs/security.md#github_com_token--a-separate-role).
 
 > Heads up: MCP servers do **not** inherit your shell env. Set every env var via the `env` key in `.mcp.json` / `claude_desktop_config.json`. See [`docs/security.md`](docs/security.md#where-env-vars-must-live).
@@ -139,8 +140,9 @@ The offline tools need nothing. Add env vars only for what you use:
 | Local `dry_run` on a repo with github.com dependencies | `GITHUB_COM_TOKEN` (read-only PAT, avoids anonymous rate limits) |
 | `dry_run` against GitHub, or private `github>` presets | `RENOVATE_PLATFORM=github` + `GITHUB_TOKEN` |
 | `dry_run` against GitLab, or private `gitlab>` presets | `RENOVATE_PLATFORM=gitlab` + `GITLAB_TOKEN` |
+| Private presets on another host | `RENOVATE_MCP_HOST_TOKENS` + the variable it names |
 
-Self-hosted GitLab and GitHub Enterprise also need `RENOVATE_ENDPOINT` — see [Platform setup](#platform-setup).
+Self-hosted GitLab and GitHub Enterprise also need `RENOVATE_ENDPOINT` — see [Platform setup](#platform-setup). Each token is only sent to its own platform's host.
 
 In Claude Code, re-register with `-e`:
 
@@ -169,11 +171,11 @@ For `dry_run` against a remote platform or `resolve_config` with `externalPreset
 | GitHub Enterprise | `github` | `https://github.example.com/api/v3/` | `RENOVATE_TOKEN` *or* `GITHUB_TOKEN` |
 | gitlab.com | `gitlab` | (omit) | `RENOVATE_TOKEN` *or* `GITLAB_TOKEN` |
 | Self-hosted GitLab | `gitlab` | `https://gitlab.example.com/api/v4/` | `RENOVATE_TOKEN` *or* `GITLAB_TOKEN` |
-| gitea.com / Forgejo (code.forgejo.org) | — | (omit) | `RENOVATE_TOKEN` *or* `GITEA_TOKEN` / `FORGEJO_TOKEN` |
-| Self-hosted Gitea / Forgejo | — | `https://forgejo.example.com/api/v1/` | `RENOVATE_TOKEN` *or* `GITEA_TOKEN` / `FORGEJO_TOKEN` |
-| Bitbucket Cloud | — | (omit) | `RENOVATE_TOKEN` *or* `BITBUCKET_TOKEN` |
+| gitea.com / Forgejo (code.forgejo.org) | — | (omit) | `GITEA_TOKEN` / `FORGEJO_TOKEN` |
+| Self-hosted Gitea / Forgejo | `gitea` / `forgejo` | `https://forgejo.example.com/api/v1` | `RENOVATE_TOKEN` *or* `GITEA_TOKEN` / `FORGEJO_TOKEN` |
+| Bitbucket Cloud | — | (omit) | `BITBUCKET_TOKEN` |
 
-The Gitea / Forgejo / Bitbucket Cloud rows apply to the `resolve_config` family only: `dry_run` runs Renovate as `local` / `github` / `gitlab` and never reads those tokens. Pass `platform` (`gitea` / `forgejo` / `bitbucket`) and `endpoint` as tool inputs instead of `RENOVATE_PLATFORM` / `RENOVATE_ENDPOINT`.
+The Gitea / Forgejo / Bitbucket Cloud rows apply to the `resolve_config` family only: `dry_run` runs Renovate as `local` / `github` / `gitlab` and only passes those tokens on as host rules for their hosts. `platform` (`gitea` / `forgejo` / `bitbucket`) and `endpoint` can also be passed as tool inputs, but they only route `local>` presets: a token goes only to its platform's public host or to the env home (`RENOVATE_PLATFORM` at `RENOVATE_ENDPOINT`, where `RENOVATE_TOKEN` comes first), so an endpoint passed only per call needs a `RENOVATE_MCP_HOST_TOKENS` entry. `endpoint` routes `local>` presets only, as in Renovate.
 
 See [`docs/platform-setup.md`](docs/platform-setup.md) for a worked self-hosted GitLab example, `local>` preset handling, and private-registry credentials.
 
@@ -196,7 +198,7 @@ Once the server is wired up, try prompts like these. Written for Claude but work
 
 **Self-hosted GitLab / GitHub Enterprise** (env set per [Platform setup](#platform-setup))
 
-- "Resolve my config with external presets enabled, fetching `gitlab>platform/renovate-presets` from our self-hosted GitLab at `https://gitlab.example.com/api/v4`. Route `local>` presets through the same host."
+- "Resolve my config with external presets enabled. Its `local>platform/renovate-presets` presets live on our self-hosted GitLab at `https://gitlab.example.com/api/v4`."
 - "Expand `github>acme/renovate-config//base` from our GitHub Enterprise at `https://github.acme.corp/api/v3`."
 - "Dry-run `infrastructure/kubernetes/our-platform` (a nested-group GitLab project) so Renovate can fetch the `local>` presets the config extends."
 

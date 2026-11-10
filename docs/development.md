@@ -47,3 +47,9 @@ Node version for every workflow above comes from `.nvmrc` (currently 24) via `ac
 ## Integration testing
 
 Integration tests spawn the built `dist/index.js` as a real child process and speak JSON-RPC over stdio. For code that shells out to Renovate, the tests generate executable Node scripts at runtime and point `RENOVATE_BIN` / `RENOVATE_CONFIG_VALIDATOR_BIN` at them. The one exception is `test/integration/realValidator.test.ts`, which clears that override and runs the real bundled `renovate-config-validator` — see [Real-validator coverage](#ci-workflows) above. See [Architecture — Integration testing](architecture.md#integration-testing--real-spawn-fake-binaries) for the rationale.
+
+### Network stub
+
+Tests that need a preset host answer HTTPS requests from a table instead of the network: `test/fixtures/fetch-stub.mjs`, preloaded through `NODE_OPTIONS=--import=<file-url>` (`fetchStubEnv` in `test/helpers/fetchStub.ts`). The routes come from `RENOVATE_MCP_TEST_FETCH_ROUTES` (exact URL → `{ status, body, headers }`, anything else is a 404), and `RENOVATE_MCP_TEST_FETCH_LOG` records each request's URL, method and auth header. It stubs both `globalThis.fetch` and `https.request`, the call Renovate's `got` client makes.
+
+Why a preload and not a mock or a local server: the requests happen in the MCP server child and in the Renovate worker it spawns, out of reach of `vi.mock`, and Node runs `--import` preloads in every worker thread. A local server is out because `endpoint` refuses loopback hosts and plain http, and the tests must not weaken that check. Spawn, stdio, the workers and the fake `renovate` binary stay real; only the HTTPS answers are canned. The stub does nothing when the routes variable is unset, since every child that inherits `NODE_OPTIONS` loads it too.

@@ -57,6 +57,24 @@ export interface McpSession {
   onNotification(listener: (n: ServerNotification) => void): () => void;
 }
 
+/** Env vars that select or carry credentials; never inherited from the developer's shell. */
+const ISOLATED_ENV = [
+  "RENOVATE_TOKEN",
+  "GITHUB_TOKEN",
+  "GITLAB_TOKEN",
+  "GITEA_TOKEN",
+  "FORGEJO_TOKEN",
+  "BITBUCKET_TOKEN",
+  "GITHUB_COM_TOKEN",
+  "RENOVATE_GITHUB_COM_TOKEN",
+  "RENOVATE_MCP_HOST_TOKENS",
+  "RENOVATE_PLATFORM",
+  "RENOVATE_ENDPOINT",
+  "RENOVATE_CONFIG_FILE",
+  "RENOVATE_ADDITIONAL_CONFIG_FILE",
+  "RENOVATE_HOST_RULES",
+];
+
 /**
  * Spawn the MCP server, run the initialize handshake, and return a session you
  * can call request/notify on. The server shuts down cleanly when you call
@@ -73,9 +91,14 @@ export async function startServer(
   const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
   const serverEntry = options.serverEntry ?? DEFAULT_SERVER_ENTRY;
 
+  // The developer's own tokens and platform settings must not leak into a
+  // test: they change which credential the server picks and which host rules
+  // it writes for Renovate. A test that needs one passes it in `env`.
+  const inherited = { ...process.env };
+  for (const name of ISOLATED_ENV) delete inherited[name];
   const child = spawn("node", [serverEntry], {
     stdio: ["pipe", "pipe", "pipe"],
-    env: { ...process.env, ...env },
+    env: { ...inherited, ...env },
   });
 
   let stderrBuffer = "";

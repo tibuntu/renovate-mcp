@@ -1,6 +1,7 @@
 import { PRESETS, REMOVED_PRESETS } from "../data/presets.generated.js";
 import { fetchExternalPreset, type FetchResult } from "./externalPresetFetcher.js";
 import { HOSTED_PLATFORMS, type HostedPlatform } from "./gitRemote.js";
+import { homeScope, parseHostTokens } from "./hostTokens.js";
 import { runMerge } from "./mergeWorker.js";
 import { isRecord } from "./util.js";
 
@@ -38,6 +39,13 @@ export interface ResolveResult {
  */
 export const OWN_SOURCE = "<own>";
 
+/**
+ * `PresetWarning.preset` of a credential-configuration problem (a malformed
+ * `RENOVATE_MCP_HOST_TOKENS`). Nothing is fetched while it stands; tools turn
+ * it into an `isError`.
+ */
+export const AUTH_SOURCE = "<auth>";
+
 export interface MergeStep {
   /** Preset entry exactly as written in `extends`, or OWN_SOURCE for own keys. */
   label: string;
@@ -68,20 +76,20 @@ export interface ResolveOptions {
   /** Per-request fetch timeout; forwarded to the external fetcher. */
   timeoutMs?: number;
   /**
-   * Override the API base URL used for external fetches — e.g.
-   * `https://ghe.example.com/api/v3` for GitHub Enterprise,
-   * `https://gitlab.example.com/api/v4` for self-hosted GitLab, or
-   * `https://forgejo.example.com/api/v1` for self-hosted Gitea/Forgejo. When
-   * unset, each platform's public API base is used.
+   * API base URL `local>` presets are fetched from — e.g.
+   * `https://gitlab.example.com/api/v4`. Like Renovate, it never reroutes
+   * `github>` / `gitlab>` / `gitea>` / `forgejo>`, which always go to their
+   * public host. Routing only: tokens bind to the env scope (ADR-0008).
    */
   endpoint?: string;
   /**
-   * Platform flavour of `endpoint`. Required only when it's not derivable from
-   * the preset source (e.g. to resolve `local>` presets against a self-hosted
-   * GitHub/GitLab/Gitea/Forgejo, or against Bitbucket Cloud). When set,
-   * `local>owner/repo` is fetched as if it were `<platform>>owner/repo`.
+   * The platform `local>` presets live on: `local>owner/repo` is fetched as
+   * `<platform>>owner/repo` against `endpoint` (or the platform's public API).
+   * Routing only, like `endpoint`.
    */
   platform?: FetchPlatform;
+  /** Injectable for tests. Defaults to globalThis.fetch. */
+  fetchImpl?: typeof fetch;
 }
 
 export type ExternalSource =
@@ -124,7 +132,7 @@ export function classifyExternalSource(source: ExternalSource): SourceClassifica
       return {
         fetchable: false,
         reason:
-          "local> presets need a platform context. Pass `platform` (one of github, gitlab, gitea, forgejo, bitbucket) plus `endpoint` to resolve_config so they're routed through your platform's API. For full-fidelity merging (hostRules, regexManagers, etc.), run `dry_run` with the same params instead.",
+          "local> presets need a platform context. Pass `platform` (one of github, gitlab, gitea, forgejo, bitbucket) plus `endpoint` to resolve_config, or set `RENOVATE_PLATFORM` / `RENOVATE_ENDPOINT` on the MCP server, so they're routed through your platform's API. For full-fidelity merging (hostRules, regexManagers, etc.), run `dry_run` with the same params instead.",
       };
     case "npm":
       return {
@@ -165,6 +173,9 @@ export interface ExpandContext extends CollectResult {
   timeoutMs: number | undefined;
   endpoint: string | undefined;
   platform: FetchPlatform | undefined;
+  fetchImpl: typeof fetch | undefined;
+  /** Set when credentials are misconfigured; nothing is fetched then. */
+  authError: string | undefined;
   cache: Map<string, Promise<FetchResult>>;
   /** Preset keys on the current expansion path, for cycle detection. */
   stack: string[];
@@ -231,6 +242,9 @@ export async function collectMergeSteps(
   config: Record<string, unknown>,
   options: ResolveOptions = {},
 ): Promise<CollectResult> {
+  // The `local>` route (ADR-0008), env fallbacks included. Tokens never
+  // follow it: they bind to the env scope only.
+  const scope = homeScope({ platform: options.platform, endpoint: options.endpoint });
   const ctx: ExpandContext = {
     steps: [],
     presetsResolved: [],
@@ -239,12 +253,21 @@ export async function collectMergeSteps(
     stack: [],
     fetchExternal: options.fetchExternal ?? false,
     timeoutMs: options.timeoutMs,
-    endpoint: options.endpoint,
-    platform: options.platform,
+    endpoint: scope.endpoint,
+    platform: scope.platform,
+    fetchImpl: options.fetchImpl,
+    authError: undefined,
     cache: new Map(),
   };
+  if (ctx.fetchExternal) {
+    const hostTokens = parseHostTokens();
+    if (!hostTokens.ok) {
+      ctx.authError = hostTokens.error;
+      ctx.warnings.push({ preset: AUTH_SOURCE, message: hostTokens.error });
+    }
+  }
 
-  await collectSteps(config, null, [], ctx);
+  await collectSteps(config, null, [], [], ctx);
   const { steps, presetsResolved, presetsUnresolved, warnings } = ctx;
   return { steps, presetsResolved, presetsUnresolved, warnings };
 }
@@ -253,8 +276,17 @@ async function collectSteps(
   input: Record<string, unknown>,
   ownerName: string | null,
   viaChain: string[],
+  inheritedIgnore: string[],
   ctx: ExpandContext,
 ): Promise<void> {
+  // Renovate's resolveConfigPresets: a non-empty inherited list (the root's)
+  // wins; otherwise this node's own list governs its subtree.
+  const ignorePresets =
+    inheritedIgnore.length > 0
+      ? inheritedIgnore
+      : Array.isArray(input.ignorePresets)
+        ? (input.ignorePresets as string[])
+        : [];
   const rawExtends = input.extends;
   if (Array.isArray(rawExtends) && rawExtends.length > 0) {
     // Children of `input` are reached by going through `ownerName` (if any).
@@ -269,6 +301,8 @@ async function collectSteps(
         });
         continue;
       }
+
+      if (ignorePresets.includes(entry)) continue;
 
       const redirect = followRemovedPresets(entry);
       if (redirect.kind === "cycle") {
@@ -330,7 +364,13 @@ async function collectSteps(
         ctx.warnings,
       );
       ctx.stack.push(parsed.key);
-      await collectSteps(value as Record<string, unknown>, entry, childVia, ctx);
+      await collectSteps(
+        value as Record<string, unknown>,
+        entry,
+        childVia,
+        ignorePresets,
+        ctx,
+      );
       ctx.stack.pop();
       ctx.presetsResolved.push(entry);
     }
@@ -338,7 +378,9 @@ async function collectSteps(
 
   // Own keys (siblings of `extends`) merge last for this node. Skip empty
   // own-key sets so a single-preset config stays a single step (no worker).
-  const { extends: _drop, ...ownKeys } = input;
+  // Renovate's resolveConfigPresets deletes `ignorePresets` at every level,
+  // the root included.
+  const { extends: _drop, ignorePresets: _ignored, ...ownKeys } = input;
   if (Object.keys(ownKeys).length > 0) {
     ctx.steps.push({
       label: ownerName ?? OWN_SOURCE,
@@ -458,9 +500,17 @@ export async function loadPresetBody(
     return null;
   }
 
+  if (ctx.authError) {
+    unresolvedList.push({ preset: parsed.original, reason: `Not fetched: ${ctx.authError}` });
+    return null;
+  }
+
+  // Renovate routes only `local>` through the configured endpoint; the other
+  // sources hard-code their public API.
   const result = await fetchExternalPreset(effective, {
     timeoutMs: ctx.timeoutMs,
-    endpoint: ctx.endpoint,
+    endpoint: parsed.source === "local" ? ctx.endpoint : undefined,
+    fetchImpl: ctx.fetchImpl,
     cache: ctx.cache,
   });
 
@@ -511,6 +561,12 @@ const BUILTIN_NAMESPACES = new Set([
 
 /** True when Renovate would treat `entry` as a `local>` preset (prefixed or bare `owner/repo`). */
 export function isLocalPreset(entry: string): boolean {
+  // Renovate tests an unscoped `npm>` entry for `/` before stripping the prefix,
+  // so `npm>foo/bar` is local there unless it names a built-in namespace.
+  if (entry.startsWith("npm>") && !entry.startsWith("npm>@")) {
+    const rest = entry.slice("npm>".length);
+    return rest.includes("/") && !BUILTIN_NAMESPACES.has(rest.split(":", 1)[0]!);
+  }
   return parsePreset(entry).source === "local";
 }
 

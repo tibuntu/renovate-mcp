@@ -8,6 +8,7 @@ import {
 import { configRecord, endpointString, pathString } from "../lib/inputLimits.js";
 import { FETCH_PLATFORMS } from "../lib/presetResolver.js";
 import {
+  hostTokensError,
   loadConfigSource,
   MATCH_PREVIEW_DISCLAIMER,
   RENDER_PREVIEW_DISCLAIMER,
@@ -41,12 +42,12 @@ export function registerTestPackageRules(server: McpServer): void {
             "When true, fetch external presets (github>, gitlab>, gitea>, forgejo>) over HTTPS so their packageRules are included — same credentials/behaviour as resolve_config. Default false.",
           ),
         endpoint: endpointString(
-          "API base URL for external preset fetches — same semantics as resolve_config.",
+          "API base URL that `local>` presets are fetched from (with `platform`) — same semantics as resolve_config.",
         ).optional(),
         platform: z
           .enum(FETCH_PLATFORMS)
           .optional()
-          .describe("Platform flavour of `endpoint` — same semantics as resolve_config."),
+          .describe("The platform `local>` presets live on — same semantics as resolve_config (routes only; never moves a token)."),
         // Synthetic dependency context. All optional; supply what you're testing.
         depName: optString("Dependency name (matchDepNames; static)."),
         packageName: optString("Fully-qualified package name (matchPackageNames; static)."),
@@ -77,6 +78,8 @@ export function registerTestPackageRules(server: McpServer): void {
     async ({ repoPath, configContent, externalPresets, endpoint, platform, ...ctx }) => {
       const src = await loadConfigSource({ repoPath, configContent });
       if ("error" in src) return { isError: true, content: [{ type: "text", text: src.error }] };
+      const tokensError = hostTokensError(externalPresets);
+      if (tokensError) return { isError: true, content: [{ type: "text", text: tokensError }] };
 
       // Expand `extends` so preset-provided packageRules are included, then test
       // against the effective set.

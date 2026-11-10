@@ -11,6 +11,7 @@ import {
 import { configRecord, endpointString, pathString, reportRecord } from "../lib/inputLimits.js";
 import { FETCH_PLATFORMS } from "../lib/presetResolver.js";
 import {
+  hostTokensError,
   loadConfigSource,
   MATCH_PREVIEW_DISCLAIMER,
   ANNOTATE_DRY_RUN_FAITHFUL_DISCLAIMER,
@@ -107,12 +108,12 @@ export function registerAnnotateDryRun(server: McpServer): void {
             "When true, fetch external presets (github>, gitlab>, gitea>, forgejo>) so their packageRules are included — same semantics as resolve_config. Default false.",
           ),
         endpoint: endpointString(
-          "API base URL for external preset fetches — same semantics as resolve_config.",
+          "API base URL that `local>` presets are fetched from (with `platform`) — same semantics as resolve_config.",
         ).optional(),
         platform: z
           .enum(FETCH_PLATFORMS)
           .optional()
-          .describe("Platform flavour of `endpoint` — same semantics as resolve_config."),
+          .describe("The platform `local>` presets live on — same semantics as resolve_config (routes only; never moves a token)."),
       },
     },
     async ({ report, reportPath, repoPath, configContent, externalPresets, endpoint, platform }) => {
@@ -145,6 +146,8 @@ export function registerAnnotateDryRun(server: McpServer): void {
       // Resolve the config's effective packageRules.
       const src = await loadConfigSource({ repoPath, configContent });
       if ("error" in src) return { isError: true, content: [{ type: "text", text: src.error }] };
+      const tokensError = hostTokensError(externalPresets);
+      if (tokensError) return { isError: true, content: [{ type: "text", text: tokensError }] };
       const { packageRules, warnings: presetWarnings } = await resolvePackageRules(src.config, {
         fetchExternal: externalPresets ?? false,
         endpoint,

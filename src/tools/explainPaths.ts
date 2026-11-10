@@ -5,6 +5,7 @@ import { DEFAULT_MAX_FILES, explainPaths } from "../lib/pathSelection.js";
 import { FETCH_PLATFORMS } from "../lib/presetResolver.js";
 import {
   assertRepoDir,
+  hostTokensError,
   loadConfigSource,
   MERGE_PREVIEW_DISCLAIMER,
   NETWORK_READ_ONLY_ANNOTATIONS,
@@ -30,11 +31,11 @@ export function registerExplainPaths(server: McpServer): void {
           .boolean()
           .optional()
           .describe("When true, fetch external presets (github>, gitlab>, gitea>, forgejo>) over HTTPS — same as resolve_config. Default false."),
-        endpoint: endpointString("API base URL for external preset fetches — same semantics as resolve_config.").optional(),
+        endpoint: endpointString("API base URL that `local>` presets are fetched from (with `platform`) — same semantics as resolve_config.").optional(),
         platform: z
           .enum(FETCH_PLATFORMS)
           .optional()
-          .describe("Platform flavour of `endpoint`; routes `local>` presets — same semantics as resolve_config."),
+          .describe("The platform `local>` presets live on — same semantics as resolve_config (routes only; never moves a token)."),
         maxFiles: z
           .number()
           .int()
@@ -49,6 +50,8 @@ export function registerExplainPaths(server: McpServer): void {
       if (repoError) return { isError: true, content: [{ type: "text", text: repoError }] };
       const src = configContent !== undefined ? { config: configContent } : await loadConfigSource({ repoPath });
       if ("error" in src) return { isError: true, content: [{ type: "text", text: src.error }] };
+      const tokensError = hostTokensError(externalPresets);
+      if (tokensError) return { isError: true, content: [{ type: "text", text: tokensError }] };
 
       const result = await explainPaths(repoPath, src.config, {
         fetchExternal: externalPresets ?? false,

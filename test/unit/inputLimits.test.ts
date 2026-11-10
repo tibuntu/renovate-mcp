@@ -95,6 +95,10 @@ describe("inputLimits helpers", () => {
     expect(queryString("q").safeParse("x".repeat(QUERY_MAX_BYTES)).success).toBe(true);
   });
 
+  it("configRecord rejects a record JSON cannot serialize", () => {
+    expect(configRecord("c").safeParse({ big: 1n }).success).toBe(false);
+  });
+
   it("configRecord rejects records whose JSON size exceeds CONFIG_JSON_MAX_BYTES", () => {
     const reject = configRecord("c").safeParse(fatRecord(CONFIG_JSON_MAX_BYTES + 1));
     expect(reject.success).toBe(false);

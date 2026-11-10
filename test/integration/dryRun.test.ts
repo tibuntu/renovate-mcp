@@ -298,14 +298,19 @@ describe("dry_run platform/endpoint/token inputs", () => {
     await writeFile(
       file,
       `#!/usr/bin/env node
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, readFileSync, existsSync } from 'node:fs';
 const args = process.argv.slice(2);
 const dumpPath = process.env.FAKE_RENOVATE_ARGV_DUMP;
+const readJson = (p) => (p && existsSync(p) ? JSON.parse(readFileSync(p, 'utf8')) : null);
 if (dumpPath) {
   writeFileSync(dumpPath, JSON.stringify({
     args,
     renovateToken: process.env.RENOVATE_TOKEN ?? null,
+    renovateEndpoint: process.env.RENOVATE_ENDPOINT ?? null,
     renovateConfigFile: process.env.RENOVATE_CONFIG_FILE ?? null,
+    renovateConfig: readJson(process.env.RENOVATE_CONFIG_FILE),
+    additionalConfigFile: process.env.RENOVATE_ADDITIONAL_CONFIG_FILE ?? null,
+    additionalConfig: readJson(process.env.RENOVATE_ADDITIONAL_CONFIG_FILE),
   }));
 }
 const reportArg = args.find(a => a.startsWith('--report-path='));
@@ -461,7 +466,7 @@ process.exit(0);
     expect(dumped.args).toContain("--platform=local");
   });
 
-  it("forwards --endpoint and RENOVATE_TOKEN even when platform is local (for gitlab>/github> preset resolution)", async () => {
+  it("passes neither --endpoint nor RENOVATE_TOKEN under platform=local, and says so", async () => {
     const argvDump = path.join(repo, "argv.json");
     const fakeBin = await makeArgvEnvDump(repo);
     session = await startServer({
@@ -487,10 +492,15 @@ process.exit(0);
       renovateToken: string | null;
     };
     expect(dumped.args).toContain("--platform=local");
-    expect(dumped.args).toContain("--endpoint=https://gitlab.example.com/api/v4/");
-    expect(dumped.renovateToken).toBe("glpat-secret");
+    // Renovate routes only local> presets through --endpoint, and local> cannot
+    // resolve under --platform=local; the platform token has no host there.
+    expect(dumped.args.some((a) => a.startsWith("--endpoint="))).toBe(false);
+    expect(dumped.renovateToken).toBeNull();
     // No repository should be passed in local mode even if other inputs are present.
     expect(dumped.args.some((a) => /^[^-]/.test(a) && a.includes("/"))).toBe(false);
+    const body = JSON.parse(res.result!.content[0]!.text) as { warnings: string[] };
+    expect(body.warnings.some((w) => /`endpoint` was ignored/.test(w))).toBe(true);
+    expect(body.warnings.some((w) => /`token` was ignored/.test(w))).toBe(true);
   });
 
   it("errors when platform is gitlab but repository is missing", async () => {
@@ -576,7 +586,7 @@ process.exit(0);
     }
   });
 
-  it("preflight: errors before spawning when config extends local> presets under platform=local", async () => {
+  it("errors before spawning when config extends local> presets under platform=local and no route can be derived", async () => {
     await writeFile(
       path.join(repo, "renovate.json"),
       JSON.stringify({
@@ -596,14 +606,15 @@ process.exit(0);
       arguments: { repoPath: repo },
     });
 
+    // No origin remote to route the local preset through: refused before
+    // spawning, naming the input that fixes it (flattening, ADR-0009).
     expect(res.result?.isError).toBe(true);
     const text = res.result!.content[0]!.text;
-    expect(text).toMatch(/local>/);
-    expect(text).toMatch(/platform.*gitlab.*github|gitlab.*github/i);
-    expect(text).toMatch(/devops\/bots\/renovate/);
+    expect(text).toMatch(/local presets/);
+    expect(text).toMatch(/`presetPlatform`/);
   });
 
-  it("preflight: errors before spawning when config extends a bare owner/repo preset under platform=local", async () => {
+  it("preflight: a bare owner/repo preset under platform=local without an origin is refused before spawning", async () => {
     await writeFile(
       path.join(repo, "renovate.json"),
       JSON.stringify({ extends: ["devops/renovate-config"] }),
@@ -621,10 +632,12 @@ process.exit(0);
       arguments: { repoPath: repo },
     });
 
+    // The bare spelling is a local preset too, so it takes the same
+    // flattening path as `local>` and is refused for the missing route.
     expect(res.result?.isError).toBe(true);
     const text = res.result!.content[0]!.text;
-    expect(text).toMatch(/platform.*gitlab.*github|gitlab.*github/i);
-    expect(text).toMatch(/devops\/renovate-config/);
+    expect(text).toMatch(/local presets/);
+    expect(text).toMatch(/`presetPlatform`/);
   });
 
   it("preflight: does NOT error for dryRunMode=extract even when config extends local> under platform=local", async () => {
@@ -760,12 +773,49 @@ process.exit(0);
     expect(body.reportErrors).toBeUndefined();
   });
 
-  it("auto-translates GITLAB_TOKEN to RENOVATE_TOKEN when platform=gitlab and no token input", async () => {
+  it("never sends an env token to an endpoint only the call names, and refuses before spawning", async () => {
     const argvDump = path.join(repo, "argv.json");
     const fakeBin = await makeArgvEnvDump(repo);
     session = await startServer({
       RENOVATE_BIN: fakeBin,
       GITLAB_TOKEN: "glpat-from-env-abc",
+      RENOVATE_TOKEN: "rnv-from-env-abc",
+      RENOVATE_PLATFORM: "gitlab",
+      FAKE_RENOVATE_ARGV_DUMP: argvDump,
+    });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: {
+        repoPath: repo,
+        platform: "gitlab",
+        endpoint: "https://gitlab.example.com/api/v4/",
+        repository: "infrastructure/k8s/our-platform",
+      },
+    });
+
+    expect(res.result?.isError).toBe(true);
+    const text = res.result!.content[0]!.text;
+    expect(text).toMatch(/No auth token found/);
+    expect(text).toContain("gitlab.example.com");
+    expect(text).toContain("RENOVATE_MCP_HOST_TOKENS");
+    expect(text).not.toContain("glpat-from-env-abc");
+    expect(text).not.toContain("rnv-from-env-abc");
+    const dumped = JSON.parse(await readFile(argvDump, "utf8")) as { args: string[] };
+    expect(dumped.args.some((a) => a.startsWith("--dry-run="))).toBe(false);
+  });
+
+  it("sends a RENOVATE_MCP_HOST_TOKENS entry to an endpoint only the call names, forwarding the nested-group repository as-is", async () => {
+    const argvDump = path.join(repo, "argv.json");
+    const fakeBin = await makeArgvEnvDump(repo);
+    session = await startServer({
+      RENOVATE_BIN: fakeBin,
+      GITLAB_TOKEN: "glpat-public",
+      RENOVATE_MCP_HOST_TOKENS: JSON.stringify([{ matchHost: "gitlab.example.com", hostType: "gitlab", tokenEnv: "ACME_GL" }]),
+      ACME_GL: "glpat-entry",
       FAKE_RENOVATE_ARGV_DUMP: argvDump,
     });
 
@@ -783,13 +833,34 @@ process.exit(0);
     });
 
     expect(res.result?.isError).toBeFalsy();
-    const dumped = JSON.parse(await readFile(argvDump, "utf8")) as {
-      args: string[];
-      renovateToken: string | null;
-    };
-    expect(dumped.renovateToken).toBe("glpat-from-env-abc");
-    // Nested-group repository path is forwarded as-is.
+    const dumped = JSON.parse(await readFile(argvDump, "utf8")) as { args: string[]; renovateToken: string | null };
+    expect(dumped.renovateToken).toBe("glpat-entry");
     expect(dumped.args).toContain("infrastructure/k8s/our-platform");
+  });
+
+  it("never moves RENOVATE_TOKEN of another RENOVATE_PLATFORM to the call's platform", async () => {
+    const argvDump = path.join(repo, "argv.json");
+    const fakeBin = await makeArgvEnvDump(repo);
+    session = await startServer({
+      RENOVATE_BIN: fakeBin,
+      RENOVATE_PLATFORM: "github",
+      RENOVATE_ENDPOINT: "https://ghe.example.com/api/v3/",
+      RENOVATE_TOKEN: "ghe-token-must-stay",
+      FAKE_RENOVATE_ARGV_DUMP: argvDump,
+    });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: { repoPath: repo, platform: "gitlab", repository: "devops/gitops" },
+    });
+
+    expect(res.result?.isError).toBe(true);
+    expect(res.result!.content[0]!.text).toMatch(/No auth token found/);
+    const dumped = JSON.parse(await readFile(argvDump, "utf8")) as { args: string[] };
+    expect(dumped.args.some((a) => a.startsWith("--dry-run="))).toBe(false);
   });
 
   it("auto-translates GITHUB_TOKEN to RENOVATE_TOKEN when platform=github and no token input", async () => {
@@ -821,11 +892,12 @@ process.exit(0);
     expect(dumped.renovateToken).toBe("ghp-from-env-xyz");
   });
 
-  it("prefers RENOVATE_TOKEN env over GITLAB_TOKEN when both are set", async () => {
+  it("prefers RENOVATE_TOKEN over GITLAB_TOKEN on the RENOVATE_PLATFORM home host, as Renovate does", async () => {
     const argvDump = path.join(repo, "argv.json");
     const fakeBin = await makeArgvEnvDump(repo);
     session = await startServer({
       RENOVATE_BIN: fakeBin,
+      RENOVATE_PLATFORM: "gitlab",
       RENOVATE_TOKEN: "renovate-wins",
       GITLAB_TOKEN: "gitlab-loses",
       FAKE_RENOVATE_ARGV_DUMP: argvDump,
@@ -848,6 +920,146 @@ process.exit(0);
       renovateToken: string | null;
     };
     expect(dumped.renovateToken).toBe("renovate-wins");
+  });
+
+  it("uses GITLAB_TOKEN, not RENOVATE_TOKEN, for a gitlab run when RENOVATE_PLATFORM is unset", async () => {
+    const argvDump = path.join(repo, "argv.json");
+    const fakeBin = await makeArgvEnvDump(repo);
+    session = await startServer({
+      RENOVATE_BIN: fakeBin,
+      RENOVATE_TOKEN: "renovate-unbound",
+      GITLAB_TOKEN: "gitlab-public",
+      FAKE_RENOVATE_ARGV_DUMP: argvDump,
+    });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: { repoPath: repo, platform: "gitlab", repository: "devops/gitops" },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    const dumped = JSON.parse(await readFile(argvDump, "utf8")) as { renovateToken: string | null };
+    expect(dumped.renovateToken).toBe("gitlab-public");
+  });
+
+  it("falls back to RENOVATE_TOKEN for a remote run when the platform's own token is unset", async () => {
+    const argvDump = path.join(repo, "argv.json");
+    const fakeBin = await makeArgvEnvDump(repo);
+    session = await startServer({
+      RENOVATE_BIN: fakeBin,
+      RENOVATE_TOKEN: "renovate-home",
+      RENOVATE_PLATFORM: "gitlab",
+      RENOVATE_ENDPOINT: "https://gitlab.example.com/api/v4/",
+      FAKE_RENOVATE_ARGV_DUMP: argvDump,
+    });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: {
+        repoPath: repo,
+        platform: "gitlab",
+        repository: "devops/gitops",
+      },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    const dumped = JSON.parse(await readFile(argvDump, "utf8")) as { renovateToken: string | null };
+    expect(dumped.renovateToken).toBe("renovate-home");
+  });
+
+  it("binds GITLAB_TOKEN to RENOVATE_ENDPOINT when the endpoint input is unset and the platform input equals RENOVATE_PLATFORM", async () => {
+    const argvDump = path.join(repo, "argv.json");
+    const fakeBin = await makeArgvEnvDump(repo);
+    session = await startServer({
+      RENOVATE_BIN: fakeBin,
+      RENOVATE_PLATFORM: "gitlab",
+      RENOVATE_ENDPOINT: "https://gitlab.example.com/api/v4/",
+      GITLAB_TOKEN: "glpat-self-hosted",
+      FAKE_RENOVATE_ARGV_DUMP: argvDump,
+    });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: { repoPath: repo, platform: "gitlab", repository: "devops/gitops" },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    const dumped = JSON.parse(await readFile(argvDump, "utf8")) as {
+      args: string[];
+      renovateToken: string | null;
+      renovateConfig: { hostRules: Array<Record<string, string>> } | null;
+    };
+    expect(dumped.renovateToken).toBe("glpat-self-hosted");
+    expect(dumped.args).toContain("--endpoint=https://gitlab.example.com/api/v4/");
+    // The platform rule covers the endpoint host, so no GITLAB_TOKEN rule is written.
+    expect(dumped.renovateConfig).toBeNull();
+  });
+
+  it("ignores RENOVATE_ENDPOINT when the platform input differs from RENOVATE_PLATFORM, and keeps it from the child", async () => {
+    const argvDump = path.join(repo, "argv.json");
+    const fakeBin = await makeArgvEnvDump(repo);
+    session = await startServer({
+      RENOVATE_BIN: fakeBin,
+      RENOVATE_PLATFORM: "github",
+      RENOVATE_ENDPOINT: "https://ghe.example.com/api/v3/",
+      GITLAB_TOKEN: "glpat-public",
+      FAKE_RENOVATE_ARGV_DUMP: argvDump,
+    });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: { repoPath: repo, platform: "gitlab", repository: "devops/gitops" },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    const dumped = JSON.parse(await readFile(argvDump, "utf8")) as {
+      args: string[];
+      renovateToken: string | null;
+      renovateEndpoint: string | null;
+    };
+    expect(dumped.args.some((a) => a.startsWith("--endpoint="))).toBe(false);
+    expect(dumped.renovateEndpoint).toBeNull();
+    // GITLAB_TOKEN stays bound to gitlab.com, the API host of this run.
+    expect(dumped.renovateToken).toBe("glpat-public");
+  });
+
+  it("refuses a github run when only GITLAB_TOKEN is set, before spawning", async () => {
+    const argvDump = path.join(repo, "argv.json");
+    const fakeBin = await makeArgvEnvDump(repo);
+    session = await startServer({
+      RENOVATE_BIN: fakeBin,
+      GITLAB_TOKEN: "glpat-wrong-platform",
+      FAKE_RENOVATE_ARGV_DUMP: argvDump,
+    });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: { repoPath: repo, platform: "github", repository: "acme/widgets" },
+    });
+
+    expect(res.result?.isError).toBe(true);
+    const text = res.result!.content[0]!.text;
+    expect(text).toMatch(/No auth token found/);
+    expect(text).toMatch(/tried `GITHUB_TOKEN`\)/);
+    expect(text).toMatch(/`RENOVATE_TOKEN` with `RENOVATE_PLATFORM`/);
+    expect(text).not.toContain("glpat-wrong-platform");
+    const dumped = JSON.parse(await readFile(argvDump, "utf8")) as { args: string[] };
+    expect(dumped.args.some((a) => a.startsWith("--dry-run="))).toBe(false);
   });
 
   it("explicit token input wins over GITLAB_TOKEN env", async () => {
@@ -879,12 +1091,13 @@ process.exit(0);
     expect(dumped.renovateToken).toBe("input-token-wins");
   });
 
-  it("does NOT auto-translate GITLAB_TOKEN when platform=local (only matching remote platform triggers fallback)", async () => {
+  it("under platform=local, exports no RENOVATE_TOKEN even when the server env has one, and binds GITLAB_TOKEN to gitlab.com as a host rule", async () => {
     const argvDump = path.join(repo, "argv.json");
     const fakeBin = await makeArgvEnvDump(repo);
     session = await startServer({
       RENOVATE_BIN: fakeBin,
-      GITLAB_TOKEN: "should-not-be-promoted",
+      GITLAB_TOKEN: "glpat-public-gitlab",
+      RENOVATE_TOKEN: "renovate-env-token",
       FAKE_RENOVATE_ARGV_DUMP: argvDump,
     });
 
@@ -900,10 +1113,15 @@ process.exit(0);
     const dumped = JSON.parse(await readFile(argvDump, "utf8")) as {
       args: string[];
       renovateToken: string | null;
+      renovateConfig: { hostRules: unknown[] } | null;
     };
     expect(dumped.args).toContain("--platform=local");
-    // No childEnv override in local mode — RENOVATE_TOKEN stays unset for the child.
+    // Renovate's platform rule under local has hostType "local" and no host,
+    // so the inherited RENOVATE_TOKEN is removed from the child env.
     expect(dumped.renovateToken).toBeNull();
+    expect(dumped.renovateConfig).toEqual({
+      hostRules: [{ hostType: "gitlab", matchHost: "gitlab.com", token: "glpat-public-gitlab" }],
+    });
   });
 
   it("preflight: errors before spawning when remote platform is selected and no token can be resolved", async () => {
@@ -933,8 +1151,9 @@ process.exit(0);
     expect(res.result?.isError).toBe(true);
     const text = res.result!.content[0]!.text;
     expect(text).toMatch(/No auth token found/);
+    expect(text).toMatch(/no env token is bound to `gitlab\.example\.com` \(tried none\)/);
+    expect(text).toMatch(/RENOVATE_MCP_HOST_TOKENS/);
     expect(text).toMatch(/RENOVATE_TOKEN/);
-    expect(text).toMatch(/GITLAB_TOKEN/);
     expect(text).toMatch(/check_setup/);
     // The fake gets invoked once at startup with `--version` (by check_setup);
     // dry_run must not have run it again with the dry-run flags.
@@ -972,6 +1191,297 @@ process.exit(1);
     const text = res.result!.content[0]!.text;
     expect(text).not.toContain("glpat-leaky-987");
     expect(text).toContain("[REDACTED]");
+  });
+
+  describe("automatic host rules from env tokens", () => {
+    interface Dump {
+      args: string[];
+      renovateToken: string | null;
+      renovateConfigFile: string | null;
+      renovateConfig: { hostRules: Array<Record<string, unknown>> } | null;
+      additionalConfigFile: string | null;
+      additionalConfig: { hostRules: Array<Record<string, unknown>> } | null;
+    }
+    let argvDump: string;
+
+    async function run(env: Record<string, string>, args: Record<string, unknown>) {
+      argvDump = path.join(repo, "argv.json");
+      const fakeBin = await makeArgvEnvDump(repo);
+      session = await startServer({ RENOVATE_BIN: fakeBin, FAKE_RENOVATE_ARGV_DUMP: argvDump, ...env });
+      return session.request<{
+        content: Array<{ type: string; text: string }>;
+        isError?: boolean;
+      }>("tools/call", { name: "dry_run", arguments: { repoPath: repo, ...args } });
+    }
+    const dump = async () => JSON.parse(await readFile(argvDump, "utf8")) as Dump;
+    const warnings = (res: { result?: { content: Array<{ text: string }> } }) =>
+      (JSON.parse(res.result!.content[0]!.text) as { warnings?: string[] }).warnings ?? [];
+
+    it("writes per-platform tokens on their bare hosts, then host-token entries, then per-call rules, and removes the file and its directory", async () => {
+      const res = await run(
+        {
+          GITHUB_TOKEN: "ghp-public",
+          GITLAB_TOKEN: "glpat-public",
+          RENOVATE_MCP_HOST_TOKENS: JSON.stringify([
+            { matchHost: "npm.example.com", hostType: "npm", tokenEnv: "ACME_NPM" },
+          ]),
+          ACME_NPM: "npm-secret",
+        },
+        { hostRules: [{ matchHost: "registry.example.com", token: "per-call-secret" }] },
+      );
+      expect(res.result?.isError).toBeFalsy();
+      const dumped = await dump();
+      expect(dumped.renovateConfig).toEqual({
+        hostRules: [
+          { hostType: "github", matchHost: "github.com", token: "ghp-public" },
+          { hostType: "gitlab", matchHost: "gitlab.com", token: "glpat-public" },
+          { hostType: "npm", matchHost: "npm.example.com", token: "npm-secret" },
+          { matchHost: "registry.example.com", token: "per-call-secret" },
+        ],
+      });
+      await expect(access(path.dirname(dumped.renovateConfigFile!))).rejects.toBeDefined();
+    });
+
+    it("leaves out the rule the platform rule covers on a remote run, and binds the platform token to the env endpoint host", async () => {
+      const res = await run(
+        {
+          GITLAB_TOKEN: "glpat-self-hosted",
+          GITHUB_TOKEN: "ghp-public",
+          RENOVATE_PLATFORM: "gitlab",
+          RENOVATE_ENDPOINT: "https://gitlab.example.com/api/v4/",
+        },
+        { repository: "devops/gitops" },
+      );
+      expect(res.result?.isError).toBeFalsy();
+      const dumped = await dump();
+      expect(dumped.renovateToken).toBe("glpat-self-hosted");
+      // Renovate adds {gitlab, gitlab.example.com} from RENOVATE_TOKEN itself,
+      // last, so it wins; the GITLAB_TOKEN rule there would only duplicate it.
+      expect(dumped.renovateConfig).toEqual({
+        hostRules: [{ hostType: "github", matchHost: "github.com", token: "ghp-public" }],
+      });
+    });
+
+    it("leaves out the github.com rule on a github remote run, whose platform rule sits on api.github.com", async () => {
+      const res = await run(
+        { GITHUB_TOKEN: "ghp-public", GITLAB_TOKEN: "glpat-public" },
+        { platform: "github", repository: "acme/widgets" },
+      );
+      expect(res.result?.isError).toBeFalsy();
+      const dumped = await dump();
+      expect(dumped.renovateToken).toBe("ghp-public");
+      expect(dumped.renovateConfig).toEqual({
+        hostRules: [{ hostType: "gitlab", matchHost: "gitlab.com", token: "glpat-public" }],
+      });
+    });
+
+    it("moves GITHUB_TOKEN to the GitHub Enterprise home of a GHE run, so github.com gets no rule", async () => {
+      const res = await run(
+        {
+          GITHUB_TOKEN: "ghp-public",
+          RENOVATE_PLATFORM: "github",
+          RENOVATE_ENDPOINT: "https://ghe.example.com/api/v3/",
+          RENOVATE_TOKEN: "ghe-token",
+        },
+        { repository: "acme/widgets" },
+      );
+      expect(res.result?.isError).toBeFalsy();
+      const dumped = await dump();
+      expect(dumped.renovateToken).toBe("ghe-token");
+      // The only github rule is on ghe.example.com, which the platform rule covers.
+      expect(dumped.renovateConfig).toBeNull();
+    });
+
+    it("binds RENOVATE_TOKEN to the env home host in a local run, never to the origin", async () => {
+      const res = await run(
+        { RENOVATE_TOKEN: "rnv-home", RENOVATE_PLATFORM: "gitlab", RENOVATE_ENDPOINT: "https://gitlab.example.com/api/v4/" },
+        { platform: "local" },
+      );
+      expect(res.result?.isError).toBeFalsy();
+      const dumped = await dump();
+      expect(dumped.renovateToken).toBeNull();
+      expect(dumped.renovateConfig).toEqual({
+        hostRules: [{ hostType: "gitlab", matchHost: "gitlab.example.com", token: "rnv-home" }],
+      });
+    });
+
+    it("leaves out an automatic rule that a per-call rule with the same hostType and matchHost replaces", async () => {
+      const res = await run(
+        { GITLAB_TOKEN: "glpat-env" },
+        { hostRules: [{ hostType: "gitlab", matchHost: "gitlab.com", token: "per-call-gl" }] },
+      );
+      expect(res.result?.isError).toBeFalsy();
+      expect((await dump()).renovateConfig).toEqual({
+        hostRules: [{ hostType: "gitlab", matchHost: "gitlab.com", token: "per-call-gl" }],
+      });
+    });
+
+    it("keeps the automatic rule when the same-host per-call rule carries no credential", async () => {
+      const res = await run(
+        { GITLAB_TOKEN: "glpat-env" },
+        { hostRules: [{ hostType: "gitlab", matchHost: "gitlab.com", timeout: 5000 }] },
+      );
+      expect(res.result?.isError).toBeFalsy();
+      expect((await dump()).renovateConfig).toEqual({
+        hostRules: [
+          { hostType: "gitlab", matchHost: "gitlab.com", token: "glpat-env" },
+          { hostType: "gitlab", matchHost: "gitlab.com", timeout: 5000 },
+        ],
+      });
+    });
+
+    it("does not write GITHUB_COM_TOKEN: Renovate reads it from env itself", async () => {
+      const res = await run({ GITHUB_COM_TOKEN: "ghp-com" }, {});
+      expect(res.result?.isError).toBeFalsy();
+      expect((await dump()).renovateConfigFile).toBeNull();
+    });
+
+    it("skips a host-token entry whose variable is unset, with a warning naming the variable", async () => {
+      const res = await run(
+        {
+          RENOVATE_MCP_HOST_TOKENS: JSON.stringify([
+            { matchHost: "gitlab.example.com", hostType: "gitlab", tokenEnv: "ACME_UNSET" },
+          ]),
+        },
+        {},
+      );
+      expect(res.result?.isError).toBeFalsy();
+      expect((await dump()).renovateConfigFile).toBeNull();
+      expect(warnings(res).some((w) => w.includes("ACME_UNSET"))).toBe(true);
+    });
+
+    it("refuses a malformed RENOVATE_MCP_HOST_TOKENS before spawning, without echoing it", async () => {
+      const res = await run({ RENOVATE_MCP_HOST_TOKENS: '[{"matchHost":"x","token":"glpat-leak"}]' }, {});
+      expect(res.result?.isError).toBe(true);
+      const text = res.result!.content[0]!.text;
+      expect(text).toMatch(/RENOVATE_MCP_HOST_TOKENS\[0\]/);
+      expect(text).not.toContain("glpat-leak");
+      expect((await dump()).args.some((a) => a.startsWith("--dry-run="))).toBe(false);
+    });
+
+    it("scrubs automatic host-rule tokens from logTail", async () => {
+      const leakyBin = path.join(repo, "leaky-auto.mjs");
+      await writeFile(
+        leakyBin,
+        `#!/usr/bin/env node
+process.stderr.write("401 for gitlab.com with glpat-auto-leak-555\\n");
+process.exit(1);
+`,
+      );
+      await chmod(leakyBin, 0o755);
+      session = await startServer({ RENOVATE_BIN: leakyBin, GITLAB_TOKEN: "glpat-auto-leak-555" });
+      const res = await session.request<{ content: Array<{ text: string }>; isError?: boolean }>("tools/call", {
+        name: "dry_run",
+        arguments: { repoPath: repo },
+      });
+      const text = res.result!.content[0]!.text;
+      expect(text).not.toContain("glpat-auto-leak-555");
+      expect(text).toContain("[REDACTED]");
+    });
+
+    it("scrubs GITHUB_COM_TOKEN from logTail", async () => {
+      const leakyBin = path.join(repo, "leaky-com.mjs");
+      await writeFile(
+        leakyBin,
+        `#!/usr/bin/env node
+process.stderr.write("401 for api.github.com with ghp-com-leak-777\\n");
+process.exit(1);
+`,
+      );
+      await chmod(leakyBin, 0o755);
+      session = await startServer({ RENOVATE_BIN: leakyBin, GITHUB_COM_TOKEN: "ghp-com-leak-777" });
+      const res = await session.request<{ content: Array<{ text: string }>; isError?: boolean }>("tools/call", {
+        name: "dry_run",
+        arguments: { repoPath: repo },
+      });
+      const text = res.result!.content[0]!.text;
+      expect(text).not.toContain("ghp-com-leak-777");
+      expect(text).toContain("[REDACTED]");
+    });
+
+    it("scrubs tokens from the inline report, reportErrors and a saved reportOutputPath", async () => {
+      const leakyBin = path.join(repo, "leaky-report.mjs");
+      await writeFile(
+        leakyBin,
+        `#!/usr/bin/env node
+import { writeFileSync } from 'node:fs';
+const reportArg = process.argv.slice(2).find((a) => a.startsWith('--report-path='));
+if (reportArg) writeFileSync(reportArg.slice('--report-path='.length), JSON.stringify({
+  problems: [{ level: 50, msg: 'auth failed with glpat-report-leak-888' }],
+  repositories: { local: { branches: [{ prBody: 'token glpat-report-leak-888 and ghp-com-report-999' }] } },
+}));
+process.exit(0);
+`,
+      );
+      await chmod(leakyBin, 0o755);
+      const saved = path.join(repo, "saved-report.json");
+      session = await startServer({
+        RENOVATE_BIN: leakyBin,
+        GITLAB_TOKEN: "glpat-report-leak-888",
+        GITHUB_COM_TOKEN: "ghp-com-report-999",
+      });
+      const inline = await session.request<{ content: Array<{ text: string }>; isError?: boolean }>("tools/call", {
+        name: "dry_run",
+        arguments: { repoPath: repo },
+      });
+      const text = inline.result!.content[0]!.text;
+      expect(text).not.toContain("glpat-report-leak-888");
+      expect(text).not.toContain("ghp-com-report-999");
+      expect(JSON.parse(text).reportErrors).toEqual([{ level: 50, msg: "auth failed with [REDACTED]" }]);
+
+      await session.request("tools/call", { name: "dry_run", arguments: { repoPath: repo, reportOutputPath: saved } });
+      const onDisk = await readFile(saved, "utf8");
+      expect(onDisk).not.toContain("glpat-report-leak-888");
+      expect(onDisk).toContain("[REDACTED]");
+    });
+
+    it("with an operator RENOVATE_CONFIG_FILE, delivers automatic and per-call rules through RENOVATE_ADDITIONAL_CONFIG_FILE", async () => {
+      const res = await run(
+        { RENOVATE_CONFIG_FILE: "/etc/renovate/config.js", GITLAB_TOKEN: "glpat-public" },
+        { hostRules: [{ matchHost: "registry.example.com", token: "per-call-secret" }] },
+      );
+      expect(res.result?.isError).toBeFalsy();
+      const dumped = await dump();
+      expect(dumped.renovateConfigFile).toBe("/etc/renovate/config.js");
+      expect(dumped.additionalConfig).toEqual({
+        hostRules: [
+          { hostType: "gitlab", matchHost: "gitlab.com", token: "glpat-public" },
+          { matchHost: "registry.example.com", token: "per-call-secret" },
+        ],
+      });
+      await expect(access(path.dirname(dumped.additionalConfigFile!))).rejects.toBeDefined();
+    });
+
+    it("with both operator config files set, skips the automatic rules with a warning and leaves both files alone", async () => {
+      const res = await run(
+        {
+          RENOVATE_CONFIG_FILE: "/etc/renovate/config.js",
+          RENOVATE_ADDITIONAL_CONFIG_FILE: "/etc/renovate/extra.json",
+          GITLAB_TOKEN: "glpat-public",
+        },
+        {},
+      );
+      expect(res.result?.isError).toBeFalsy();
+      const dumped = await dump();
+      expect(dumped.renovateConfigFile).toBe("/etc/renovate/config.js");
+      expect(dumped.additionalConfigFile).toBe("/etc/renovate/extra.json");
+      expect(warnings(res).some((w) => /RENOVATE_ADDITIONAL_CONFIG_FILE/.test(w) && /skipped/.test(w))).toBe(true);
+    });
+
+    it("with both operator config files set, refuses per-call hostRules before spawning", async () => {
+      const res = await run(
+        {
+          RENOVATE_CONFIG_FILE: "/etc/renovate/config.js",
+          RENOVATE_ADDITIONAL_CONFIG_FILE: "/etc/renovate/extra.json",
+        },
+        { hostRules: [{ matchHost: "registry.example.com", token: "t0k3n" }] },
+      );
+      expect(res.result?.isError).toBe(true);
+      const text = res.result!.content[0]!.text;
+      expect(text).toContain("/etc/renovate/config.js");
+      expect(text).toContain("/etc/renovate/extra.json");
+      expect((await dump()).args.some((a) => a.startsWith("--dry-run="))).toBe(false);
+    });
   });
 });
 
@@ -1760,13 +2270,12 @@ process.exit(0);
       });
     });
 
-    it("refuses hostRules instead of silently overriding the operator's config", async () => {
+    it("keeps the operator's config and adds per-call hostRules through RENOVATE_ADDITIONAL_CONFIG_FILE", async () => {
       const res = await call({ hostRules: [{ matchHost: "registry.acme.corp", token: "t0k3n" }] });
-      expect(res.result?.isError).toBe(true);
-      const text = res.result!.content[0]!.text;
-      expect(text).toContain("RENOVATE_CONFIG_FILE");
-      expect(text).toContain(operatorConfig);
-      expect(await spawnedDryRun(argvDump)).toBe(false);
+      expect(res.result?.isError).toBeFalsy();
+      const dumped = JSON.parse(await readFile(argvDump, "utf8")) as { configFileEnv?: string };
+      expect(dumped.configFileEnv).toBe(operatorConfig);
+      expect(await spawnedDryRun(argvDump)).toBe(true);
     });
 
     it("passes the operator's RENOVATE_CONFIG_FILE through when no hostRules are given", async () => {

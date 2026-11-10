@@ -1,27 +1,33 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
-import { randomUUID } from "node:crypto";
 
 export type HostRule = Record<string, unknown>;
 
 /**
- * Write a throwaway Renovate config containing just `{ hostRules: [...] }` to
- * `os.tmpdir()` with mode 0600, and return the absolute path. The caller is
- * responsible for unlinking the file (in a `finally` block) once Renovate has
- * consumed it — we do not keep a reference here.
+ * Write a throwaway Renovate config containing just `{ hostRules: [...] }` and
+ * return its absolute path. The file sits alone in a fresh `mkdtemp`
+ * directory (mode 0700) under `os.tmpdir()` and is created with `wx` and mode
+ * 0600: it holds env tokens on most runs, so no other local user may read it
+ * or plant a file at the path first. The caller removes it with
+ * `removeHostRulesConfig` (in a `finally` block) once Renovate has consumed it.
  *
- * The caller points Renovate at this file via the `RENOVATE_CONFIG_FILE` env
- * var (not a CLI flag — `--config-file` is not a real Renovate option).
- * Renovate merges its rules with any repo-level `hostRules` via array
- * concatenation (most-specific match wins), so callers can combine
- * per-invocation credentials with whatever the repo itself already declares.
+ * The caller points Renovate at this file via the `RENOVATE_CONFIG_FILE` (or
+ * `RENOVATE_ADDITIONAL_CONFIG_FILE`) env var, not a CLI flag — `--config-file`
+ * is not a real Renovate option. Renovate concatenates its rules with any
+ * other `hostRules`, so callers can combine per-invocation credentials with
+ * whatever the repo itself already declares.
  */
 export async function writeHostRulesConfig(hostRules: HostRule[]): Promise<string> {
-  const tmpPath = path.join(tmpdir(), `renovate-mcp-hostrules-${randomUUID()}.json`);
-  const body = JSON.stringify({ hostRules }, null, 2);
-  await fs.writeFile(tmpPath, body, { mode: 0o600 });
+  const dir = await fs.mkdtemp(path.join(tmpdir(), "renovate-mcp-hostrules-"));
+  const tmpPath = path.join(dir, "config.json");
+  await fs.writeFile(tmpPath, JSON.stringify({ hostRules }, null, 2), { flag: "wx", mode: 0o600 });
   return tmpPath;
+}
+
+/** Remove a file written by `writeHostRulesConfig` together with its directory. */
+export async function removeHostRulesConfig(filePath: string): Promise<void> {
+  await fs.rm(path.dirname(filePath), { recursive: true, force: true });
 }
 
 const SECRET_KEYS = ["token", "password"] as const;
