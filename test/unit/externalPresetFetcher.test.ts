@@ -912,3 +912,80 @@ describe("fetchExternalPreset — unsupported sources", () => {
       expect(result.reason).toMatch(/not supported by resolve_config/i);
   });
 });
+
+describe("fetchExternalPreset — path traversal guard", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  async function expectRejected(parsed: ParsedPreset, platform: string): Promise<void> {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
+    const result = await fetchExternalPreset(parsed, { fetchImpl });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toMatch(new RegExp(`Invalid ${platform} preset`));
+  }
+
+  it.each([
+    "github>a/../../user?",
+    "github>a/../../orgs/o/members?",
+    "github>a/..",
+    "github>./b",
+    "github>a/b/c",
+    "github>acme/cfg//../../../user",
+    "github>acme/cfg//nested/../../x",
+    "github>acme/cfg//nested//x",
+  ])("rejects %s without fetching", async (spec) => {
+    await expectRejected(parsePreset(spec), "github");
+  });
+
+  it("rejects a traversing local> preset routed through github", async () => {
+    await expectRejected({ ...parsePreset("local>a/../../user?"), source: "github" }, "github");
+  });
+
+  it("still fetches repos whose names merely start with dots", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
+    await fetchExternalPreset(parsePreset("github>acme/.github"), { fetchImpl });
+    expect(fetchImpl.mock.calls[0]![0]).toBe(
+      "https://api.github.com/repos/acme/.github/contents/default.json?ref=HEAD",
+    );
+  });
+
+  it("percent-encodes github repo path segments", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
+    await fetchExternalPreset(parsePreset("github>acme/c?fg"), { fetchImpl });
+    expect(fetchImpl.mock.calls[0]![0]).toBe(
+      "https://api.github.com/repos/acme/c%3Ffg/contents/default.json?ref=HEAD",
+    );
+  });
+
+  it.each(["gitea>a/..", "gitea>acme/cfg//../../../user", "forgejo>../b"])(
+    "rejects %s without fetching",
+    async (spec) => {
+      const platform = spec.split(">")[0]!;
+      await expectRejected(parsePreset(spec), platform);
+    },
+  );
+
+  it.each(["a/..", "acme/cfg//../../x", "acme/cfg#..", "acme/cfg#.", "acme/cfg#"])(
+    "rejects bitbucket local>%s without fetching",
+    async (spec) => {
+      await expectRejected({ ...parsePreset(`local>${spec}`), source: "bitbucket" }, "bitbucket");
+    },
+  );
+
+  it.each(["gitlab>..", "gitlab>.", "gitlab>group/../x", "gitlab>foo", "gitlab>a//b"])(
+    "rejects %s without fetching",
+    async (spec) => {
+      await expectRejected(parsePreset(spec), "gitlab");
+    },
+  );
+
+  it("still fetches nested gitlab groups", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
+    await fetchExternalPreset(parsePreset("gitlab>group/sub/project"), { fetchImpl });
+    expect(fetchImpl.mock.calls[0]![0]).toBe(
+      "https://gitlab.com/api/v4/projects/group%2Fsub%2Fproject/repository/files/default.json/raw?ref=HEAD",
+    );
+  });
+});

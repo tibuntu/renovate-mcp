@@ -94,19 +94,39 @@ function dispatch(parsed: ParsedPreset, options: FetchOptions): Promise<FetchRes
 
 type Platform = FetchPlatform;
 
+/** GitHub, Gitea and Bitbucket address repositories as exactly two path segments (nested groups are a GitLab thing). */
+const OWNER_REPO_RE = /^[^/]+\/[^/]+$/;
+/** GitLab projects live under a namespace that may itself be nested (`group/sub/project`). */
+const GITLAB_PROJECT_RE = /^[^/]+(\/[^/]+)+$/;
+
+/**
+ * Rejects empty, `.` and `..` segments. URL parsing collapses dot segments
+ * (also when spelled `%2e`), and `encodeURIComponent` leaves `.` alone, so
+ * without this a preset string could steer a token-bearing request to any
+ * path on the API host.
+ */
+function isSafePath(path: string): boolean {
+  return path.split("/").every((seg) => seg !== "" && seg !== "." && seg !== "..");
+}
+
 async function fetchGitHub(
   parsed: ParsedPreset,
   timeoutMs: number,
   fetchImpl: typeof fetch,
   endpoint: string | undefined,
 ): Promise<FetchResult> {
-  if (!parsed.repoPath || !parsed.repoPath.includes("/")) {
+  const file = presetFileName(parsed);
+  if (
+    !parsed.repoPath ||
+    !OWNER_REPO_RE.test(parsed.repoPath) ||
+    !isSafePath(parsed.repoPath) ||
+    !isSafePath(file)
+  ) {
     return { ok: false, reason: `Invalid github preset: ${parsed.original}` };
   }
-  const file = presetFileName(parsed);
   const ref = parsed.ref ?? "HEAD";
   const apiBase = endpoint ?? DEFAULT_API_BASE.github;
-  const url = `${apiBase}/repos/${parsed.repoPath}/contents/${encodeFilePath(
+  const url = `${apiBase}/repos/${encodeFilePath(parsed.repoPath)}/contents/${encodeFilePath(
     file,
   )}?ref=${encodeURIComponent(ref)}`;
   const credential = resolveCredential(["RENOVATE_TOKEN", "GITHUB_TOKEN"]);
@@ -133,10 +153,15 @@ async function fetchGitLab(
   fetchImpl: typeof fetch,
   endpoint: string | undefined,
 ): Promise<FetchResult> {
-  if (!parsed.repoPath) {
+  const file = presetFileName(parsed);
+  if (
+    !parsed.repoPath ||
+    !GITLAB_PROJECT_RE.test(parsed.repoPath) ||
+    !isSafePath(parsed.repoPath) ||
+    !isSafePath(file)
+  ) {
     return { ok: false, reason: `Invalid gitlab preset: ${parsed.original}` };
   }
-  const file = presetFileName(parsed);
   const ref = parsed.ref ?? "HEAD";
   const apiBase = endpoint ?? DEFAULT_API_BASE.gitlab;
   const url = `${apiBase}/projects/${encodeURIComponent(
@@ -157,9 +182,6 @@ async function fetchGitLab(
   );
 }
 
-/** Gitea and Bitbucket address repositories as exactly two path segments (nested groups are a GitLab thing). */
-const OWNER_REPO_RE = /^[^/]+\/[^/]+$/;
-
 /** Gitea's raw-contents API, which Forgejo serves unchanged; the two differ only in default host and token var. */
 async function fetchGitea(
   parsed: ParsedPreset,
@@ -168,10 +190,15 @@ async function fetchGitea(
   endpoint: string | undefined,
   platform: "gitea" | "forgejo",
 ): Promise<FetchResult> {
-  if (!parsed.repoPath || !OWNER_REPO_RE.test(parsed.repoPath)) {
+  const file = presetFileName(parsed);
+  if (
+    !parsed.repoPath ||
+    !OWNER_REPO_RE.test(parsed.repoPath) ||
+    !isSafePath(parsed.repoPath) ||
+    !isSafePath(file)
+  ) {
     return { ok: false, reason: `Invalid ${platform} preset: ${parsed.original}` };
   }
-  const file = presetFileName(parsed);
   const apiBase = endpoint ?? DEFAULT_API_BASE[platform];
   // No `ref` means the repository's default branch, as in Renovate.
   const refQuery = parsed.ref ? `?ref=${encodeURIComponent(parsed.ref)}` : "";
@@ -208,12 +235,23 @@ async function fetchBitbucket(
   fetchImpl: typeof fetch,
   endpoint: string | undefined,
 ): Promise<FetchResult> {
-  if (!parsed.repoPath || !OWNER_REPO_RE.test(parsed.repoPath)) {
+  const file = presetFileName(parsed);
+  // The ref is a single encoded path segment here (a query parameter elsewhere), so only an
+  // empty or dot ref can shape the path.
+  const rawRef = parsed.ref ?? "HEAD";
+  if (
+    !parsed.repoPath ||
+    !OWNER_REPO_RE.test(parsed.repoPath) ||
+    !isSafePath(parsed.repoPath) ||
+    !isSafePath(file) ||
+    rawRef === "" ||
+    rawRef === "." ||
+    rawRef === ".."
+  ) {
     return { ok: false, reason: `Invalid bitbucket preset: ${parsed.original}` };
   }
-  const file = presetFileName(parsed);
   const apiBase = endpoint ?? DEFAULT_API_BASE.bitbucket;
-  const ref = encodeURIComponent(parsed.ref ?? "HEAD");
+  const ref = encodeURIComponent(rawRef);
   const url = `${apiBase}/2.0/repositories/${encodeFilePath(parsed.repoPath)}/src/${ref}/${encodeFilePath(file)}`;
   const credential = resolveCredential(["RENOVATE_TOKEN", "BITBUCKET_TOKEN"]);
   const headers: Record<string, string> = { "User-Agent": "renovate-mcp" };
