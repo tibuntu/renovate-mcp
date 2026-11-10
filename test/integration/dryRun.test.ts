@@ -603,6 +603,30 @@ process.exit(0);
     expect(text).toMatch(/devops\/bots\/renovate/);
   });
 
+  it("preflight: errors before spawning when config extends a bare owner/repo preset under platform=local", async () => {
+    await writeFile(
+      path.join(repo, "renovate.json"),
+      JSON.stringify({ extends: ["devops/renovate-config"] }),
+    );
+    // Fake that would succeed if invoked, so a passing preflight can't be
+    // mistaken for the tool actually calling Renovate.
+    const fakeBin = await makeArgvEnvDump(repo);
+    session = await startServer({ RENOVATE_BIN: fakeBin });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: { repoPath: repo },
+    });
+
+    expect(res.result?.isError).toBe(true);
+    const text = res.result!.content[0]!.text;
+    expect(text).toMatch(/platform.*gitlab.*github|gitlab.*github/i);
+    expect(text).toMatch(/devops\/renovate-config/);
+  });
+
   it("preflight: does NOT error for dryRunMode=extract even when config extends local> under platform=local", async () => {
     // Manifest-only extraction is the user's escape hatch — let it through
     // and let Renovate produce its own error if it can't resolve the preset.

@@ -13,6 +13,7 @@ import {
 } from "../lib/renovateCli.js";
 import { resolveCredential } from "../lib/credentialResolver.js";
 import { validateEndpoint } from "../lib/endpointValidator.js";
+import { isLocalPreset } from "../lib/presetResolver.js";
 import { locateConfig } from "../lib/configLocations.js";
 import { assertRepoDir, NETWORK_READ_ONLY_ANNOTATIONS } from "../lib/toolInputs.js";
 import { detectLookupProblems } from "../lib/lookupProblems.js";
@@ -125,7 +126,8 @@ function collectReportProblems(report: unknown): CollectedReportProblems {
 
 /**
  * Scan the repo's Renovate config for `extends` entries of the form
- * `local>owner/repo[:preset]` and return them along with the config-file path
+ * `local>owner/repo[:preset]` (or the bare `owner/repo[:preset]` spelling
+ * Renovate also treats as local) and return them along with the config-file path
  * they were found in. Returns `null` if no config is found (Renovate will
  * handle that case itself with its usual error). Silently returns `null` on
  * parse errors too — we don't want preflight to be stricter than Renovate's
@@ -146,7 +148,7 @@ async function detectUnresolvableLocalPresets(
   if (!Array.isArray(extendsRaw)) return null;
 
   const presets = extendsRaw.filter(
-    (entry): entry is string => typeof entry === "string" && entry.startsWith("local>"),
+    (entry): entry is string => typeof entry === "string" && isLocalPreset(entry),
   );
   return { relPath: located.relPath, presets };
 }
