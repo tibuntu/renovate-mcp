@@ -6,6 +6,9 @@ import {
   detectLegacyKeys,
   suppliedFieldsOf,
   MATCHER_META,
+  resolvePackageRules,
+  toMatchedRule,
+  type RuleAnalysis,
 } from "../../src/lib/packageRulesAnalysis.js";
 
 describe("MATCHER_META coverage (tied to the registry)", () => {
@@ -202,5 +205,148 @@ describe("analyzePackageRules — preview fallback", () => {
     const rule = contexts[0]!.rules[0]!;
     expect(rule.matched).toBe(false);
     expect(rule.unevaluatable[0]?.matcher).toBe("matchCurrentVersion");
+  });
+});
+
+describe("analyzePackageRules — preview fallback matching semantics", () => {
+  // Force the preview path by pointing the worker entry at a missing file.
+  function forcePreview() {
+    vi.stubEnv(
+      "RENOVATE_MCP_PACKAGE_RULES_WORKER_ENTRY",
+      resolve(process.cwd(), "dist/lib/does-not-exist.js"),
+    );
+  }
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("reports a decisive non-match alongside a passing matcher, with no contribution", async () => {
+    forcePreview();
+    const rule = { matchPackageNames: ["lodash"], matchManagers: ["npm"], automerge: true };
+    const { matchQuality, contexts } = await analyzePackageRules(
+      [rule],
+      [{ packageName: "react", manager: "npm" }],
+    );
+    expect(matchQuality).toBe("preview");
+    expect(contexts[0]!.rules[0]).toStrictEqual({
+      index: 0,
+      rule,
+      matched: false,
+      matchedBy: ["matchManagers"],
+      decidedBy: ["matchPackageNames"],
+      unevaluatable: [],
+    });
+  });
+
+  it("anchors `*` globs to the whole value", async () => {
+    forcePreview();
+    const rule = { matchPackageNames: ["@babel/*"], automerge: true };
+    const { matchQuality, contexts } = await analyzePackageRules(
+      [rule],
+      [{ packageName: "@babel/core" }, { packageName: "x-@babel/core" }],
+    );
+    expect(matchQuality).toBe("preview");
+    expect(contexts[0]!.rules[0]).toStrictEqual({
+      index: 0,
+      rule,
+      matched: true,
+      matchedBy: ["matchPackageNames"],
+      decidedBy: [],
+      unevaluatable: [],
+      contributedConfig: { automerge: true },
+    });
+    expect(contexts[1]!.rules[0]).toStrictEqual({
+      index: 0,
+      rule,
+      matched: false,
+      matchedBy: [],
+      decidedBy: ["matchPackageNames"],
+      unevaluatable: [],
+    });
+  });
+
+  it("matches matchCategories when any supplied category is listed", async () => {
+    forcePreview();
+    const rule = { matchCategories: ["node"], automerge: true };
+    const { matchQuality, contexts } = await analyzePackageRules(
+      [rule],
+      [{ categories: ["js", "node"] }, { categories: ["python"] }],
+    );
+    expect(matchQuality).toBe("preview");
+    expect(contexts[0]!.rules[0]).toStrictEqual({
+      index: 0,
+      rule,
+      matched: true,
+      matchedBy: ["matchCategories"],
+      decidedBy: [],
+      unevaluatable: [],
+      contributedConfig: { automerge: true },
+    });
+    expect(contexts[1]!.rules[0]).toStrictEqual({
+      index: 0,
+      rule,
+      matched: false,
+      matchedBy: [],
+      decidedBy: ["matchCategories"],
+      unevaluatable: [],
+    });
+  });
+
+  it("strips matcher keys from contributedConfig and toMatchedRule reports it", async () => {
+    forcePreview();
+    const rule = { matchPackageNames: ["lodash"], automerge: true, groupName: "lodash" };
+    const { matchQuality, contexts } = await analyzePackageRules(
+      [rule],
+      [{ packageName: "lodash" }],
+    );
+    expect(matchQuality).toBe("preview");
+    const analysis = contexts[0]!.rules[0]!;
+    expect(analysis.contributedConfig).toStrictEqual({ automerge: true, groupName: "lodash" });
+    expect(toMatchedRule(analysis)).toStrictEqual({
+      index: 0,
+      rule: { matchPackageNames: ["lodash"], automerge: true, groupName: "lodash" },
+      matchedBy: ["matchPackageNames"],
+      contributedConfig: { automerge: true, groupName: "lodash" },
+    });
+  });
+});
+
+describe("toMatchedRule", () => {
+  it("omits contributedConfig entirely when the analysis has none", () => {
+    const analysis: RuleAnalysis = {
+      index: 2,
+      rule: { matchManagers: ["npm"] },
+      matched: false,
+      matchedBy: ["matchManagers"],
+      decidedBy: [],
+      unevaluatable: [],
+    };
+    // toStrictEqual: a `contributedConfig: undefined` key would fail this.
+    expect(toMatchedRule(analysis)).toStrictEqual({
+      index: 2,
+      rule: { matchManagers: ["npm"] },
+      matchedBy: ["matchManagers"],
+    });
+  });
+});
+
+describe("resolvePackageRules", () => {
+  it("keeps only object rules and reports unexpanded presets (offline)", async () => {
+    const { packageRules, warnings } = await resolvePackageRules(
+      {
+        extends: ["github>acme/presets"],
+        packageRules: [
+          { matchPackageNames: ["a"], automerge: true },
+          "junk",
+          null,
+        ] as unknown[],
+      },
+      { fetchExternal: false },
+    );
+    expect(packageRules).toEqual([{ matchPackageNames: ["a"], automerge: true }]);
+    expect(warnings).toEqual([
+      "1 preset(s) could not be expanded, so preset-provided packageRules may be missing: github>acme/presets. See resolve_config for details.",
+    ]);
   });
 });
