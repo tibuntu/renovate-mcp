@@ -138,11 +138,14 @@ describe("parsePreset", () => {
     expect(p.original).toBe("acme/cfg:strict#v1");
   });
 
-  it("keeps a slash-containing entry in a built-in namespace as a built-in lookup", () => {
-    const p = parsePreset("group:foo/bar");
-    expect(p.source).toBeUndefined();
-    expect(p.key).toBe("group:foo/bar");
-  });
+  it.each(["group:foo/bar", "npm:foo/bar", "compatibility:foo/bar"])(
+    "keeps slash-containing %s in a built-in namespace as a built-in lookup",
+    (entry) => {
+      const p = parsePreset(entry);
+      expect(p.source).toBeUndefined();
+      expect(p.key).toBe(entry);
+    },
+  );
 
   it("parses a subpath on a prefix-less owner/repo", () => {
     const p = parsePreset("acme/cfg//p/x");
@@ -155,7 +158,8 @@ describe("parsePreset", () => {
     const p = parsePreset("@scope/pkg:name");
     expect(p.source).toBe("npm");
     expect(p.key).toBe("npm>@scope/pkg:name");
-    expect(p.repoPath).toBe("@scope/pkg:name");
+    expect(p.repoPath).toBe("@scope/pkg");
+    expect(p.presetName).toBe("name");
   });
 
   it.each(["./foo", "../foo", "/foo"])("marks relative preset %s unresolvable", (entry) => {

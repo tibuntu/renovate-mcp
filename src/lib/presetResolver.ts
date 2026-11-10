@@ -416,10 +416,31 @@ const KNOWN_SOURCES = new Set<ExternalSource>([
   "npm",
 ]);
 
-// Namespaces of the committed built-in catalogue. Renovate's parser checks its
-// internal namespaces before treating a slash-containing entry as `local>`, so
-// e.g. `group:foo/bar` stays a built-in lookup.
-const BUILTIN_NAMESPACES = new Set(Object.keys(PRESETS).map((k) => k.split(":", 1)[0]!));
+// Renovate's internal preset namespaces, verbatim from its parser
+// (`config/presets/parse.ts`). It checks these before treating a
+// slash-containing entry as `local>`, so e.g. `group:foo/bar` stays a built-in
+// lookup. Hard-coded rather than derived from the catalogue: `compatibility`
+// and `npm` have no presets but are still internal to the parser.
+const BUILTIN_NAMESPACES = new Set([
+  "abandonments",
+  "compatibility",
+  "config",
+  "customManagers",
+  "default",
+  "docker",
+  "global",
+  "group",
+  "helpers",
+  "mergeConfidence",
+  "monorepo",
+  "npm",
+  "packages",
+  "preview",
+  "replacements",
+  "schedule",
+  "security",
+  "workarounds",
+]);
 
 /** True when Renovate would treat `entry` as a `local>` preset (prefixed or bare `owner/repo`). */
 export function isLocalPreset(entry: string): boolean {
@@ -446,10 +467,12 @@ export function parsePreset(raw: string): ParsedPreset {
     return parseExternal(rest, original, args, srcMatch[1]!.toLowerCase());
   }
 
-  // Entries without a `<source>>` prefix are classified the way Renovate's
-  // preset parser does: relative path, then http(s) URL, then `:`-prefixed
-  // built-in, then `@scope/pkg` npm, then anything else containing `/` (outside a
-  // built-in namespace) as a `local>` preset, and finally `foo:bar` built-in / bare `foo` npm.
+  // Entries without a `<source>>` prefix follow Renovate's preset parser for
+  // the source split: relative path, then http(s) URL, then `:`-prefixed
+  // built-in, then `@scope/pkg` npm, then anything else containing `/` (outside
+  // a built-in namespace) as a `local>` preset. The rest deliberately differs:
+  // any other `foo:bar` is looked up as a built-in (Renovate would try the npm
+  // package `renovate-config-foo`), which gives a clearer typo message.
   if (/^\.{0,2}\//.test(rest)) {
     return {
       key: original,
@@ -470,13 +493,7 @@ export function parsePreset(raw: string): ParsedPreset {
   }
   if (!rest.startsWith(":")) {
     if (rest.startsWith("@")) {
-      return {
-        key: `npm>${rest}`,
-        original,
-        args,
-        source: "npm",
-        repoPath: rest,
-      };
+      return parseExternal(`npm>${rest}`, original, args, "npm");
     }
     if (rest.includes("/") && !BUILTIN_NAMESPACES.has(rest.split(":", 1)[0]!)) {
       return parseExternal(`local>${rest}`, original, args, "local");
