@@ -64,9 +64,11 @@ Following redirects with custom auth headers can leak `RENOVATE_TOKEN` / `GITHUB
 
 ## Preset path validation
 
-External preset fetches validate the parts of a preset string that become URL path segments before any request (and so before any credential is attached): the repository/project path, the preset file path (`:presetName` / `//subpath`) and, for Bitbucket where it is a path segment, the `#ref`. Empty, `.` and `..` segments are rejected, and repository paths must be exactly `owner/repo` on GitHub, Gitea, Forgejo and Bitbucket (GitLab allows nested groups but still needs a namespace). The remaining segments are percent-encoded one by one.
+External preset fetches validate the parts of a preset string that become URL path segments before any request (and so before any credential is attached): the repository/project path, the preset file path (`:presetName` / `//subpath`) and, for Bitbucket where it is a path segment, the `#ref`. Empty, `.` and `..` segments are rejected, and repository paths must be exactly `owner/repo` on GitHub, Gitea, Forgejo and Bitbucket (GitLab allows nested groups but still needs a namespace). The values are then percent-encoded: per segment on GitHub, Gitea, Forgejo and Bitbucket, and as a single escaped component on GitLab.
 
-Without this, URL normalisation would collapse dot segments, so a hostile config read via `repoPath` could reference e.g. `github>a/../../user?` and make the server issue an authenticated `GET https://api.github.com/user` and surface the response as a preset body.
+Without this, URL normalisation would collapse dot segments, so a hostile config in the inspected repository could reference e.g. `github>a/../../user?` and make the server issue an authenticated `GET https://api.github.com/user` and surface the response as a preset body.
+
+This does not stop a config from naming any JSON file in any repository the token can read (e.g. `github>some-org/private-repo//any/file.json`) — that is Renovate's own preset semantics — so only enable `externalPresets` for configs you trust, with a token scoped to what those presets need.
 
 ## Response body caps
 
