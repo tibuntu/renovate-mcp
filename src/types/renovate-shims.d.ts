@@ -21,6 +21,11 @@
 //                                             oracle only (configLocations.ts)
 //   - `dist/config/presets/common.js`      — removed-presets drift test oracle
 //                                             (generate-presets.mjs reads it too)
+//   - `dist/config/presets/index.js`, `dist/config/presets/parse.js`,
+//     `dist/config/massage.js`, `dist/config/validation.js`,
+//     `dist/modules/platform/gitea/utils.js`
+//                                           — ADR-0009 (dry_run preset
+//                                             flattening worker)
 // These shims give `tsc` typed signatures for those entry points.
 declare module "renovate/dist/config/migration.js" {
   export function migrateConfig(
@@ -103,4 +108,35 @@ declare module "renovate/dist/config/app-strings.js" {
 
 declare module "renovate/dist/config/presets/common.js" {
   export const removedPresets: Record<string, string | null>;
+}
+
+declare module "renovate/dist/config/presets/index.js" {
+  export function resolveConfigPresets(
+    inputConfig: Record<string, unknown>,
+  ): Promise<{
+    config: Record<string, unknown>;
+    visitedPresets: { merged: string[]; unmerged: string[] };
+  }>;
+}
+
+declare module "renovate/dist/config/presets/parse.js" {
+  export function parsePreset(input: string): { presetSource: string };
+}
+
+declare module "renovate/dist/config/massage.js" {
+  export function massageConfig(config: Record<string, unknown>): Record<string, unknown>;
+}
+
+declare module "renovate/dist/config/validation.js" {
+  export function validateConfig(
+    configType: "global" | "inherit" | "repo",
+    config: Record<string, unknown>,
+  ): Promise<{
+    errors: Array<{ topic?: string; message?: string }>;
+    warnings: Array<{ topic?: string; message?: string }>;
+  }>;
+}
+
+declare module "renovate/dist/modules/platform/gitea/utils.js" {
+  export function trimTrailingApiPath(url: string): string;
 }

@@ -114,4 +114,37 @@ describe("check_setup", () => {
     // the test host's Node is outside Renovate's declared engines range.
     expect(status.hints.filter((h) => /not reachable/.test(h)).length).toBe(2);
   });
+
+  it("reports host-token entries by variable name and presence, never their values", async () => {
+    session = await startServer(
+      {
+        RENOVATE_BIN: "/bin/echo",
+        RENOVATE_CONFIG_VALIDATOR_BIN: "/bin/echo",
+        RENOVATE_MCP_HOST_TOKENS: JSON.stringify([
+          { matchHost: "gitlab.example.com", hostType: "gitlab", tokenEnv: "ACME_GL" },
+        ]),
+        ACME_GL: "sentinel-host-token-9f3a",
+        GITLAB_TOKEN: "sentinel-gitlab-token-4c1d",
+      },
+      { requestTimeoutMs: 30_000 },
+    );
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", { name: "check_setup", arguments: {} });
+
+    expect(res.result?.isError).toBeFalsy();
+    const text = res.result!.content[0]!.text;
+    expect(text).not.toContain("sentinel-host-token-9f3a");
+    expect(text).not.toContain("sentinel-gitlab-token-4c1d");
+    expect(text).toContain("Host tokens: gitlab.example.com (gitlab) via ACME_GL=set");
+    const status = JSON.parse(extractTrailingJson(text)) as {
+      platformContext: { hostTokens: unknown[]; hostTokensError: string | null };
+    };
+    expect(status.platformContext.hostTokens).toEqual([
+      { matchHost: "gitlab.example.com", hostType: "gitlab", tokenEnv: "ACME_GL", present: true },
+    ]);
+    expect(status.platformContext.hostTokensError).toBeNull();
+  });
 });

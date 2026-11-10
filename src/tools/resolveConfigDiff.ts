@@ -3,7 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { FETCH_PLATFORMS, resolveConfig, type ResolveResult } from "../lib/presetResolver.js";
 import { diffResolvedConfigs } from "../lib/resolveConfigDiff.js";
 import { configRecord, endpointString, pathString } from "../lib/inputLimits.js";
-import { loadConfigSource, NETWORK_READ_ONLY_ANNOTATIONS } from "../lib/toolInputs.js";
+import { hostTokensError, loadConfigSource, NETWORK_READ_ONLY_ANNOTATIONS } from "../lib/toolInputs.js";
 
 const sideSchema = z
   .object({
@@ -48,20 +48,22 @@ export function registerResolveConfigDiff(server: McpServer): void {
           .boolean()
           .optional()
           .describe(
-            "When true, fetch external presets (github>, gitlab>, gitea>, forgejo>) over HTTPS for BOTH sides. Credentials come from RENOVATE_TOKEN (preferred) or GITHUB_TOKEN / GITLAB_TOKEN / GITEA_TOKEN / FORGEJO_TOKEN / BITBUCKET_TOKEN as platform-specific fallbacks, set on the MCP server process. Default false (fully offline).",
+            "When true, fetch external presets (github>, gitlab>, gitea>, forgejo>) over HTTPS for BOTH sides. Tokens are host-scoped as in resolve_config: each platform's token goes only to its own host, RENOVATE_TOKEN only to the RENOVATE_PLATFORM / RENOVATE_ENDPOINT host. Default false (fully offline).",
           ),
         endpoint: endpointString(
-          "API base URL for external preset fetches, applied to both sides. Use for GitHub Enterprise (e.g. https://ghe.example.com/api/v3) or self-hosted GitLab (e.g. https://gitlab.example.com/api/v4).",
+          "API base URL that `local>` presets are fetched from (with `platform`), applied to both sides — e.g. https://gitlab.example.com/api/v4. Does not reroute github>/gitlab>/gitea>/forgejo>.",
         ).optional(),
         platform: z
           .enum(FETCH_PLATFORMS)
           .optional()
           .describe(
-            "Platform flavour of `endpoint`, applied to both sides. When set, `local>owner/repo` presets are fetched as if they were `<platform>>owner/repo`.",
+            "The platform `local>` presets live on, applied to both sides: `local>owner/repo` is fetched as `<platform>>owner/repo`. Routes only; never moves a token.",
           ),
       },
     },
     async ({ before, after, externalPresets, endpoint, platform }) => {
+      const tokensError = hostTokensError(externalPresets);
+      if (tokensError) return { isError: true, content: [{ type: "text", text: tokensError }] };
       const options = { fetchExternal: externalPresets ?? false, endpoint, platform };
       const [beforeRes, afterRes] = await Promise.all([
         resolveSide("before", before, options),

@@ -42,6 +42,8 @@ function buildStatus(overrides: Partial<SetupStatus> = {}): SetupStatus {
         FORGEJO_TOKEN: false,
         BITBUCKET_TOKEN: false,
       },
+      hostTokens: [],
+      hostTokensError: null,
       effectiveDryRunPlatform: "local",
       notes: [],
     },
@@ -278,6 +280,11 @@ describe("describeSetup renovate binary line", () => {
       name: "missing with no error message",
       bin: { command: "renovate", source: "path", found: false },
       line: "renovate: MISSING — unknown error (renovate)",
+    },
+    {
+      name: "missing bundled with no error message",
+      bin: { command: "renovate", source: "bundled", found: false },
+      line: "renovate: MISSING — unknown error (bundled)",
     },
   ])("renders $name", ({ bin, line }) => {
     const lines = renderLines(buildStatus({ renovate: { tool: "renovate", ...bin } }));

@@ -22,6 +22,11 @@ export default defineConfig({
         process.cwd(),
         "dist/lib/packageRulesWorkerImpl.js",
       ),
+      // Same again for dry_run's preset-flattening worker.
+      RENOVATE_MCP_PRESET_FLATTEN_WORKER_ENTRY: resolve(
+        process.cwd(),
+        "dist/lib/presetFlattenWorkerImpl.js",
+      ),
       // Same again for the schedule worker (explain_schedule).
       RENOVATE_MCP_SCHEDULE_WORKER_ENTRY: resolve(
         process.cwd(),

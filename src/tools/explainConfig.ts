@@ -4,6 +4,7 @@ import { explainConfig } from "../lib/configExplainer.js";
 import { configRecord, endpointString, pathString } from "../lib/inputLimits.js";
 import { FETCH_PLATFORMS } from "../lib/presetResolver.js";
 import {
+  hostTokensError,
   loadConfigSource,
   MERGE_PREVIEW_DISCLAIMER,
   EXPLAIN_CONFIG_FAITHFUL_DISCLAIMER,
@@ -32,19 +33,21 @@ export function registerExplainConfig(server: McpServer): void {
             "When true, fetch external presets (github>, gitlab>, gitea>, forgejo>) over HTTPS — same credentials and behaviour as resolve_config. Default false.",
           ),
         endpoint: endpointString(
-          "API base URL for external preset fetches. Use for GitHub Enterprise or self-hosted GitLab — same semantics as resolve_config.",
+          "API base URL that `local>` presets are fetched from (with `platform`); does not reroute github>/gitlab>/gitea>/forgejo> — same semantics as resolve_config.",
         ).optional(),
         platform: z
           .enum(FETCH_PLATFORMS)
           .optional()
           .describe(
-            "Platform flavour of `endpoint`. When set, `local>owner/repo` presets are routed through the same endpoint — same semantics as resolve_config.",
+            "The platform `local>` presets live on — same semantics as resolve_config (routes only; never moves a token).",
           ),
       },
     },
     async ({ repoPath, configContent, externalPresets, endpoint, platform }) => {
       const src = await loadConfigSource({ repoPath, configContent });
       if ("error" in src) return { isError: true, content: [{ type: "text", text: src.error }] };
+      const tokensError = hostTokensError(externalPresets);
+      if (tokensError) return { isError: true, content: [{ type: "text", text: tokensError }] };
 
       const {
         explanation,

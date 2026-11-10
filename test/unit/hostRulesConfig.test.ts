@@ -1,8 +1,10 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { promises as fs } from "node:fs";
 import os from "node:os";
+import path from "node:path";
 import {
   collectSecrets,
+  removeHostRulesConfig,
   scrubSecrets,
   writeHostRulesConfig,
 } from "../../src/lib/hostRulesConfig.js";
@@ -11,8 +13,7 @@ const createdPaths: string[] = [];
 
 afterEach(async () => {
   while (createdPaths.length > 0) {
-    const p = createdPaths.pop()!;
-    await fs.unlink(p).catch(() => undefined);
+    await removeHostRulesConfig(createdPaths.pop()!);
   }
 });
 
@@ -44,6 +45,39 @@ describe("writeHostRulesConfig", () => {
       expect(stat.mode & 0o777).toBe(0o600);
     },
   );
+
+  it.skipIf(process.platform === "win32")(
+    "puts the file alone in a fresh mode-0700 directory, so no other user can swap or read it",
+    async () => {
+      const tmpPath = await writeHostRulesConfig([{ matchHost: "x", token: "t" }]);
+      createdPaths.push(tmpPath);
+      const dir = path.dirname(tmpPath);
+      expect(path.basename(dir)).toMatch(/^renovate-mcp-hostrules-/);
+      expect((await fs.stat(dir)).mode & 0o777).toBe(0o700);
+      expect(await fs.readdir(dir)).toEqual([path.basename(tmpPath)]);
+    },
+  );
+
+  it("gives every call its own directory", async () => {
+    const a = await writeHostRulesConfig([]);
+    const b = await writeHostRulesConfig([]);
+    createdPaths.push(a, b);
+    expect(path.dirname(a)).not.toBe(path.dirname(b));
+  });
+});
+
+describe("removeHostRulesConfig", () => {
+  it("removes the file together with its directory", async () => {
+    const tmpPath = await writeHostRulesConfig([{ matchHost: "x", token: "t" }]);
+    await removeHostRulesConfig(tmpPath);
+    await expect(fs.access(path.dirname(tmpPath))).rejects.toBeDefined();
+  });
+
+  it("does not throw when the directory is already gone", async () => {
+    const tmpPath = await writeHostRulesConfig([]);
+    await removeHostRulesConfig(tmpPath);
+    await expect(removeHostRulesConfig(tmpPath)).resolves.toBeUndefined();
+  });
 });
 
 describe("collectSecrets", () => {
@@ -73,6 +107,10 @@ describe("collectSecrets", () => {
   it("skips empty-string secrets", () => {
     const secrets = collectSecrets([{ matchHost: "a", token: "" }]);
     expect(secrets).toEqual([]);
+  });
+
+  it("skips entries that are not objects", () => {
+    expect(collectSecrets([null as unknown as Record<string, unknown>, "x" as unknown as Record<string, unknown>])).toEqual([]);
   });
 
   it("skips non-string secret values", () => {

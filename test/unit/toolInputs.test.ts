@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { assertRepoDir, loadConfigSource } from "../../src/lib/toolInputs.js";
+import { assertRepoDir, hostTokensError, loadConfigSource } from "../../src/lib/toolInputs.js";
 
 let repo: string;
 
@@ -80,5 +80,30 @@ describe("loadConfigSource", () => {
       config: { extends: ["config:recommended"] },
       path: "renovate.json",
     });
+  });
+});
+
+describe("hostTokensError", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("returns the parse error for a malformed RENOVATE_MCP_HOST_TOKENS when fetching", () => {
+    vi.stubEnv("RENOVATE_MCP_HOST_TOKENS", "[{}]");
+    expect(hostTokensError(true)).toMatch(/RENOVATE_MCP_HOST_TOKENS\[0\]/);
+  });
+
+  it("returns null when nothing is fetched", () => {
+    vi.stubEnv("RENOVATE_MCP_HOST_TOKENS", "[{}]");
+    expect(hostTokensError(false)).toBeNull();
+    expect(hostTokensError(undefined)).toBeNull();
+  });
+
+  it("returns null for a valid or unset var", () => {
+    vi.stubEnv("RENOVATE_MCP_HOST_TOKENS", "");
+    expect(hostTokensError(true)).toBeNull();
+    vi.stubEnv(
+      "RENOVATE_MCP_HOST_TOKENS",
+      JSON.stringify([{ matchHost: "gitlab.example.com", hostType: "gitlab", tokenEnv: "ACME" }]),
+    );
+    expect(hostTokensError(true)).toBeNull();
   });
 });

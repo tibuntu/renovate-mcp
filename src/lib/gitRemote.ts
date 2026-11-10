@@ -55,15 +55,37 @@ export function parseRemoteUrl(url: string): ParsedRemote | null {
 }
 
 /**
- * Read the `[remote "origin"] url = …` field from a repo's `.git/config`
- * without spawning `git`. Returns `null` for non-git directories, missing
- * config, missing origin remote, or unreadable files (no exceptions thrown).
+ * Read the `[remote "origin"] url = …` field from a repo's git config without
+ * spawning `git`. A `.git` file (worktree, submodule) is followed through its
+ * `gitdir:` line, and a worktree's `commondir` to the shared config. The
+ * gitdir must look like one git writes (`…/.git`, `…/.git/worktrees/<name>`
+ * or `…/.git/modules/…`), and a worktree's common dir must be a `…/.git`;
+ * any other target is no origin, so a crafted `.git` file cannot point the
+ * origin at an arbitrary config. Returns `null` for
+ * non-git directories, missing config, missing origin remote, or unreadable
+ * files (no exceptions thrown).
  */
+/** A `.git` dir, a worktree's `.git/worktrees/<name>`, or a submodule's `.git/modules/<path>`. */
+const GITDIR_SHAPE = /\/\.git(?:\/worktrees\/[^/]+|\/modules\/.+)?$/;
+
 export async function readOriginRemote(repoPath: string): Promise<string | null> {
-  const configPath = path.join(repoPath, ".git", "config");
+  const dotGit = path.join(repoPath, ".git");
+  // Reading a `.git` directory fails (EISDIR): then it is the git dir itself.
+  const pointer = await fs.readFile(dotGit, "utf8").catch(() => "");
+  const gitdirLine = /^gitdir:\s*(.+)$/m.exec(pointer);
+  let gitDir = dotGit;
+  if (gitdirLine) {
+    gitDir = path.resolve(repoPath, gitdirLine[1]!.trim());
+    if (!GITDIR_SHAPE.test(gitDir.split(path.sep).join("/"))) return null;
+    const commonDir = await fs.readFile(path.join(gitDir, "commondir"), "utf8").catch(() => null);
+    if (commonDir) {
+      gitDir = path.resolve(gitDir, commonDir.trim());
+      if (!/\/\.git$/.test(gitDir.split(path.sep).join("/"))) return null;
+    }
+  }
   let raw: string;
   try {
-    raw = await fs.readFile(configPath, "utf8");
+    raw = await fs.readFile(path.join(gitDir, "config"), "utf8");
   } catch {
     return null;
   }

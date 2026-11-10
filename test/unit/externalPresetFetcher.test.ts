@@ -2,6 +2,26 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { fetchExternalPreset, type FetchOptions } from "../../src/lib/externalPresetFetcher.js";
 import { parsePreset, type ParsedPreset } from "../../src/lib/presetResolver.js";
 
+// Blank every variable token selection reads, so a developer's shell cannot
+// change which credential a test sees.
+function resetTokenEnv(): void {
+  vi.unstubAllEnvs();
+  for (const name of [
+    "RENOVATE_TOKEN",
+    "GITHUB_COM_TOKEN",
+    "GITHUB_TOKEN",
+    "GITLAB_TOKEN",
+    "GITEA_TOKEN",
+    "FORGEJO_TOKEN",
+    "BITBUCKET_TOKEN",
+    "RENOVATE_PLATFORM",
+    "RENOVATE_ENDPOINT",
+    "RENOVATE_MCP_HOST_TOKENS",
+  ]) {
+    vi.stubEnv(name, "");
+  }
+}
+
 function makeResponse(
   body: unknown,
   init: { status?: number; statusText?: string; headers?: Record<string, string> } = {},
@@ -15,9 +35,7 @@ function makeResponse(
 }
 
 describe("fetchExternalPreset — github", () => {
-  beforeEach(() => {
-    vi.unstubAllEnvs();
-  });
+  beforeEach(resetTokenEnv);
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
@@ -78,13 +96,39 @@ describe("fetchExternalPreset — github", () => {
     expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer ghp_fallback");
   });
 
-  it("prefers RENOVATE_TOKEN over GITHUB_TOKEN when both are set", async () => {
+  it("prefers GITHUB_TOKEN over RENOVATE_TOKEN when both are set", async () => {
     vi.stubEnv("GITHUB_TOKEN", "ghp_platform");
-    vi.stubEnv("RENOVATE_TOKEN", "rnv_override");
+    vi.stubEnv("RENOVATE_TOKEN", "rnv_home");
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
     await fetchExternalPreset(parsePreset("github>acme/cfg"), { fetchImpl });
     const [, init] = fetchImpl.mock.calls[0]!;
-    expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer rnv_override");
+    expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer ghp_platform");
+  });
+
+  it("prefers GITHUB_COM_TOKEN on api.github.com", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "ghp_platform");
+    vi.stubEnv("GITHUB_COM_TOKEN", "ghp_com");
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
+    await fetchExternalPreset(parsePreset("github>acme/cfg"), { fetchImpl });
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer ghp_com");
+  });
+
+  it("uses RENOVATE_TOKEN on api.github.com when RENOVATE_PLATFORM makes github the home", async () => {
+    vi.stubEnv("RENOVATE_TOKEN", "rnv_home");
+    vi.stubEnv("RENOVATE_PLATFORM", "github");
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
+    await fetchExternalPreset(parsePreset("github>acme/cfg"), { fetchImpl });
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer rnv_home");
+  });
+
+  it("sends no RENOVATE_TOKEN when nothing names a home platform", async () => {
+    vi.stubEnv("RENOVATE_TOKEN", "rnv_home");
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
+    await fetchExternalPreset(parsePreset("github>acme/cfg"), { fetchImpl });
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect((init?.headers as Record<string, string>).Authorization).toBeUndefined();
   });
 
   it("surfaces a 404 as an unresolved reason", async () => {
@@ -257,7 +301,7 @@ describe("fetchExternalPreset — rate limits", () => {
 });
 
 describe("fetchExternalPreset — gitlab", () => {
-  beforeEach(() => vi.unstubAllEnvs());
+  beforeEach(resetTokenEnv);
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
@@ -274,13 +318,83 @@ describe("fetchExternalPreset — gitlab", () => {
     expect((init?.headers as Record<string, string>)["PRIVATE-TOKEN"]).toBe("glpat_example");
   });
 
-  it("prefers RENOVATE_TOKEN over GITLAB_TOKEN when both are set", async () => {
+  it("prefers RENOVATE_TOKEN over GITLAB_TOKEN on the RENOVATE_PLATFORM home host, as Renovate does", async () => {
     vi.stubEnv("GITLAB_TOKEN", "glpat_platform");
-    vi.stubEnv("RENOVATE_TOKEN", "rnv_override");
+    vi.stubEnv("RENOVATE_TOKEN", "rnv_home");
+    vi.stubEnv("RENOVATE_PLATFORM", "gitlab");
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
     await fetchExternalPreset(parsePreset("gitlab>acme/cfg"), { fetchImpl });
     const [, init] = fetchImpl.mock.calls[0]!;
-    expect((init?.headers as Record<string, string>)["PRIVATE-TOKEN"]).toBe("rnv_override");
+    expect((init?.headers as Record<string, string>)["PRIVATE-TOKEN"]).toBe("rnv_home");
+  });
+
+  it("uses GITLAB_TOKEN and never RENOVATE_TOKEN on gitlab.com when RENOVATE_PLATFORM is not gitlab", async () => {
+    vi.stubEnv("GITLAB_TOKEN", "glpat_platform");
+    vi.stubEnv("RENOVATE_TOKEN", "rnv_home");
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
+    await fetchExternalPreset(parsePreset("gitlab>acme/cfg"), { fetchImpl });
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect((init?.headers as Record<string, string>)["PRIVATE-TOKEN"]).toBe("glpat_platform");
+  });
+
+  it("never sends a github-home RENOVATE_TOKEN to gitlab.com", async () => {
+    vi.stubEnv("RENOVATE_TOKEN", "rnv_home");
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
+    await fetchExternalPreset(parsePreset("gitlab>acme/cfg"), { fetchImpl });
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect((init?.headers as Record<string, string>)["PRIVATE-TOKEN"]).toBeUndefined();
+  });
+
+  it("sends RENOVATE_TOKEN to gitlab.com when RENOVATE_PLATFORM makes gitlab the home", async () => {
+    vi.stubEnv("RENOVATE_TOKEN", "rnv_home");
+    vi.stubEnv("RENOVATE_PLATFORM", "gitlab");
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
+    await fetchExternalPreset(parsePreset("gitlab>acme/cfg"), { fetchImpl });
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect((init?.headers as Record<string, string>)["PRIVATE-TOKEN"]).toBe("rnv_home");
+  });
+
+  it("binds GITLAB_TOKEN to the RENOVATE_ENDPOINT host of a gitlab home, not to gitlab.com", async () => {
+    vi.stubEnv("GITLAB_TOKEN", "glpat_selfhosted");
+    vi.stubEnv("RENOVATE_PLATFORM", "gitlab");
+    vi.stubEnv("RENOVATE_ENDPOINT", "https://gitlab.example.com/api/v4");
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
+    await fetchExternalPreset(parsePreset("gitlab>acme/cfg"), {
+      fetchImpl,
+      endpoint: "https://gitlab.example.com/api/v4",
+    });
+    await fetchExternalPreset(parsePreset("gitlab>acme/other"), { fetchImpl });
+    const headers = fetchImpl.mock.calls.map(
+      ([, init]) => (init?.headers as Record<string, string>)["PRIVATE-TOKEN"],
+    );
+    expect(headers).toEqual(["glpat_selfhosted", undefined]);
+  });
+
+  it("never sends an env token to an endpoint that only the call names", async () => {
+    vi.stubEnv("GITLAB_TOKEN", "glpat_public");
+    vi.stubEnv("RENOVATE_TOKEN", "rnv_home");
+    vi.stubEnv("RENOVATE_PLATFORM", "gitlab");
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
+    await fetchExternalPreset(parsePreset("gitlab>acme/cfg"), {
+      fetchImpl,
+      endpoint: "https://attacker.example/api/v4",
+    });
+    const [url, init] = fetchImpl.mock.calls[0]!;
+    expect(url).toMatch(/^https:\/\/attacker\.example\//);
+    expect((init?.headers as Record<string, string>)["PRIVATE-TOKEN"]).toBeUndefined();
+  });
+
+  it("uses a RENOVATE_MCP_HOST_TOKENS entry over GITLAB_TOKEN", async () => {
+    vi.stubEnv("GITLAB_TOKEN", "glpat_platform");
+    vi.stubEnv(
+      "RENOVATE_MCP_HOST_TOKENS",
+      JSON.stringify([{ matchHost: "gitlab.com", hostType: "gitlab", tokenEnv: "ACME_GL" }]),
+    );
+    vi.stubEnv("ACME_GL", "glpat_entry");
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
+    await fetchExternalPreset(parsePreset("gitlab>acme/cfg"), { fetchImpl });
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect((init?.headers as Record<string, string>)["PRIVATE-TOKEN"]).toBe("glpat_entry");
   });
 
   it("falls back to GITLAB_TOKEN when RENOVATE_TOKEN is unset", async () => {
@@ -334,7 +448,7 @@ describe("fetchExternalPreset — endpoint override", () => {
 });
 
 describe("fetchExternalPreset — auth failures (401/403)", () => {
-  beforeEach(() => vi.unstubAllEnvs());
+  beforeEach(resetTokenEnv);
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
@@ -359,9 +473,26 @@ describe("fetchExternalPreset — auth failures (401/403)", () => {
         /URL:\s+https:\/\/api\.github\.com\/repos\/acme\/cfg\/contents\/default\.json\?ref=HEAD/,
       );
       expect(result.reason).toMatch(
-        /Credential:\s+none \(tried RENOVATE_TOKEN, GITHUB_TOKEN\)/,
+        /Credential:\s+none \(tried GITHUB_COM_TOKEN, GITHUB_TOKEN\)/,
       );
       expect(result.reason).toMatch(/Response:\s+.*Requires authentication/);
+    }
+  });
+
+  it("says no token is bound to the host when none applies", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "ghp_bound_to_github_com");
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(makeResponse("", { status: 401, statusText: "Unauthorized" }));
+    const result = await fetchExternalPreset(parsePreset("github>acme/cfg"), {
+      fetchImpl,
+      endpoint: "https://ghe.example.com/api/v3",
+    });
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect((init?.headers as Record<string, string>).Authorization).toBeUndefined();
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toMatch(/Credential:\s+none \(no token is bound to ghe\.example\.com\)/);
     }
   });
 
@@ -378,7 +509,7 @@ describe("fetchExternalPreset — auth failures (401/403)", () => {
     }
   });
 
-  it("names RENOVATE_TOKEN when it wins over GITHUB_TOKEN (both set)", async () => {
+  it("names GITHUB_TOKEN when it wins over RENOVATE_TOKEN (both set)", async () => {
     vi.stubEnv("GITHUB_TOKEN", "ghp_secret_value");
     vi.stubEnv("RENOVATE_TOKEN", "rnv_secret_value");
     const fetchImpl = vi
@@ -387,7 +518,7 @@ describe("fetchExternalPreset — auth failures (401/403)", () => {
     const result = await fetchExternalPreset(parsePreset("github>acme/cfg"), { fetchImpl });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.reason).toMatch(/Credential:\s+RENOVATE_TOKEN \(present\)/);
+      expect(result.reason).toMatch(/Credential:\s+GITHUB_TOKEN \(present\)/);
       expect(result.reason).not.toMatch(/rnv_secret_value/);
       expect(result.reason).not.toMatch(/ghp_secret_value/);
     }
@@ -472,7 +603,7 @@ describe("fetchExternalPreset — auth failures (401/403)", () => {
 });
 
 describe("fetchExternalPreset — redirects", () => {
-  beforeEach(() => vi.unstubAllEnvs());
+  beforeEach(resetTokenEnv);
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
@@ -542,7 +673,7 @@ describe("fetchExternalPreset — redirects", () => {
 });
 
 describe("fetchExternalPreset — endpoint validation", () => {
-  beforeEach(() => vi.unstubAllEnvs());
+  beforeEach(resetTokenEnv);
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
@@ -612,7 +743,7 @@ describe("fetchExternalPreset — endpoint validation", () => {
 });
 
 describe("fetchExternalPreset — response size cap", () => {
-  beforeEach(() => vi.unstubAllEnvs());
+  beforeEach(resetTokenEnv);
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
@@ -688,7 +819,7 @@ describe("fetchExternalPreset — response size cap", () => {
 });
 
 describe("fetchExternalPreset — gitea / forgejo", () => {
-  beforeEach(() => vi.unstubAllEnvs());
+  beforeEach(resetTokenEnv);
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
@@ -727,13 +858,14 @@ describe("fetchExternalPreset — gitea / forgejo", () => {
     expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer gitea_example");
   });
 
-  it("prefers RENOVATE_TOKEN over GITEA_TOKEN when both are set", async () => {
+  it("prefers RENOVATE_TOKEN over GITEA_TOKEN when gitea is the RENOVATE_PLATFORM home", async () => {
     vi.stubEnv("GITEA_TOKEN", "gitea_platform");
-    vi.stubEnv("RENOVATE_TOKEN", "rnv_override");
+    vi.stubEnv("RENOVATE_TOKEN", "rnv_home");
+    vi.stubEnv("RENOVATE_PLATFORM", "gitea");
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
     await fetchExternalPreset(parsePreset("gitea>acme/cfg"), { fetchImpl });
     const [, init] = fetchImpl.mock.calls[0]!;
-    expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer rnv_override");
+    expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer rnv_home");
   });
 
   it("fetches forgejo> presets from code.forgejo.org with FORGEJO_TOKEN, ignoring GITEA_TOKEN", async () => {
@@ -756,7 +888,7 @@ describe("fetchExternalPreset — gitea / forgejo", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.reason).toMatch(/HTTP 401 when fetching forgejo>acme\/cfg/);
-      expect(result.reason).toMatch(/Credential:\s+none \(tried RENOVATE_TOKEN, FORGEJO_TOKEN\)/);
+      expect(result.reason).toMatch(/Credential:\s+none \(tried FORGEJO_TOKEN\)/);
     }
   });
 
@@ -798,7 +930,7 @@ function basic(user: string, token: string): string {
 }
 
 describe("fetchExternalPreset — bitbucket (reached via local> + platform)", () => {
-  beforeEach(() => vi.unstubAllEnvs());
+  beforeEach(resetTokenEnv);
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
@@ -841,14 +973,25 @@ describe("fetchExternalPreset — bitbucket (reached via local> + platform)", ()
     );
   });
 
-  it("prefers RENOVATE_TOKEN over BITBUCKET_TOKEN when both are set", async () => {
+  it("uses BITBUCKET_TOKEN and not RENOVATE_TOKEN when bitbucket is not the RENOVATE_PLATFORM home", async () => {
     vi.stubEnv("BITBUCKET_TOKEN", "bb_platform");
-    vi.stubEnv("RENOVATE_TOKEN", "rnv_override");
+    vi.stubEnv("RENOVATE_TOKEN", "rnv_home");
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
     await fetchExternalPreset(bitbucketPreset("acme/cfg"), { fetchImpl });
     const [, init] = fetchImpl.mock.calls[0]!;
     expect((init?.headers as Record<string, string>).Authorization).toBe(
-      basic("x-token-auth", "rnv_override"),
+      basic("x-token-auth", "bb_platform"),
+    );
+  });
+
+  it("uses RENOVATE_TOKEN when bitbucket is the RENOVATE_PLATFORM home", async () => {
+    vi.stubEnv("RENOVATE_TOKEN", "rnv_home");
+    vi.stubEnv("RENOVATE_PLATFORM", "bitbucket");
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(makeResponse({}));
+    await fetchExternalPreset(bitbucketPreset("acme/cfg"), { fetchImpl });
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect((init?.headers as Record<string, string>).Authorization).toBe(
+      basic("x-token-auth", "rnv_home"),
     );
   });
 
@@ -873,7 +1016,7 @@ describe("fetchExternalPreset — bitbucket (reached via local> + platform)", ()
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.reason).toMatch(/HTTP 401 when fetching local>acme\/cfg/);
-      expect(result.reason).toMatch(/Credential:\s+none \(tried RENOVATE_TOKEN, BITBUCKET_TOKEN\)/);
+      expect(result.reason).toMatch(/Credential:\s+none \(tried BITBUCKET_TOKEN\)/);
     }
   });
 
@@ -996,3 +1139,97 @@ describe("fetchExternalPreset — path traversal guard", () => {
     );
   });
 });
+
+describe("fetchExternalPreset — edge cases", () => {
+  beforeEach(resetTokenEnv);
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it("refuses a built-in preset (no source) without fetching", async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    const result = await fetchExternalPreset(parsePreset(":automergeAll"), { fetchImpl });
+    expect(result).toEqual({ ok: false, reason: "Unknown preset source: (none)" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("refuses a github preset without owner/repo", async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    const result = await fetchExternalPreset(parsePreset("github>acme"), { fetchImpl });
+    expect(result).toEqual({ ok: false, reason: "Invalid github preset: github>acme" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("refuses a gitlab preset without a project path", async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    const result = await fetchExternalPreset(parsePreset("gitlab>"), { fetchImpl });
+    expect(result).toEqual({ ok: false, reason: "Invalid gitlab preset: gitlab>" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("reports a TimeoutError like an abort", async () => {
+    const err = new Error("timed out");
+    err.name = "TimeoutError";
+    const fetchImpl = vi.fn<typeof fetch>().mockRejectedValue(err);
+    const result = await fetchExternalPreset(parsePreset("github>acme/cfg"), {
+      fetchImpl,
+      timeoutMs: 5,
+    });
+    expect(result).toEqual({ ok: false, reason: "Timed out after 5ms fetching github>acme/cfg" });
+  });
+
+  it("reports any other rejection as a network error", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockRejectedValue(new Error("ECONNRESET"));
+    const result = await fetchExternalPreset(parsePreset("github>acme/cfg"), { fetchImpl });
+    expect(result).toEqual({
+      ok: false,
+      reason: "Network error fetching github>acme/cfg: ECONNRESET",
+    });
+  });
+
+  it("omits an empty statusText from the HTTP reason", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response("", { status: 500, statusText: "" }));
+    const result = await fetchExternalPreset(parsePreset("github>acme/cfg"), { fetchImpl });
+    expect(result).toEqual({ ok: false, reason: "HTTP 500 when fetching github>acme/cfg" });
+  });
+
+  it("treats a bodiless 200 as invalid JSON", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 200 }));
+    const result = await fetchExternalPreset(parsePreset("github>acme/cfg"), { fetchImpl });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toMatch(/is not valid JSON/);
+  });
+
+  it("drops a rate-limit reset time that is out of Date range", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      makeResponse("", {
+        status: 403,
+        headers: { "x-ratelimit-remaining": "0", "x-ratelimit-reset": "99999999999999" },
+      }),
+    );
+    const result = await fetchExternalPreset(parsePreset("github>acme/cfg"), { fetchImpl });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toMatch(/^GitHub API rate limit exceeded when fetching/);
+    }
+  });
+
+  it("names an opaque redirect (status 0) as 'redirect'", async () => {
+    const opaque = {
+      type: "opaqueredirect",
+      status: 0,
+      ok: false,
+      statusText: "",
+      headers: new Headers(),
+      body: null,
+    } as unknown as Response;
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(opaque);
+    const result = await fetchExternalPreset(parsePreset("github>acme/cfg"), { fetchImpl });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toMatch(/Status:\s+redirect/);
+  });
+});
+

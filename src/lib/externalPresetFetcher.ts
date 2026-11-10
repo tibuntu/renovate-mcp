@@ -1,6 +1,7 @@
 import JSON5 from "json5";
-import { resolveCredential, type Credential } from "./credentialResolver.js";
+import type { Credential } from "./credentialResolver.js";
 import { validateEndpoint } from "./endpointValidator.js";
+import { selectToken } from "./hostTokens.js";
 import {
   classifyExternalSource,
   type FetchPlatform,
@@ -76,19 +77,19 @@ function dispatch(parsed: ParsedPreset, options: FetchOptions): Promise<FetchRes
     endpoint = trimTrailingSlash(options.endpoint);
   }
 
-  switch (parsed.source) {
+  // `classifyExternalSource` refused local / npm above, so only the hosted
+  // platforms remain and the switch is exhaustive.
+  const source = parsed.source as FetchPlatform;
+  switch (source) {
     case "github":
       return fetchGitHub(parsed, timeoutMs, fetchImpl, endpoint);
     case "gitlab":
       return fetchGitLab(parsed, timeoutMs, fetchImpl, endpoint);
     case "gitea":
     case "forgejo":
-      return fetchGitea(parsed, timeoutMs, fetchImpl, endpoint, parsed.source);
+      return fetchGitea(parsed, timeoutMs, fetchImpl, endpoint, source);
     case "bitbucket":
       return fetchBitbucket(parsed, timeoutMs, fetchImpl, endpoint);
-    default:
-      // Unreachable: `classifyExternalSource` already refused local / npm.
-      return Promise.resolve({ ok: false, reason: `Unknown preset source: ${parsed.source}` });
   }
 }
 
@@ -129,7 +130,7 @@ async function fetchGitHub(
   const url = `${apiBase}/repos/${encodeFilePath(parsed.repoPath)}/contents/${encodeFilePath(
     file,
   )}?ref=${encodeURIComponent(ref)}`;
-  const credential = resolveCredential(["RENOVATE_TOKEN", "GITHUB_TOKEN"]);
+  const credential = selectToken(url, "github");
   const headers: Record<string, string> = {
     Accept: "application/vnd.github.raw",
     "User-Agent": "renovate-mcp",
@@ -167,7 +168,7 @@ async function fetchGitLab(
   const url = `${apiBase}/projects/${encodeURIComponent(
     parsed.repoPath,
   )}/repository/files/${encodeURIComponent(file)}/raw?ref=${encodeURIComponent(ref)}`;
-  const credential = resolveCredential(["RENOVATE_TOKEN", "GITLAB_TOKEN"]);
+  const credential = selectToken(url, "gitlab");
   const headers: Record<string, string> = { "User-Agent": "renovate-mcp" };
   const sendAuth = Boolean(credential.token) && isHttpsUrl(url);
   if (sendAuth) headers["PRIVATE-TOKEN"] = credential.token!;
@@ -203,10 +204,7 @@ async function fetchGitea(
   // No `ref` means the repository's default branch, as in Renovate.
   const refQuery = parsed.ref ? `?ref=${encodeURIComponent(parsed.ref)}` : "";
   const url = `${apiBase}/repos/${encodeFilePath(parsed.repoPath)}/raw/${encodeFilePath(file)}${refQuery}`;
-  const credential = resolveCredential([
-    "RENOVATE_TOKEN",
-    platform === "gitea" ? "GITEA_TOKEN" : "FORGEJO_TOKEN",
-  ]);
+  const credential = selectToken(url, platform);
   const headers: Record<string, string> = { "User-Agent": "renovate-mcp" };
   const sendAuth = Boolean(credential.token) && isHttpsUrl(url);
   if (sendAuth) headers.Authorization = `Bearer ${credential.token}`;
@@ -253,7 +251,7 @@ async function fetchBitbucket(
   const apiBase = endpoint ?? DEFAULT_API_BASE.bitbucket;
   const ref = encodeURIComponent(rawRef);
   const url = `${apiBase}/2.0/repositories/${encodeFilePath(parsed.repoPath)}/src/${ref}/${encodeFilePath(file)}`;
-  const credential = resolveCredential(["RENOVATE_TOKEN", "BITBUCKET_TOKEN"]);
+  const credential = selectToken(url, "bitbucket");
   const headers: Record<string, string> = { "User-Agent": "renovate-mcp" };
   const sendAuth = Boolean(credential.token) && isHttpsUrl(url);
   if (sendAuth) headers.Authorization = bitbucketBasicAuth(credential.token!);
@@ -463,7 +461,7 @@ function formatAuthFailure(
 ): string {
   const lines: string[] = [`HTTP ${status} when fetching ${presetName}`];
   lines.push(`  URL:         ${url}`);
-  lines.push(`  Credential:  ${formatCredential(credential)}`);
+  lines.push(`  Credential:  ${formatCredential(credential, url)}`);
   const trimmed = body.trim();
   if (trimmed) {
     const snippet =
@@ -475,8 +473,9 @@ function formatAuthFailure(
   return lines.join("\n");
 }
 
-function formatCredential(credential: Credential): string {
+function formatCredential(credential: Credential, url: string): string {
   if (credential.envVar) return `${credential.envVar} (present)`;
+  if (credential.triedVars.length === 0) return `none (no token is bound to ${new URL(url).hostname})`;
   return `none (tried ${credential.triedVars.join(", ")})`;
 }
 

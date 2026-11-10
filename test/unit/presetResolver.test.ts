@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { resolveConfig, parsePreset } from "../../src/lib/presetResolver.js";
 
@@ -107,6 +108,18 @@ describe("resolveConfig", () => {
     expect(presetsUnresolved).toHaveLength(1);
     expect(presetsUnresolved[0]?.preset).toBe("xyz>foo/bar");
     expect(presetsUnresolved[0]?.reason).toMatch(/unknown preset source: xyz/i);
+  });
+
+  it("honours ignorePresets: the ignored preset contributes nothing", async () => {
+    const { resolved, presetsResolved, presetsUnresolved } = await resolveConfig({
+      extends: [":automergeAll"],
+      ignorePresets: [":automergeAll"],
+    });
+    expect(resolved).not.toHaveProperty("automerge");
+    // Stripped from the output, as Renovate's resolveConfigPresets does.
+    expect(resolved).not.toHaveProperty("ignorePresets");
+    expect(presetsResolved).toEqual([]);
+    expect(presetsUnresolved).toEqual([]);
   });
 
   it("resolves siblings independently when one is unknown", async () => {
@@ -455,35 +468,184 @@ describe("resolveConfig with endpoint / platform", () => {
     vi.unstubAllEnvs();
   });
 
-  it("routes github> fetches through a custom endpoint (GitHub Enterprise)", async () => {
+  it("keeps github> on api.github.com even with an endpoint, like Renovate", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ automerge: true }), { status: 200 }),
     );
     const { resolved, presetsResolved } = await resolveConfig(
       { extends: ["github>acme/cfg"] },
-      { fetchExternal: true, endpoint: "https://ghe.example.com/api/v3" },
+      {
+        fetchExternal: true,
+        platform: "github",
+        endpoint: "https://ghe.example.com/api/v3",
+      },
     );
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     const [url] = fetchSpy.mock.calls[0]!;
     expect(url).toBe(
-      "https://ghe.example.com/api/v3/repos/acme/cfg/contents/default.json?ref=HEAD",
+      "https://api.github.com/repos/acme/cfg/contents/default.json?ref=HEAD",
     );
     expect(resolved).toMatchObject({ automerge: true });
     expect(presetsResolved).toEqual(["github>acme/cfg"]);
   });
 
-  it("routes gitlab> fetches through a custom endpoint (self-hosted GitLab)", async () => {
+  it("keeps gitlab> on gitlab.com even with an endpoint, like Renovate", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ automerge: true }), { status: 200 }),
     );
     await resolveConfig(
       { extends: ["gitlab>acme/cfg"] },
-      { fetchExternal: true, endpoint: "https://gitlab.example.com/api/v4" },
+      {
+        fetchExternal: true,
+        platform: "gitlab",
+        endpoint: "https://gitlab.example.com/api/v4",
+      },
     );
     const [url] = fetchSpy.mock.calls[0]!;
     expect(url).toBe(
-      "https://gitlab.example.com/api/v4/projects/acme%2Fcfg/repository/files/default.json/raw?ref=HEAD",
+      "https://gitlab.com/api/v4/projects/acme%2Fcfg/repository/files/default.json/raw?ref=HEAD",
     );
+  });
+
+  it("routes a nested local> through the endpoint and a nested gitlab> to gitlab.com", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("acme%2Fouter")) {
+        return new Response(
+          JSON.stringify({ extends: ["local>acme/inner", "gitlab>acme/public"] }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({ automerge: true }), { status: 200 });
+    });
+    const { presetsResolved } = await resolveConfig(
+      { extends: ["local>acme/outer"] },
+      {
+        fetchExternal: true,
+        platform: "gitlab",
+        endpoint: "https://gitlab.example.com/api/v4",
+        fetchImpl,
+      },
+    );
+    expect(fetchImpl.mock.calls.map(([u]) => String(u))).toEqual([
+      "https://gitlab.example.com/api/v4/projects/acme%2Fouter/repository/files/default.json/raw?ref=HEAD",
+      "https://gitlab.example.com/api/v4/projects/acme%2Finner/repository/files/default.json/raw?ref=HEAD",
+      "https://gitlab.com/api/v4/projects/acme%2Fpublic/repository/files/default.json/raw?ref=HEAD",
+    ]);
+    expect(presetsResolved).toEqual([
+      "local>acme/inner",
+      "gitlab>acme/public",
+      "local>acme/outer",
+    ]);
+  });
+
+  it("uses the injected fetchImpl instead of globalThis.fetch", async () => {
+    const globalSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(new Error("global fetch used"));
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(JSON.stringify({ automerge: true }), { status: 200 }));
+    const { resolved } = await resolveConfig(
+      { extends: ["github>acme/cfg"] },
+      { fetchExternal: true, fetchImpl },
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(globalSpy).not.toHaveBeenCalled();
+    expect(resolved).toMatchObject({ automerge: true });
+  });
+
+  const authHeaders = (fetchImpl: ReturnType<typeof vi.fn<typeof fetch>>) =>
+    fetchImpl.mock.calls.map(([url, init]) => {
+      const h = init?.headers as Record<string, string>;
+      return [String(url).split("/")[2], h["PRIVATE-TOKEN"] ?? h.Authorization];
+    });
+
+  it("routes local> by the platform/endpoint inputs but never binds an env token to the input endpoint", async () => {
+    for (const name of ["GITHUB_COM_TOKEN", "GITHUB_TOKEN", "RENOVATE_MCP_HOST_TOKENS", "RENOVATE_PLATFORM", "RENOVATE_ENDPOINT"]) {
+      vi.stubEnv(name, "");
+    }
+    vi.stubEnv("GITLAB_TOKEN", "glpat_public");
+    vi.stubEnv("RENOVATE_TOKEN", "rnv_env");
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+    await resolveConfig(
+      { extends: ["local>acme/cfg", "gitlab>acme/public", "github>acme/gh"] },
+      {
+        fetchExternal: true,
+        platform: "gitlab",
+        endpoint: "https://gitlab.example.com/api/v4",
+        fetchImpl,
+      },
+    );
+    // The call names the host, so it gets no env token; GITLAB_TOKEN stays on
+    // gitlab.com; without RENOVATE_PLATFORM, RENOVATE_TOKEN goes nowhere.
+    expect(authHeaders(fetchImpl)).toEqual([
+      ["gitlab.example.com", undefined],
+      ["gitlab.com", "glpat_public"],
+      ["api.github.com", undefined],
+    ]);
+  });
+
+  it("binds RENOVATE_TOKEN (then GITLAB_TOKEN) to the RENOVATE_PLATFORM / RENOVATE_ENDPOINT home that routes local>", async () => {
+    for (const name of ["GITHUB_COM_TOKEN", "GITHUB_TOKEN", "RENOVATE_MCP_HOST_TOKENS"]) {
+      vi.stubEnv(name, "");
+    }
+    vi.stubEnv("RENOVATE_PLATFORM", "gitlab");
+    vi.stubEnv("RENOVATE_ENDPOINT", "https://gitlab.example.com/api/v4");
+    vi.stubEnv("GITLAB_TOKEN", "glpat_home");
+    vi.stubEnv("RENOVATE_TOKEN", "rnv_home");
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+    await resolveConfig({ extends: ["local>acme/cfg", "gitlab>acme/public"] }, { fetchExternal: true, fetchImpl });
+    expect(authHeaders(fetchImpl)).toEqual([
+      ["gitlab.example.com", "rnv_home"],
+      ["gitlab.com", undefined],
+    ]);
+  });
+
+  it("keeps the env tokens home when a call's platform input names another platform", async () => {
+    for (const name of ["GITHUB_COM_TOKEN", "GITLAB_TOKEN", "RENOVATE_MCP_HOST_TOKENS"]) {
+      vi.stubEnv(name, "");
+    }
+    vi.stubEnv("RENOVATE_PLATFORM", "github");
+    vi.stubEnv("RENOVATE_ENDPOINT", "https://ghe.example.com/api/v3");
+    vi.stubEnv("RENOVATE_TOKEN", "rnv_ghe");
+    vi.stubEnv("GITHUB_TOKEN", "ghp_public");
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+    await resolveConfig({ extends: ["local>acme/cfg"] }, { fetchExternal: true, platform: "gitlab", fetchImpl });
+    // Routed to gitlab.com, which carries neither the GHE token nor GITHUB_TOKEN.
+    expect(authHeaders(fetchImpl)).toEqual([["gitlab.com", undefined]]);
+  });
+
+  it("refuses to fetch when RENOVATE_MCP_HOST_TOKENS is malformed and reports it under <auth>", async () => {
+    vi.stubEnv("RENOVATE_MCP_HOST_TOKENS", "not json");
+    const fetchImpl = vi.fn<typeof fetch>();
+    const { presetsResolved, presetsUnresolved, warnings } = await resolveConfig(
+      { extends: ["github>acme/cfg", ":automergeAll"] },
+      { fetchExternal: true, fetchImpl },
+    );
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(presetsResolved).toEqual([":automergeAll"]);
+    expect(presetsUnresolved).toEqual([
+      {
+        preset: "github>acme/cfg",
+        reason: expect.stringMatching(/RENOVATE_MCP_HOST_TOKENS is not valid JSON/),
+      },
+    ]);
+    expect(warnings).toEqual([
+      { preset: "<auth>", message: expect.stringMatching(/RENOVATE_MCP_HOST_TOKENS is not valid JSON/) },
+    ]);
+  });
+
+  it("ignores a malformed RENOVATE_MCP_HOST_TOKENS when nothing is fetched", async () => {
+    vi.stubEnv("RENOVATE_MCP_HOST_TOKENS", "not json");
+    const { warnings } = await resolveConfig({ extends: ["github>acme/cfg"] });
+    expect(warnings).toEqual([]);
   });
 
   it("rewrites local> through platform + endpoint (self-hosted GitLab)", async () => {
@@ -528,7 +690,57 @@ describe("resolveConfig with endpoint / platform", () => {
     );
   });
 
+  it("routes local> through RENOVATE_PLATFORM + RENOVATE_ENDPOINT when no platform input is given, and binds the home token there", async () => {
+    for (const name of ["GITHUB_COM_TOKEN", "GITHUB_TOKEN", "GITLAB_TOKEN", "RENOVATE_MCP_HOST_TOKENS"]) vi.stubEnv(name, "");
+    vi.stubEnv("RENOVATE_PLATFORM", "gitlab");
+    vi.stubEnv("RENOVATE_ENDPOINT", "https://gitlab.example.com/api/v4");
+    vi.stubEnv("RENOVATE_TOKEN", "rnv_home");
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(JSON.stringify({ automerge: true }), { status: 200 }));
+    const { presetsResolved } = await resolveConfig({ extends: ["local>acme/cfg"] }, { fetchExternal: true, fetchImpl });
+    expect(fetchImpl.mock.calls.map(([u]) => String(u))).toEqual([
+      "https://gitlab.example.com/api/v4/projects/acme%2Fcfg/repository/files/default.json/raw?ref=HEAD",
+    ]);
+    expect((fetchImpl.mock.calls[0]![1]?.headers as Record<string, string>)["PRIVATE-TOKEN"]).toBe("rnv_home");
+    expect(presetsResolved).toEqual(["local>acme/cfg"]);
+  });
+
+  it("uses RENOVATE_ENDPOINT for routing and token home when the platform input equals RENOVATE_PLATFORM", async () => {
+    for (const name of ["GITHUB_COM_TOKEN", "GITHUB_TOKEN", "RENOVATE_TOKEN", "RENOVATE_MCP_HOST_TOKENS"]) vi.stubEnv(name, "");
+    vi.stubEnv("RENOVATE_PLATFORM", "gitlab");
+    vi.stubEnv("RENOVATE_ENDPOINT", "https://gitlab.example.com/api/v4");
+    vi.stubEnv("GITLAB_TOKEN", "glpat_selfhosted");
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+    await resolveConfig({ extends: ["local>acme/cfg"] }, { fetchExternal: true, platform: "gitlab", fetchImpl });
+    expect(String(fetchImpl.mock.calls[0]![0])).toBe(
+      "https://gitlab.example.com/api/v4/projects/acme%2Fcfg/repository/files/default.json/raw?ref=HEAD",
+    );
+    expect((fetchImpl.mock.calls[0]![1]?.headers as Record<string, string>)["PRIVATE-TOKEN"]).toBe("glpat_selfhosted");
+  });
+
+  it("ignores RENOVATE_ENDPOINT for routing and token home when the platform input differs from RENOVATE_PLATFORM", async () => {
+    for (const name of ["GITHUB_COM_TOKEN", "GITHUB_TOKEN", "RENOVATE_TOKEN", "RENOVATE_MCP_HOST_TOKENS"]) vi.stubEnv(name, "");
+    vi.stubEnv("RENOVATE_PLATFORM", "github");
+    vi.stubEnv("RENOVATE_ENDPOINT", "https://ghe.example.com/api/v3");
+    vi.stubEnv("GITLAB_TOKEN", "glpat_public");
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+    await resolveConfig({ extends: ["local>acme/cfg"] }, { fetchExternal: true, platform: "gitlab", fetchImpl });
+    // The GHE endpoint belongs to RENOVATE_PLATFORM=github: local> goes to
+    // gitlab.com, and GITLAB_TOKEN stays bound to gitlab.com, so it is sent.
+    expect(String(fetchImpl.mock.calls[0]![0])).toBe(
+      "https://gitlab.com/api/v4/projects/acme%2Fcfg/repository/files/default.json/raw?ref=HEAD",
+    );
+    expect((fetchImpl.mock.calls[0]![1]?.headers as Record<string, string>)["PRIVATE-TOKEN"]).toBe("glpat_public");
+  });
+
   it("leaves local> unsupported when platform is not set, even with a custom endpoint", async () => {
+    vi.stubEnv("RENOVATE_PLATFORM", "");
+    vi.stubEnv("RENOVATE_ENDPOINT", "");
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     const { presetsResolved, presetsUnresolved } = await resolveConfig(
       { extends: ["local>acme/cfg"] },
@@ -594,6 +806,14 @@ describe("argument substitution warnings", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(warnings).toHaveLength(1);
     expect(warnings[0]?.message).toMatch(/\{\{arg2\}\}/);
+  });
+
+  it("warns about several missing {{argN}} placeholders in index order", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(JSON.stringify({ assignees: ["{{arg3}}", "{{arg1}}", "{{arg2}}"] }), { status: 200 }));
+    const { warnings } = await resolveConfig({ extends: ["github>acme/cfg(alice)"] }, { fetchExternal: true, fetchImpl });
+    expect(warnings.map((w) => /\{\{arg(\d)\}\}/.exec(w.message)?.[1])).toEqual(["1", "2", "3"]);
   });
 
   it("warns about non-argN templating and leaves the token verbatim", async () => {
@@ -733,6 +953,87 @@ describe("resolveConfig faithful merge (Renovate's mergeChildConfig)", () => {
     expect(
       warnings.some((w) => /merge worker unavailable/i.test(w.message)),
     ).toBe(true);
+  });
+
+  it("folds nested objects, concatenates arrays and overwrites scalars in the preview merge", async () => {
+    vi.stubEnv(
+      "RENOVATE_MCP_MERGE_WORKER_ENTRY",
+      "/nonexistent/renovate-mcp-merge-worker.js",
+    );
+    const { resolved, mergeQuality } = await resolveConfig({
+      extends: [":timezone(Europe/Berlin)", ":automergeAll"],
+      timezone: "UTC",
+      lockFileMaintenance: { enabled: true },
+    });
+    expect(mergeQuality).toBe("preview");
+    expect(resolved).toMatchObject({
+      timezone: "UTC",
+      automerge: true,
+      lockFileMaintenance: { enabled: true },
+    });
+  });
+
+  it("deep-merges objects present on both sides in the preview merge", async () => {
+    vi.stubEnv(
+      "RENOVATE_MCP_MERGE_WORKER_ENTRY",
+      "/nonexistent/renovate-mcp-merge-worker.js",
+    );
+    const { resolved } = await resolveConfig({
+      extends: [":maintainLockFilesWeekly"],
+      lockFileMaintenance: { automerge: true },
+    });
+    expect(resolved.lockFileMaintenance).toMatchObject({
+      enabled: true,
+      automerge: true,
+    });
+  });
+
+  it("stringifies a non-Error worker failure in the fallback warning", async () => {
+    vi.stubEnv(
+      "RENOVATE_MCP_MERGE_WORKER_ENTRY",
+      resolve(process.cwd(), "test/fixtures/throw-string-worker.mjs"),
+    );
+    const { mergeQuality, warnings } = await resolveConfig({
+      extends: [":automergeAll"],
+      timezone: "UTC",
+    });
+    expect(mergeQuality).toBe("preview");
+    expect(warnings.map((w) => w.message).join("\n")).toMatch(
+      /merge worker unavailable \(boom\)/i,
+    );
+  });
+});
+
+describe("collectMergeSteps guards", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("lands a non-string extends entry in presetsUnresolved", async () => {
+    const { presetsUnresolved } = await resolveConfig({
+      extends: [42 as unknown as string],
+    });
+    expect(presetsUnresolved).toEqual([
+      { preset: "42", reason: "Preset entry must be a string." },
+    ]);
+  });
+
+  it("detects a preset cycle and reports the chain", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ extends: ["github>acme/loop"] }), {
+        status: 200,
+      }),
+    );
+    const { presetsUnresolved } = await resolveConfig(
+      { extends: ["github>acme/loop"] },
+      { fetchExternal: true },
+    );
+    expect(presetsUnresolved).toEqual([
+      {
+        preset: "github>acme/loop",
+        reason: "Cycle detected: github>acme/loop → github>acme/loop",
+      },
+    ]);
   });
 });
 

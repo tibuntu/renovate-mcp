@@ -83,11 +83,13 @@ For the nodeEnv case, `ok` also stays `true` even when Renovate exits non-zero, 
 
 **Capture cap.** The child's stdout and stderr are each capped at 4 MiB in memory; beyond that only the tail is kept (line observers driving progress notifications still see every line). When the cap was hit the `dry_run` result carries `outputTruncated: true`. `logTail` (last 40 non-empty lines, secrets scrubbed) is included whenever the exit code is non-zero or no report was produced.
 
-## `dry_run` — local-mode preflight
+## `dry_run` — local presets in local mode
 
-`dry_run` defaults to `--platform=local` so no host token is required, but that mode can't resolve `local>` presets (they have no platform context to expand against) and silently hides non-default-host GitHub/GitLab setups.
+`dry_run` defaults to `--platform=local` so no host token is required, but that mode can't resolve `local>` presets. Instead of failing with an opaque `config-validation`, `lookup` and `full` runs flatten them first: Renovate's own preset resolver runs in a worker, the result is written into a temporary copy of the repository, and Renovate runs there (details and refusals: [`dry_run` — local presets in local mode](tools.md#dry_run)). `dryRunMode=extract` is not flattened.
 
-As a guard against the silent-failure mode, `dry_run` preflight-checks the repo's config: if it extends any `local>…` preset (or its bare `owner/repo` spelling, which Renovate also treats as `local>`) while the effective platform is `local`, the tool fails fast with specific remediation rather than spawning a Renovate run that would opaquely report `config-validation`. The preflight is skipped for `dryRunMode=extract` so manifest-only extraction can still be attempted.
+Caps on the copy, checked against the file listing and an `lstat` byte sum before anything is copied: **50,000 files** (`REPO_COPY_MAX_FILES`) and **512 MiB** (`REPO_COPY_MAX_BYTES`), both in `src/lib/inputLimits.ts`. A repository over either cap is refused before the run. A non-git directory is copied whole, so a checked-out `node_modules` counts towards both caps; a git repository only copies tracked files. Copies use copy-on-write clones where the filesystem supports them.
+
+Timing: the resolver worker gets its own `timeoutMs` budget before Renovate starts, and pays a cold load of Renovate's resolver and validator (a few seconds) plus the preset fetches.
 
 ## Platform-source precedence is visible to callers
 

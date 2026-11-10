@@ -1,8 +1,16 @@
 import { createRequire } from "node:module";
 import fs from "node:fs";
 import { locateConfig } from "./configLocations.js";
-import { resolveCredential } from "./credentialResolver.js";
 import { probeEndpoint, type EndpointProbeResult } from "./endpointProbe.js";
+import {
+  HOST_TOKENS_ENV,
+  PLATFORM_TOKEN_ENV,
+  PUBLIC_HOST,
+  homeScope,
+  parseHostTokens,
+  selectToken,
+  type HostTokenEntry,
+} from "./hostTokens.js";
 import {
   classifyRemoteHost,
   parseRemoteUrl,
@@ -56,7 +64,7 @@ export interface PlatformContext {
     GITLAB_TOKEN: boolean;
     /** github.com *datasource* token (release notes, github-tags/-releases/-actions). Distinct from the platform token; never auto-derived from the others. */
     GITHUB_COM_TOKEN: boolean;
-    /** `resolve_config` platform fallbacks for `gitea>` / `forgejo>` / `local>`-via-`platform` fetches; `dry_run` does not read them. */
+    /** Bound to their platform's public host; `dry_run` passes them to Renovate as host rules there. */
     GITEA_TOKEN: boolean;
     FORGEJO_TOKEN: boolean;
     BITBUCKET_TOKEN: boolean;
@@ -68,6 +76,10 @@ export interface PlatformContext {
    * anything else silently degrades to `local`.
    */
   effectiveDryRunPlatform: DryRunPlatform;
+  /** `RENOVATE_MCP_HOST_TOKENS` entries, by variable name and presence only. Empty when the var is unset or malformed. */
+  hostTokens: Array<HostTokenEntry & { present: boolean }>;
+  /** Why `RENOVATE_MCP_HOST_TOKENS` was rejected (never echoes its value), or null. */
+  hostTokensError: string | null;
   /** Cross-checks that are mechanical to compute but easy for callers to miss. */
   notes: string[];
 }
@@ -387,9 +399,11 @@ async function gatherRepoContext(
     }
   }
   if (remote && platformContext.renovatePlatform) {
+    // An unclassifiable host is exactly when the user names the platform via
+    // RENOVATE_PLATFORM (the hint below tells them to), so it is no conflict.
     const remoteSays = isHostedPlatform(remote.classified) ? remote.classified : remote.flavor;
     if (
-      remoteSays
+      remoteSays !== "unknown"
       && remoteSays !== platformContext.renovatePlatform
       && platformContext.renovatePlatform !== "local"
     ) {
@@ -472,28 +486,20 @@ function isHostedPlatform(value: unknown): value is HostedPlatform {
   return (HOSTED_PLATFORMS as readonly unknown[]).includes(value);
 }
 
-/** Per-platform token fallback (same precedence the fetchers use) and the hint emitted when none is set. */
-const PLATFORM_TOKEN_HINTS: Record<HostedPlatform, { vars: string[]; hint: string }> = {
-  github: {
-    vars: ["RENOVATE_TOKEN", "GITHUB_TOKEN"],
-    hint: "This repo's origin is on GitHub. Set `GITHUB_TOKEN` (a read-only PAT is enough — used for rate-limit headroom on public deps) in the MCP server's env, or `dry_run` will skip your github-actions dependencies with `skipReason: github-token-required`.",
-  },
-  gitlab: {
-    vars: ["RENOVATE_TOKEN", "GITLAB_TOKEN"],
-    hint: "This repo's origin is on GitLab. Set `GITLAB_TOKEN` (or `RENOVATE_TOKEN`) in the MCP server's env, or private-preset / private-registry lookups will fail.",
-  },
-  gitea: {
-    vars: ["RENOVATE_TOKEN", "GITEA_TOKEN"],
-    hint: "This repo's origin is on Gitea. Set `GITEA_TOKEN` (or `RENOVATE_TOKEN`) in the MCP server's env, or private `gitea>` / `local>` preset fetches via `resolve_config` (`platform: \"gitea\"`) will fail to authenticate.",
-  },
-  forgejo: {
-    vars: ["RENOVATE_TOKEN", "FORGEJO_TOKEN"],
-    hint: "This repo's origin is on Forgejo. Set `FORGEJO_TOKEN` (or `RENOVATE_TOKEN`) in the MCP server's env, or private `forgejo>` / `local>` preset fetches via `resolve_config` (`platform: \"forgejo\"`) will fail to authenticate.",
-  },
-  bitbucket: {
-    vars: ["RENOVATE_TOKEN", "BITBUCKET_TOKEN"],
-    hint: "This repo's origin is on Bitbucket Cloud. Set `BITBUCKET_TOKEN` (a repository/workspace access token, or an Atlassian API token) or `RENOVATE_TOKEN` in the MCP server's env, or private `local>` preset fetches via `resolve_config` (`platform: \"bitbucket\"`) will fail to authenticate.",
-  },
+/**
+ * The token that covers each platform's origin, and the hint emitted when
+ * none is set. `RENOVATE_TOKEN` counts when `RENOVATE_PLATFORM` names the
+ * origin's platform; a call input never moves it (ADR-0008).
+ */
+const homeTokenNote = (p: HostedPlatform): string =>
+  `\`RENOVATE_TOKEN\` counts only when \`RENOVATE_PLATFORM=${p}\` (with \`RENOVATE_ENDPOINT\` for a self-hosted host) is set on the MCP server; \`platform: "${p}"\` on a tool call does not bind it.`;
+
+const PLATFORM_TOKEN_HINTS: Record<HostedPlatform, string> = {
+  github: "This repo's origin is on GitHub. Set `GITHUB_TOKEN` (a read-only PAT is enough — used for rate-limit headroom on public deps) in the MCP server's env, or `dry_run` will skip your github-actions dependencies with `skipReason: github-token-required`.",
+  gitlab: `This repo's origin is on GitLab. Set \`GITLAB_TOKEN\` in the MCP server's env, or private-preset / private-registry lookups will fail. ${homeTokenNote("gitlab")}`,
+  gitea: `This repo's origin is on Gitea. Set \`GITEA_TOKEN\` in the MCP server's env, or private \`gitea>\` / \`local>\` preset fetches via \`resolve_config\` (\`platform: "gitea"\`) will fail to authenticate. ${homeTokenNote("gitea")}`,
+  forgejo: `This repo's origin is on Forgejo. Set \`FORGEJO_TOKEN\` in the MCP server's env, or private \`forgejo>\` / \`local>\` preset fetches via \`resolve_config\` (\`platform: "forgejo"\`) will fail to authenticate. ${homeTokenNote("forgejo")}`,
+  bitbucket: `This repo's origin is on Bitbucket Cloud. Set \`BITBUCKET_TOKEN\` (a repository/workspace access token, or an Atlassian API token) in the MCP server's env, or private \`local>\` preset fetches via \`resolve_config\` (\`platform: "bitbucket"\`) will fail to authenticate. ${homeTokenNote("bitbucket")}`,
 };
 
 function appendRepoHints(
@@ -503,43 +509,55 @@ function appendRepoHints(
 ): void {
   const platform = ctx.effectivePlatform;
   if (isHostedPlatform(platform)) {
-    const { vars, hint } = PLATFORM_TOKEN_HINTS[platform];
-    if (!resolveCredential(vars).envVar) hints.push(hint);
+    // The token Renovate would pick for this host. A set but unbound
+    // per-platform token gets the binding hint below instead.
+    const url = ctx.remote
+      ? `https://${ctx.remote.host}/`
+      : (ctx.configEndpoint ?? platformContext.renovateEndpoint ?? `https://${PUBLIC_HOST[platform]}/`);
+    if (!process.env[PLATFORM_TOKEN_ENV[platform]] && !selectToken(url, platform).token) {
+      hints.push(PLATFORM_TOKEN_HINTS[platform]);
+    }
   }
 
-  // The fetcher's `forgejo>` default is code.forgejo.org (Renovate's default
-  // too), so every other hosted Forgejo — Codeberg above all — needs `endpoint`.
+  // `forgejo>` always means code.forgejo.org (Renovate hard-codes it), so
+  // presets on any other Forgejo — Codeberg above all — are `local>` presets
+  // routed through `platform` + `endpoint`.
   if (
     ctx.remote?.classified === "forgejo"
     && ctx.remote.host !== "code.forgejo.org"
     && !ctx.configEndpoint
   ) {
     hints.push(
-      `This repo's origin is \`${ctx.remote.host}\`, a Forgejo host other than code.forgejo.org. Pass \`endpoint: "https://${ctx.remote.host}/api/v1"\` to \`resolve_config\` (plus \`platform: "forgejo"\` for \`local>\` presets), or \`forgejo>\` presets will be fetched from code.forgejo.org.`,
+      `This repo's origin is \`${ctx.remote.host}\`, a Forgejo host other than code.forgejo.org. \`forgejo>\` presets always resolve against code.forgejo.org, as in Renovate; reference presets hosted here as \`local>owner/repo\` and pass \`platform: "forgejo"\` plus \`endpoint: "https://${ctx.remote.host}/api/v1"\` to \`resolve_config\`.`,
     );
   }
 
-  // github.com *datasource* token gap. `dry_run` defaults to `platform: local`
-  // and never reads git origin, so for a github.com-origin repo the platform
-  // token (GITHUB_TOKEN/RENOVATE_TOKEN) is NOT applied to github.com datasource
-  // lookups under the default local run — Renovate reads GITHUB_COM_TOKEN for
-  // that, and it is never auto-derived. The origin-derived `effectivePlatform`
-  // can read "github" while the actual dry_run platform is "local"; this hint
-  // reconciles that divergence for the case that trips users up.
+  // github.com *datasource* token gap. `dry_run` defaults to `platform:
+  // local`. There, env tokens reach Renovate only as host rules on their own
+  // hosts (GITHUB_TOKEN on github.com, RENOVATE_TOKEN on the
+  // RENOVATE_PLATFORM / RENOVATE_ENDPOINT host, a host-token entry,
+  // GITHUB_COM_TOKEN natively); the repo's origin binds nothing.
   if (
     platformContext.effectiveDryRunPlatform === "local"
     && ctx.remote?.host === "github.com"
-    && !platformContext.tokensPresent.GITHUB_COM_TOKEN
+    && !selectToken("https://api.github.com/", "github").token
   ) {
-    const hasPlatformToken =
-      platformContext.tokensPresent.GITHUB_TOKEN || platformContext.tokensPresent.RENOVATE_TOKEN;
-    if (hasPlatformToken) {
+    hints.push(
+      platformContext.tokensPresent.RENOVATE_TOKEN
+        ? "This repo's origin is github.com, but `dry_run` defaults to `platform: local`, and `RENOVATE_TOKEN` is bound only to the `RENOVATE_PLATFORM` / `RENOVATE_ENDPOINT` host, which is not github.com here. The origin never moves a token, so github.com *datasource* lookups (release notes, `github-tags` / `github-releases` / `github-actions`) run anonymously. Either (a) set `GITHUB_TOKEN` or `GITHUB_COM_TOKEN` (a read-only PAT works) so those lookups are authenticated, or (b) set `RENOVATE_PLATFORM=github` if `RENOVATE_TOKEN` is a github.com token. (Moot if your config already has a github.com `hostRules` entry.)"
+        : "This repo's origin is github.com. Under the default `dry_run` `platform: local`, github.com *datasource* lookups (release notes, `github-tags` / `github-releases` / `github-actions`) run anonymously — expect a low rate limit and possible `skipReason`. Set `GITHUB_TOKEN` or `GITHUB_COM_TOKEN` (a read-only PAT is enough) in the MCP server's env to authenticate them.",
+    );
+  }
+
+  // A per-platform token is bound to its public host unless the env home
+  // (RENOVATE_PLATFORM + RENOVATE_ENDPOINT) names this host. Call inputs and
+  // the origin never move it.
+  if (ctx.remote?.classified === "self-hosted" && ctx.remote.flavor && ctx.remote.flavor !== "unknown") {
+    const flavor = ctx.remote.flavor;
+    const tokenVar = PLATFORM_TOKEN_ENV[flavor];
+    if (process.env[tokenVar] && !selectToken(`https://${ctx.remote.host}/`, flavor).token) {
       hints.push(
-        "This repo's origin is github.com, but `dry_run` defaults to `platform: local` and does not read git origin. The `GITHUB_TOKEN` / `RENOVATE_TOKEN` you've set is used for Renovate's *platform* role only — and that role is active only when you run `platform: \"github\"`. Under the default local run it is NOT applied to github.com *datasource* lookups (release notes, `github-tags` / `github-releases` / `github-actions`) at all. Either (a) set `GITHUB_COM_TOKEN` (the same read-only PAT works) so those lookups are authenticated, or (b) call `dry_run` with `platform: \"github\"`, `repository: \"<owner>/<repo>\"`, and the token, which covers both roles. (Moot if your config already has a github.com `hostRules` entry.)",
-      );
-    } else {
-      hints.push(
-        "This repo's origin is github.com. Under the default `dry_run` `platform: local`, github.com *datasource* lookups (release notes, `github-tags` / `github-releases` / `github-actions`) run anonymously — expect a low rate limit and possible `skipReason`. Set `GITHUB_COM_TOKEN` (a read-only PAT is enough) in the MCP server's env to authenticate them.",
+        `\`${tokenVar}\` is set, but it is bound to ${PUBLIC_HOST[flavor]}, not to this repo's host \`${ctx.remote.host}\`, so no tool sends it there. Make the host the home with \`RENOVATE_PLATFORM=${flavor}\` and \`RENOVATE_ENDPOINT\` on the MCP server (a \`platform\` / \`endpoint\` on a call routes requests but never moves a token), or add a \`${HOST_TOKENS_ENV}\` entry for \`${ctx.remote.host}\`.`,
       );
     }
   }
@@ -612,31 +630,38 @@ export function inspectPlatformContext(env: NodeJS.ProcessEnv): PlatformContext 
     );
   }
 
-  if (allowedPlatform === "gitlab" && !tokensPresent.GITLAB_TOKEN && !tokensPresent.RENOVATE_TOKEN) {
-    notes.push(
-      "`RENOVATE_PLATFORM=gitlab` is set but neither `GITLAB_TOKEN` nor `RENOVATE_TOKEN` is present in the MCP server's env — `gitlab>` presets and private-repo lookups will likely fail to authenticate.",
-    );
-  } else if (
-    allowedPlatform === "gitlab"
-    && tokensPresent.GITLAB_TOKEN
-    && !tokensPresent.RENOVATE_TOKEN
-  ) {
-    notes.push(
-      "Info: `GITLAB_TOKEN` is set without `RENOVATE_TOKEN`. `dry_run` will export `GITLAB_TOKEN` as `RENOVATE_TOKEN` to the spawned Renovate CLI when `platform=gitlab` (Renovate itself only reads `RENOVATE_TOKEN`). `resolve_config` already accepts this fallback directly.",
-    );
+  // What `dry_run` exports as RENOVATE_TOKEN for an env-selected remote
+  // platform: the token bound to the API host, as in `src/tools/dryRun.ts`.
+  if (allowedPlatform === "github" || allowedPlatform === "gitlab") {
+    const home = homeScope({}, env);
+    const apiUrl = home.endpoint ?? (allowedPlatform === "github" ? "https://api.github.com/" : "https://gitlab.com/api/v4/");
+    const host = safeHostFromUrl(apiUrl) ?? apiUrl;
+    const cred = selectToken(apiUrl, allowedPlatform, env, { githubComToken: false });
+    if (!cred.envVar) {
+      const tried = cred.triedVars.map((v) => `\`${v}\``).join(", ") || "none";
+      notes.push(
+        `\`RENOVATE_PLATFORM=${allowedPlatform}\` is set but no token is bound to \`${host}\` in the MCP server's env (tried ${tried}) — \`dry_run\` will refuse to run as ${allowedPlatform} without a \`token\` input, and private lookups there will fail to authenticate.`,
+      );
+    } else if (cred.envVar !== "RENOVATE_TOKEN") {
+      const unused = tokensPresent.RENOVATE_TOKEN ? " `RENOVATE_TOKEN` is not used there: the token bound to the host wins." : "";
+      notes.push(
+        `Info: \`dry_run\` exports \`${cred.envVar}\` as \`RENOVATE_TOKEN\` to the spawned Renovate CLI when \`platform=${allowedPlatform}\`, because it is the token bound to \`${host}\` (Renovate itself only reads \`RENOVATE_TOKEN\`).${unused}`,
+      );
+    }
   }
-  if (allowedPlatform === "github" && !tokensPresent.GITHUB_TOKEN && !tokensPresent.RENOVATE_TOKEN) {
-    notes.push(
-      "`RENOVATE_PLATFORM=github` is set but neither `GITHUB_TOKEN` nor `RENOVATE_TOKEN` is present in the MCP server's env — `github>` presets and private-repo lookups will likely fail to authenticate.",
-    );
-  } else if (
-    allowedPlatform === "github"
-    && tokensPresent.GITHUB_TOKEN
-    && !tokensPresent.RENOVATE_TOKEN
-  ) {
-    notes.push(
-      "Info: `GITHUB_TOKEN` is set without `RENOVATE_TOKEN`. `dry_run` will export `GITHUB_TOKEN` as `RENOVATE_TOKEN` to the spawned Renovate CLI when `platform=github` (Renovate itself only reads `RENOVATE_TOKEN`). `resolve_config` already accepts this fallback directly.",
-    );
+
+  const parsedHostTokens = parseHostTokens(env);
+  const hostTokens = parsedHostTokens.ok
+    ? parsedHostTokens.entries.map((e) => ({ ...e, present: Boolean(env[e.tokenEnv]) }))
+    : [];
+  const hostTokensError = parsedHostTokens.ok ? null : parsedHostTokens.error;
+  if (hostTokensError) {
+    notes.push(`${hostTokensError} Every \`dry_run\` call and every call with \`externalPresets: true\` returns isError until it is fixed.`);
+  }
+  for (const e of hostTokens) {
+    if (!e.present) {
+      notes.push(`\`${HOST_TOKENS_ENV}\` entry for \`${e.matchHost}\` (${e.hostType}) names \`${e.tokenEnv}\`, which is not set; it is skipped.`);
+    }
   }
 
   if (renovateEndpoint && looksLikeUiUrl(renovateEndpoint)) {
@@ -650,6 +675,8 @@ export function inspectPlatformContext(env: NodeJS.ProcessEnv): PlatformContext 
     renovateEndpoint,
     tokensPresent,
     effectiveDryRunPlatform,
+    hostTokens,
+    hostTokensError,
     notes,
   };
 }
@@ -659,8 +686,8 @@ export function inspectPlatformContext(env: NodeJS.ProcessEnv): PlatformContext 
  * routinely paste the web UI URL. Trigger the note when the URL is missing
  * any `/api/` segment. We avoid hard-coding `/api/v4/` vs `/api/v3/` since
  * Renovate accepts either depending on platform. Applies regardless of the
- * effective platform — `dry_run` forwards `--endpoint` even in local mode to
- * redirect `gitlab>` / `github>` preset shortcuts at a self-hosted host.
+ * effective platform — the preset fetcher uses `RENOVATE_ENDPOINT` as the
+ * home endpoint whatever `dry_run` does.
  */
 function looksLikeUiUrl(endpoint: string): boolean {
   return !/\/api\//.test(endpoint);
@@ -755,6 +782,12 @@ export function describeSetup(status: SetupStatus): string {
     .map(([k, v]) => `${k}=${v ? "set" : "unset"}`)
     .join(", ");
   lines.push(`  Tokens: ${tokens}`);
+  if (ctx.hostTokens.length > 0) {
+    const entries = ctx.hostTokens
+      .map((e) => `${e.matchHost} (${e.hostType}) via ${e.tokenEnv}=${e.present ? "set" : "unset"}`)
+      .join(", ");
+    lines.push(`  Host tokens: ${entries}`);
+  }
   lines.push(`  Effective dry_run platform (when input unset): ${ctx.effectiveDryRunPlatform}`);
   if (ctx.notes.length > 0) {
     lines.push("  Notes:");
