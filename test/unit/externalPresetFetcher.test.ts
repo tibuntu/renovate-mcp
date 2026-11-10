@@ -974,7 +974,14 @@ describe("fetchExternalPreset — path traversal guard", () => {
     },
   );
 
-  it.each(["gitlab>..", "gitlab>.", "gitlab>group/../x", "gitlab>foo", "gitlab>a//b"])(
+  it.each([
+    "gitlab>..",
+    "gitlab>.",
+    "gitlab>group/../x",
+    "gitlab>foo",
+    "gitlab>g/p//../x",
+    "gitlab>g/p//a/../b",
+  ])(
     "rejects %s without fetching",
     async (spec) => {
       await expectRejected(parsePreset(spec), "gitlab");
