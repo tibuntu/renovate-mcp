@@ -735,3 +735,60 @@ describe("resolveConfig faithful merge (Renovate's mergeChildConfig)", () => {
     ).toBe(true);
   });
 });
+
+describe("removed / renamed built-in presets (Renovate removedPresets)", () => {
+  it("resolves config:base exactly as config:recommended, with one rename warning", async () => {
+    const base = await resolveConfig({ extends: ["config:base"] });
+    const recommended = await resolveConfig({ extends: ["config:recommended"] });
+    expect(base.resolved).toEqual(recommended.resolved);
+    expect(base.presetsUnresolved).toEqual([]);
+    expect(base.presetsResolved.at(-1)).toBe("config:base");
+    expect(base.presetsResolved).not.toContain("config:recommended");
+    const renames = base.warnings.filter((w) => w.preset === "config:base");
+    expect(renames).toHaveLength(1);
+    expect(renames[0]!.message).toContain("config:recommended");
+  });
+
+  it("follows rename chains to the final target", async () => {
+    const chained = await resolveConfig({ extends: [":unpublishSafe"] });
+    const target = await resolveConfig({ extends: ["security:minimumReleaseAgeNpm"] });
+    expect(chained.resolved).toEqual(target.resolved);
+    expect(chained.presetsUnresolved).toEqual([]);
+    expect(chained.warnings.some((w) => w.message.includes("security:minimumReleaseAgeNpm"))).toBe(true);
+  });
+
+  it("contributes nothing for a removed (null) preset and warns", async () => {
+    const r = await resolveConfig({ extends: [":autodetectPinVersions"] });
+    expect(r.resolved).toEqual({});
+    expect(r.presetsResolved).toEqual([":autodetectPinVersions"]);
+    expect(r.presetsUnresolved).toEqual([]);
+    expect(r.warnings).toHaveLength(1);
+    expect(r.warnings[0]!.preset).toBe(":autodetectPinVersions");
+  });
+
+  it("resolves a renamed github> entry offline without externalPresets", async () => {
+    const r = await resolveConfig({
+      extends: ["github>whitesource/merge-confidence:beta"],
+    });
+    expect(r.presetsUnresolved).toEqual([]);
+    expect(r.presetsResolved).toEqual(["github>whitesource/merge-confidence:beta"]);
+  });
+
+  it("does not apply the map to an entry with args (raw-string lookup)", async () => {
+    const r = await resolveConfig({ extends: ["config:base(x)"] });
+    expect(r.presetsUnresolved.map((u) => u.preset)).toEqual(["config:base(x)"]);
+  });
+
+  it("lands a dangling rename target in presetsUnresolved, naming the original entry", async () => {
+    const r = await resolveConfig({ extends: ["monorepo:HotChocolate"] });
+    expect(r.presetsUnresolved).toHaveLength(1);
+    expect(r.presetsUnresolved[0]!.preset).toBe("monorepo:HotChocolate");
+    expect(r.presetsUnresolved[0]!.reason).toContain("monorepo:hotchocolate");
+    expect(r.presetsResolved).toEqual([]);
+  });
+
+  it("ignores prototype keys such as constructor", async () => {
+    const r = await resolveConfig({ extends: ["constructor"] });
+    expect(r.presetsUnresolved.map((u) => u.preset)).toEqual(["constructor"]);
+  });
+});

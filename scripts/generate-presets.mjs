@@ -67,6 +67,15 @@ for (const [namespace, filename] of Object.entries(NAMESPACES)) {
   }
 }
 
+const common = await import("renovate/dist/config/presets/common.js");
+const removedPresets = common.removedPresets ?? common.default?.removedPresets;
+if (!removedPresets) {
+  throw new Error("presets/common.js has no `removedPresets` export");
+}
+const sortedRemoved = Object.fromEntries(
+  Object.entries(removedPresets).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+);
+
 const sorted = Object.fromEntries(
   Object.entries(entries).sort(([a], [b]) => a.localeCompare(b)),
 );
@@ -81,6 +90,12 @@ export interface GeneratedPreset {
 export const RENOVATE_VERSION = ${JSON.stringify(renovateVersion())};
 
 export const PRESETS: Record<string, GeneratedPreset> = ${JSON.stringify(sorted, null, 2)};
+
+/**
+ * Renovate's \`removedPresets\` map: renamed built-in presets map to their new
+ * name, removed ones map to null (Renovate resolves them to an empty config).
+ */
+export const REMOVED_PRESETS: Record<string, string | null> = ${JSON.stringify(sortedRemoved, null, 2)};
 
 export const PRESET_NAMES: readonly string[] = Object.freeze(Object.keys(PRESETS));
 `;
