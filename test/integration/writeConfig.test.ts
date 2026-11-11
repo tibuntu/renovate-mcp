@@ -16,7 +16,7 @@ import { startServer, type McpSession } from "../helpers/mcpSession.js";
 
 /**
  * write_config's rollback contract: a failed validation must never leave
- * renovate.json (or the .renovate-mcp-tmp temp file) on disk. We exercise this
+ * renovate.json (or its renovate-mcp-tmp-<uuid>.json temp file) on disk. We exercise this
  * by pointing RENOVATE_CONFIG_VALIDATOR_BIN at fake binaries that we know
  * will pass or fail, then calling the tool via stdio.
  */
@@ -134,7 +134,7 @@ describe("write_config", () => {
 
     const files = await readdir(repo);
     expect(files).not.toContain("renovate.json");
-    expect(files.some((f) => f.endsWith(".renovate-mcp-tmp"))).toBe(false);
+    expect(files.some((f) => f.includes(".renovate-mcp-tmp"))).toBe(false);
   });
 
   it("does not follow a pre-existing symlink at the legacy temp path (issue #129)", async () => {
@@ -345,27 +345,47 @@ describe("write_config", () => {
 
   it("cleans up the tmp file when the final rename fails (issue #57)", async () => {
     // Simulate a rename failure by pre-creating a non-empty directory at the
-    // target path — fs.rename(tmp, target) fails with ENOTEMPTY / EISDIR on
-    // POSIX. Before the fix, the .renovate-mcp-tmp file was left behind.
-    const validator = await makeFakeValidator(repo, "fake-pass.mjs", 0);
+    // target path — fs.rename(tmp, target) then fails (EISDIR / ENOTEMPTY on
+    // POSIX). force=true is required to reach the rename at all: without it
+    // the handler reads the existing target first, and that read throws on a
+    // directory before any temp file is written. Before the fix, the
+    // renovate.json.renovate-mcp-tmp-<uuid>.json file was left behind.
+    const record = path.join(repo, "validator-saw.json");
+    const validator = await makeFakeValidator(repo, "fake-pass.mjs", 0, record);
     session = await startServer({ RENOVATE_CONFIG_VALIDATOR_BIN: validator });
 
     const targetAsDir = path.join(repo, "renovate.json");
     await mkdir(targetAsDir);
     await writeFile(path.join(targetAsDir, "placeholder"), "x");
 
-    await session
-      .request("tools/call", {
-        name: "write_config",
-        arguments: {
-          repoPath: repo,
-          config: { extends: ["config:recommended"] },
-        },
-      })
-      .catch(() => undefined);
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "write_config",
+      arguments: {
+        repoPath: repo,
+        config: { extends: ["config:recommended"] },
+        force: true,
+        confirmForce: "YES_OVERRIDE_VALIDATION",
+      },
+    });
+
+    // The rename failed, so the tool must report an error, not a write.
+    expect(res.result?.isError).toBe(true);
+
+    // The validator ran on a temp file, proving the rename path was reached;
+    // that temp file must be gone afterwards.
+    const { file: tmpSeen } = await readRecord(record);
+    expect(path.basename(tmpSeen)).toMatch(/^renovate\.json\.renovate-mcp-tmp-/);
+    await expect(lstat(tmpSeen)).rejects.toMatchObject({ code: "ENOENT" });
 
     const files = await readdir(repo);
-    expect(files.some((f) => f.endsWith(".renovate-mcp-tmp"))).toBe(false);
+    expect(files.filter((f) => f.startsWith("renovate.json.renovate-mcp-tmp"))).toEqual([]);
+
+    // The directory squatting on the target is left untouched.
+    expect((await lstat(targetAsDir)).isDirectory()).toBe(true);
+    expect(await readdir(targetAsDir)).toEqual(["placeholder"]);
   });
 
   it("writes anyway when force=true and validation fails", async () => {
@@ -647,7 +667,7 @@ describe("write_config", () => {
 
     const files = await readdir(repo).catch(() => [] as string[]);
     expect(files).not.toContain("renovate.json");
-    expect(files.some((f) => f.endsWith(".renovate-mcp-tmp"))).toBe(false);
+    expect(files.some((f) => f.includes(".renovate-mcp-tmp"))).toBe(false);
   });
 
   it("reports a validator that overruns its budget as validator-timeout, not validator-unavailable", async () => {
