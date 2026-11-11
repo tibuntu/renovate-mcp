@@ -182,11 +182,12 @@ export function registerWriteConfig(server: McpServer): void {
 
       // Create tmp 0o600 when copying a mode over it (owner-only until the
       // fchmod below); for a new file ask for 0o666 so the kernel applies the
-      // process umask, avoiding the deprecated no-arg process.umask(). tmp at
-      // its final mode during validation leaks nothing: same bytes are about
-      // to land at the target. The mode is set through the open handle
-      // (fchmod), never `fs.chmod(tmp)`, which would re-resolve the path and
-      // follow a symlink swapped in at that name. The open stays outside the
+      // process umask, avoiding the deprecated no-arg process.umask(). While the
+      // validator runs, tmp is as readable as the written file would be (also
+      // when validation then refuses the write); it never exceeds that. The
+      // mode is set through the open handle (fchmod), never `fs.chmod(tmp)`,
+      // which would re-resolve the path and follow a symlink swapped in at
+      // that name. The open stays outside the
       // try: on EEXIST the entry at tmp is not ours, so `finally` must not
       // unlink it.
       const fh = await fs.open(tmp, "wx", targetMode === undefined ? 0o666 : 0o600);
