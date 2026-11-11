@@ -9,6 +9,7 @@ import {
   chmod,
   symlink,
   lstat,
+  stat,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -687,4 +688,55 @@ setInterval(() => {}, 1000);
     expect(files).not.toContain("renovate.json");
     expect(files.filter((f) => f.includes(".renovate-mcp-tmp-"))).toHaveLength(0);
   });
+
+  it.skipIf(process.platform === "win32")(
+    "keeps the permission bits of an existing target on overwrite",
+    async () => {
+      const validator = await makeFakeValidator(repo, "fake-pass.mjs", 0);
+      session = await startServer({ RENOVATE_CONFIG_VALIDATOR_BIN: validator });
+      const file = path.join(repo, "renovate.json");
+      await writeFile(file, '{\n  // keep me\n  "extends": ["config:base"]\n}\n');
+      await chmod(file, 0o640);
+
+      const res = await session.request<{
+        content: Array<{ type: string; text: string }>;
+        isError?: boolean;
+      }>("tools/call", {
+        name: "write_config",
+        arguments: { repoPath: repo, config: { extends: ["config:recommended"] } },
+      });
+
+      expect(res.result?.isError).toBeFalsy();
+      const payload = JSON.parse(res.result!.content[0]!.text);
+      expect(payload.wrote).toBe(true);
+      expect(payload.mode).toBe("round-trip");
+      expect((await stat(file)).mode & 0o777).toBe(0o640);
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "gives a new file the default mode for the process umask",
+    async () => {
+      const validator = await makeFakeValidator(repo, "fake-pass.mjs", 0);
+      session = await startServer({ RENOVATE_CONFIG_VALIDATOR_BIN: validator });
+      // Probe what a plain create yields under this process's umask.
+      const probe = path.join(repo, "mode-probe.txt");
+      await writeFile(probe, "x");
+      const probeMode = (await stat(probe)).mode & 0o777;
+      await rm(probe);
+
+      const res = await session.request<{
+        content: Array<{ type: string; text: string }>;
+        isError?: boolean;
+      }>("tools/call", {
+        name: "write_config",
+        arguments: { repoPath: repo, config: { extends: ["config:recommended"] } },
+      });
+
+      expect(res.result?.isError).toBeFalsy();
+      const mode = (await stat(path.join(repo, "renovate.json"))).mode & 0o777;
+      expect(mode).toBe(probeMode);
+      if ((probeMode & 0o077) !== 0) expect(mode).not.toBe(0o600);
+    },
+  );
 });

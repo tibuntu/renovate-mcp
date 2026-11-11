@@ -166,9 +166,38 @@ export function registerWriteConfig(server: McpServer): void {
         ? `${target}.renovate-mcp-slice-${randomUUID()}.json`
         : undefined;
       await fs.mkdir(path.dirname(target), { recursive: true });
-      await fs.writeFile(tmp, payload, { flag: "wx", mode: 0o600 });
+
+      // rename() keeps tmp's inode, so tmp's mode becomes the target's. Capture
+      // an existing regular file's permission bits so an overwrite does not
+      // silently tighten e.g. 0644 to 0600. `stat` (not `lstat`): `target` is
+      // already a realpath, and a dangling link must read as ENOENT (new file).
+      // A concurrent chmod between this stat and the rename is lost; benign.
+      let targetMode: number | undefined = undefined;
+      try {
+        const st = await fs.stat(target);
+        if (st.isFile()) targetMode = st.mode & 0o777;
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+      }
+
+      // Create tmp 0o600 when copying a mode over it (owner-only until the
+      // fchmod below); for a new file ask for 0o666 so the kernel applies the
+      // process umask, avoiding the deprecated no-arg process.umask(). tmp at
+      // its final mode during validation leaks nothing: same bytes are about
+      // to land at the target. The mode is set through the open handle
+      // (fchmod), never `fs.chmod(tmp)`, which would re-resolve the path and
+      // follow a symlink swapped in at that name. The open stays outside the
+      // try: on EEXIST the entry at tmp is not ours, so `finally` must not
+      // unlink it.
+      const fh = await fs.open(tmp, "wx", targetMode === undefined ? 0o666 : 0o600);
 
       try {
+        try {
+          await fh.writeFile(payload);
+          if (targetMode !== undefined) await fh.chmod(targetMode);
+        } finally {
+          await fh.close();
+        }
         if (sliceTmp) {
           await fs.writeFile(sliceTmp, JSON.stringify(config, null, 2) + "\n", {
             flag: "wx",
