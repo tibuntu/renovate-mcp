@@ -199,7 +199,7 @@ Once the server is wired up, try prompts like these. Written for Claude but work
 **Self-hosted GitLab / GitHub Enterprise** (env set per [Platform setup](#platform-setup))
 
 - "Resolve my config with external presets enabled. Its `local>platform/renovate-presets` presets live on our self-hosted GitLab at `https://gitlab.example.com/api/v4`."
-- "Expand `github>acme/renovate-config//base` from our GitHub Enterprise at `https://github.acme.corp/api/v3`."
+- "Resolve my config with external presets enabled. Its `local>acme/renovate-config//base` preset lives on our GitHub Enterprise at `https://github.acme.corp/api/v3`."
 - "Dry-run `infrastructure/kubernetes/our-platform` (a nested-group GitLab project) so Renovate can fetch the `local>` presets the config extends."
 
 **Authoring a custom manager (regex or JSONata)**
