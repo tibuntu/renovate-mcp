@@ -160,7 +160,7 @@ export function registerDryRun(server: McpServer): void {
       title: "Dry-run Renovate",
       annotations: NETWORK_READ_ONLY_ANNOTATIONS,
       description:
-        "Run Renovate in dry-run mode to preview what it would do — no PRs opened, no git pushes. Returns a structured JSON report plus a top-level `ok` boolean (false when the CLI failed OR the report records a validation/error-level problem, even if the exit code was 0). RE2 native-module fallback noise and Renovate's `Unsupported node environment` notice are filtered out of `reportErrors` — the former flows into `warnings` (still actionable, still surfaced), the latter into a separate `environmentWarnings[]` since the run still produced a usable report.\n\nEffective platform = `platform` input → `RENOVATE_PLATFORM` env → `local`. The `platformSource` field on the result echoes which step won; preflight errors and the env-overrides-default advisory both reference it so callers don't have to read the source to find where a surprising `gitlab`/`github` came from.\n\nThe full structured report ships inline by default. For large repos that is bigger than most MCP clients' response-content cap (≈75 KB on Claude Desktop) and the middle of the JSON is silently truncated. Pass `reportOutputPath` to redirect the structured report to a file (mode 0600), in which case `summary.report` collapses to `{ reportPath, repoCount, updateCount }` and `dry_run_diff` can pick it up via `{ reportPath: … }`. `warnings`, `problems`, `reportErrors`, and `environmentWarnings` always stay inline regardless — those are the actionable bits.\n\n**Custom base branches.** By default Renovate evaluates the repository's default branch. Pass `baseBranches` to evaluate other branches instead — this is how you dry-run a Renovate config change that lives on a feature branch before merging it. Entries are exact branch names; regex requires `/…/` wrapping (e.g. `/^renovate\\/.+/`, negate with `!/…/`) — bare `^foo` is matched literally, not as regex. `$default` expands to the default branch. With `readConfigFromBaseBranch` (default true) Renovate also reads its config FROM those branches (`useBaseBranchConfig=merge`), so the branch's edited config is what gets evaluated; set it false to scan the branches' manifests using the default branch's config. Base-branch selection only applies to remote-platform runs (`platform: 'github'`/`'gitlab'`) — it is ignored (with a warning) under `platform=local`.\n\n**Auth — prefer env vars, every token bound to its host.** Set tokens on the MCP server's env via `claude_desktop_config.json` / `.mcp.json`, with the same host scoping `resolve_config` uses: `GITHUB_TOKEN` / `GITLAB_TOKEN` (and the Gitea / Forgejo / Bitbucket ones) only for their platform's public host, `RENOVATE_TOKEN` only for the home host named by `RENOVATE_PLATFORM` / `RENOVATE_ENDPOINT` (where it wins over the platform's own token, as in Renovate), `RENOVATE_MCP_HOST_TOKENS` entries for further hosts. The `platform`, `endpoint` and `presetPlatform` inputs and the repo's origin route requests but never bind an env token to another host: an endpoint passed only on the call gets a token from a `RENOVATE_MCP_HOST_TOKENS` entry or the `token` input. On a remote run (`github` / `gitlab`) the platform token — the `token` input, else the env token bound to the API host (`endpoint`, else `RENOVATE_ENDPOINT` when it belongs to that platform, else the public API) — is exported as `RENOVATE_TOKEN` to the spawned Renovate CLI; without one an actionable error is returned before spawning. Under `platform=local` no `RENOVATE_TOKEN` is exported and the `token` input is ignored with a warning. Every env token is also handed to Renovate as a host rule on its own host (`GITHUB_COM_TOKEN` excepted, Renovate reads it itself), so a `GITLAB_TOKEN` authenticates gitlab.com lookups in a local run. A malformed `RENOVATE_MCP_HOST_TOKENS` is an error before spawning. The `token` input is retained as an ad-hoc / testing fallback — when supplied inline it is persisted in the MCP tool transcript that the client may share, replay, or feed back into the LLM, so an advisory entry is appended to the result `warnings` array steering callers toward env-var auth.\n\nDefault mode runs `--platform=local` against the filesystem at `repoPath`. Renovate cannot resolve `local>…` presets (or unprefixed `owner/repo` ones) in local mode, so in `lookup` and `full` mode the tool flattens them first: it copies the repository (tracked files) into a temporary directory, resolves every preset after the leading built-ins with Renovate's own preset resolver, routed through `presetPlatform` (else the platform of the origin remote) and `endpoint` (else `RENOVATE_ENDPOINT` when `RENOVATE_PLATFORM` names the same platform and, for an origin-derived platform, the endpoint is on the origin's host), validates the result as a repo config, writes it into the copy and runs Renovate there. The copy's path is reported as `repoPath` and the copy is removed afterwards; the result lists `flattenedPresets` and `keptExtends`. Refused before spawning: no derivable route (pass `presetPlatform`), a self-hosted origin without an endpoint, Bitbucket, a blocked endpoint, a preset that cannot be fetched, a flattened config that fails validation, a worker failure, or a repository over the copy caps. `dryRunMode=extract` is not flattened. Alternatively pass `platform` (`github` or `gitlab`), `endpoint` and `repository` (plus `token` when no env token applies) to run as a real platform client against the remote repository — Renovate still runs with `--dry-run`, so no PRs are opened. `gitlab>…` / `github>…` presets always come from gitlab.com / github.com, as in Renovate.\n\nCredentials for private registries (e.g. `COMPOSER_AUTH` for Packagist/Satis proxies, `NPM_TOKEN` / `.npmrc` for npm, Docker registry creds, `RENOVATE_HOST_RULES` for anything else) must be set on the MCP server process itself — via the `env` key in `claude_desktop_config.json` / `.mcp.json`, not your shell, since the MCP server runs as a child of Claude and does not inherit shell env. Alternatively, encode credentials as `hostRules` in the Renovate config, or pass them per-call via the `hostRules` input on this tool (written after the env-token rules to a mode-0600 temp file that is cleaned up after the run; token/password values — including the platform `token` input, the env tokens and `GITHUB_COM_TOKEN` — are scrubbed from `logTail`, `problems` and the report, `reportErrors` and a saved `reportOutputPath` included). Per-call `hostRules` are appended to any the repo's own config already declares. If a lookup can't auth to a registry, Renovate often reports 0 updates without a loud error; when that happens this tool surfaces detected auth failures under `problems` in the output so callers can distinguish a genuine \"no updates\" from a silent registry-auth failure.",
+        "Run Renovate in dry-run mode to preview what it would do — no PRs opened, no git pushes. Returns a structured JSON report plus a top-level `ok` boolean (false when the CLI failed OR the report records a validation/error-level problem, even if the exit code was 0). RE2 native-module fallback noise and Renovate's `Unsupported node environment` notice are filtered out of `reportErrors` — the former flows into `warnings` (still actionable, still surfaced), the latter into a separate `environmentWarnings[]` since the run still produced a usable report.\n\nEffective platform = `platform` input → `RENOVATE_PLATFORM` env → `local`. The `platformSource` field on the result echoes which step won; preflight errors and the env-overrides-default advisory both reference it so callers don't have to read the source to find where a surprising `gitlab`/`github` came from.\n\nThe full structured report ships inline by default. For large repos that is bigger than most MCP clients' response-content cap (≈75 KB on Claude Desktop) and the middle of the JSON is silently truncated. Pass `reportOutputPath` to redirect the structured report to a file (mode 0600), in which case `summary.report` collapses to `{ reportPath, repoCount, updateCount }` and `dry_run_diff` can pick it up via `{ reportPath: … }`. `warnings`, `problems`, `reportErrors`, and `environmentWarnings` always stay inline regardless — those are the actionable bits.\n\n**Custom base branches.** By default Renovate evaluates the repository's default branch. Pass `baseBranches` to evaluate other branches instead — this is how you dry-run a Renovate config change that lives on a feature branch before merging it. Entries are exact branch names; regex requires `/…/` wrapping (e.g. `/^renovate\\/.+/`, negate with `!/…/`) — bare `^foo` is matched literally, not as regex. `$default` expands to the default branch. With `readConfigFromBaseBranch` (default true) Renovate also reads its config FROM those branches (`useBaseBranchConfig=merge`), so the branch's edited config is what gets evaluated; set it false to scan the branches' manifests using the default branch's config. Base-branch selection only applies to remote-platform runs (`platform: 'github'`/`'gitlab'`) — it is ignored (with a warning) under `platform=local`.\n\n**Auth — prefer env vars, every token bound to its host.** Set tokens on the MCP server's env via `claude_desktop_config.json` / `.mcp.json`, with the same host scoping `resolve_config` uses: `GITHUB_TOKEN` / `GITLAB_TOKEN` (and the Gitea / Forgejo / Bitbucket ones) only for their platform's public host, `RENOVATE_TOKEN` only for the home host named by `RENOVATE_PLATFORM` / `RENOVATE_ENDPOINT` (where it wins over the platform's own token, as in Renovate), `RENOVATE_MCP_HOST_TOKENS` entries for further hosts. The `platform`, `endpoint` and `presetPlatform` inputs and the repo's origin route requests but never bind an env token to another host: an endpoint passed only on the call gets a token from a `RENOVATE_MCP_HOST_TOKENS` entry or the `token` input. On a remote run (`github` / `gitlab`) the platform token — the `token` input, else the env token bound to the API host (`endpoint`, else `RENOVATE_ENDPOINT` when it belongs to that platform, else the public API) — is exported as `RENOVATE_TOKEN` to the spawned Renovate CLI; without one an actionable error is returned before spawning. Under `platform=local` no `RENOVATE_TOKEN` is exported and the `token` input is ignored with a warning. Every env token is also handed to Renovate as a host rule on its own host (`GITHUB_COM_TOKEN` excepted, Renovate reads it itself), so a `GITLAB_TOKEN` authenticates gitlab.com lookups in a local run. A malformed `RENOVATE_MCP_HOST_TOKENS` is an error before spawning. The `token` input is retained as an ad-hoc / testing fallback — when supplied inline it is persisted in the MCP tool transcript that the client may share, replay, or feed back into the LLM, so an advisory entry is appended to the result `warnings` array steering callers toward env-var auth.\n\nDefault mode runs `--platform=local` against the filesystem at `repoPath`. Renovate cannot resolve `local>…` presets (or unprefixed `owner/repo` ones) in local mode, so the tool flattens them first, in every `dryRunMode` (Renovate resolves presets during repo init in all of them): it copies the repository (tracked files only: an untracked or gitignored file Renovate would read from disk, such as a local `.npmrc`, is not in the copy) into a temporary directory, resolves every preset after the leading built-ins with Renovate's own preset resolver, routed through `presetPlatform` (else the platform of the origin remote) and `endpoint` (else `RENOVATE_ENDPOINT` when `RENOVATE_PLATFORM` names the same platform and, for an origin-derived platform, the endpoint is on the origin's host), validates the result as a repo config, writes it into the copy and runs Renovate there. The copy's path is reported as `repoPath` and the copy is removed afterwards; the result lists `flattenedPresets` and `keptExtends`. Refused before spawning: no derivable route (pass `presetPlatform`, or set `RENOVATE_PLATFORM` / `RENOVATE_ENDPOINT` for the origin's host), a self-hosted origin without an endpoint, Bitbucket, a blocked endpoint, a preset that cannot be fetched, a flattened config that fails validation, a worker failure, a config file with local presets that git does not track, or a repository over the copy caps. An `extract` run without a derivable route is not refused: it runs unflattened with a warning, and Renovate reports the preset itself. Alternatively pass `platform` (`github` or `gitlab`), `endpoint` and `repository` (plus `token` when no env token applies) to run as a real platform client against the remote repository — Renovate still runs with `--dry-run`, so no PRs are opened. `gitlab>…` / `github>…` presets always come from gitlab.com / github.com, as in Renovate.\n\nCredentials for private registries (e.g. `COMPOSER_AUTH` for Packagist/Satis proxies, `NPM_TOKEN` / `.npmrc` for npm, Docker registry creds, `RENOVATE_HOST_RULES` for anything else) must be set on the MCP server process itself — via the `env` key in `claude_desktop_config.json` / `.mcp.json`, not your shell, since the MCP server runs as a child of Claude and does not inherit shell env. Alternatively, encode credentials as `hostRules` in the Renovate config, or pass them per-call via the `hostRules` input on this tool (written after the env-token rules to a mode-0600 temp file that is cleaned up after the run; token/password values — including the platform `token` input, the env tokens and `GITHUB_COM_TOKEN` — are scrubbed from `logTail`, `problems` and the report, `reportErrors` and a saved `reportOutputPath` included). A per-call rule carrying a credential replaces the env-token rule for the same host (an env rule that would outrank it in Renovate's host-rule lookup is left out), with or without a `hostType`. Per-call `hostRules` are appended to any the repo's own config already declares. If a lookup can't auth to a registry, Renovate often reports 0 updates without a loud error; when that happens this tool surfaces detected auth failures under `problems` in the output so callers can distinguish a genuine \"no updates\" from a silent registry-auth failure.",
       inputSchema: {
         repoPath: pathString(
           "Absolute path to the repository root. Required for the default `platform=local` mode. When `platform` is overridden (e.g. `gitlab` / `github`), Renovate runs against the remote `repository` instead — `repoPath` is still used as the child's working directory but its manifest files are ignored.",
@@ -218,7 +218,7 @@ export function registerDryRun(server: McpServer): void {
           .enum(HOSTED_PLATFORMS)
           .optional()
           .describe(
-            "Local runs only: the platform the config's local presets (`local>owner/repo`, or an unprefixed `owner/repo`) live on. Under `platform=local` Renovate cannot resolve them, so in `lookup` and `full` mode dry_run resolves them first with Renovate's own preset resolver, writes the result into a temporary copy of the repository and runs Renovate there. When unset, it is derived from the origin remote (github.com, gitlab.com, gitea.com, codeberg.org, code.forgejo.org, or the flavour of a self-hosted host, which then needs `endpoint` or `RENOVATE_ENDPOINT`). Passing it also flattens a config whose local presets only appear inside other presets. `bitbucket` is refused: Renovate reads Bitbucket local presets through its platform client. Like `platform` in `resolve_config` it routes the presets but never moves an env token to their host.",
+            "Local runs only: the platform the config's local presets (`local>owner/repo`, or an unprefixed `owner/repo`) live on. Under `platform=local` Renovate cannot resolve them, so dry_run resolves them first with Renovate's own preset resolver, writes the result into a temporary copy of the repository and runs Renovate there. When unset, it is derived from the origin remote (github.com, gitlab.com, gitea.com, codeberg.org, code.forgejo.org, or the flavour of a self-hosted host, which then needs `endpoint` or `RENOVATE_ENDPOINT`; a host whose flavour the name does not show is taken as `RENOVATE_PLATFORM` when `RENOVATE_ENDPOINT` is on it). Passing it also flattens a config whose local presets only appear inside other presets. `bitbucket` is refused: Renovate reads Bitbucket local presets through its platform client. Like `platform` in `resolve_config` it routes the presets but never moves an env token to their host.",
           ),
         readConfigFromBaseBranch: z
           .boolean()
@@ -346,59 +346,97 @@ export function registerDryRun(server: McpServer): void {
       // Local: Renovate's platform rule has hostType `local` and no host, so no
       // RENOVATE_TOKEN; env tokens reach Renovate only as host rules.
       //
-      // Local `lookup` / `full` runs whose config names a local preset (or that
+      // Local runs (every `dryRunMode`: Renovate resolves presets during repo
+      // init in all of them) whose config names a local preset (or that
       // pass `presetPlatform`) flatten it first (ADR-0009): the repo is copied,
       // the copy's config is the one Renovate would read, and `route` is where
       // its `local>` presets are fetched from.
       let copy: { dir: string; relPath: string; config: Record<string, unknown>; warnings: string[] } | undefined;
       let route: TokenScope = homeScope({ platform: effectivePlatform, endpoint });
-      if (!isRemotePlatform && dryRunMode !== "extract") {
-        const located = await locateConfig(repoPath).catch(() => null);
-        if (located && (presetPlatform || findLocalPresets(located.config).length)) {
-          const copied = await copyRepo(repoPath);
-          if (!copied.ok) return { isError: true, content: [{ type: "text", text: copied.reason }] };
-          // An untracked config is not in the copy, as it is not in Renovate's
-          // `git ls-files`; then there is nothing to flatten.
-          const inCopy = await locateConfig(copied.dir).catch(() => null);
-          if (inCopy && (presetPlatform || findLocalPresets(inCopy.config).length)) {
-            const local = await resolveLocalPresetRoute(repoPath, { presetPlatform, endpoint });
-            if (!local.ok) {
-              await removeRepoCopy(copied.dir);
-              return { isError: true, content: [{ type: "text", text: local.reason }] };
-            }
-            route = local.scope;
-            copy = { dir: copied.dir, relPath: inCopy.relPath, config: inCopy.config, warnings: copied.warnings };
-          } else {
-            await removeRepoCopy(copied.dir);
-          }
-        }
-      }
+      const mcpWarnings: string[] = [];
       const apiUrl = isRemotePlatform ? (route.endpoint ?? DEFAULT_API_URL[effectivePlatform]) : undefined;
+      // The `endpoint` input was validated above, so this is the env endpoint.
+      if (apiUrl && !URL.canParse(apiUrl)) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text: "`RENOVATE_ENDPOINT` on the MCP server is not a valid URL: it needs a scheme, e.g. `https://gitlab.example.com/api/v4`. Fix it, or pass `endpoint` on the call.",
+            },
+          ],
+        };
+      }
       const envCredential = apiUrl
         ? selectToken(apiUrl, effectivePlatform as "github" | "gitlab", process.env, { githubComToken: false })
         : undefined;
       const resolvedToken = isRemotePlatform ? (token ?? envCredential!.token) : undefined;
 
-      // Rules a later rule for the same hostType + matchHost replaces anyway:
-      // the platform rule Renovate appends last, and per-call rules carrying a
-      // credential. The platform rule sits on the API host; the env rule of the
-      // run's platform on a parent domain of it (github.com for api.github.com)
-      // is left out too, as a real run has no token off the API host either.
-      const covered: Array<{ hostType: string; matchHost: string }> = [];
+      // Env rules a later rule replaces or must not outrank: the platform rule
+      // Renovate appends last, and per-call rules carrying a credential (see
+      // `buildHostTokenRules`). The platform rule sits on the API host; the env
+      // rule of the run's platform on a parent domain of it (github.com for
+      // api.github.com) is left out too, as a real run has no token off the
+      // API host either.
+      const covered: Array<{ hostType?: string; matchHost?: string }> = [];
       if (apiUrl) {
         covered.push({ hostType: effectivePlatform, matchHost: new URL(apiUrl).hostname });
         const envHost = tokenHost(effectivePlatform as "github" | "gitlab");
         if (envHost && matchesHost(envHost, apiUrl)) covered.push({ hostType: effectivePlatform, matchHost: envHost });
       }
       for (const rule of ruleList) {
-        if (typeof rule.hostType === "string" && typeof rule.matchHost === "string" && (rule.token || rule.password)) {
-          covered.push({ hostType: rule.hostType, matchHost: rule.matchHost });
-        }
+        const hostType = typeof rule.hostType === "string" ? rule.hostType : undefined;
+        const matchHost = typeof rule.matchHost === "string" ? rule.matchHost : undefined;
+        if ((hostType || matchHost) && (rule.token || rule.password)) covered.push({ hostType, matchHost });
       }
       const autoRules = buildHostTokenRules(process.env, covered);
-      if (autoRules.error) {
-        if (copy) await removeRepoCopy(copy.dir);
-        return { isError: true, content: [{ type: "text", text: autoRules.error }] };
+      if (autoRules.error) return { isError: true, content: [{ type: "text", text: autoRules.error }] };
+
+      // Every refusal that needs no copy comes first: the copy can be 512 MiB.
+      if (!isRemotePlatform) {
+        const located = await locateConfig(repoPath).catch(() => null);
+        const hasLocalPresets = located ? findLocalPresets(located.config).length > 0 : false;
+        const local =
+          located && (presetPlatform || hasLocalPresets)
+            ? await resolveLocalPresetRoute(repoPath, { presetPlatform, endpoint })
+            : undefined;
+        if (local && !local.ok) {
+          // `extract` has always been let through without a route (the
+          // manifest-only escape hatch); Renovate then reports the preset itself.
+          if (dryRunMode !== "extract") return { isError: true, content: [{ type: "text", text: local.reason }] };
+          mcpWarnings.push(`${local.reason} This \`extract\` run continues without flattening; Renovate will fail on the local presets.`);
+        } else if (located && local) {
+          const copied = await copyRepo(repoPath);
+          if (!copied.ok) return { isError: true, content: [{ type: "text", text: copied.reason }] };
+          // The copy holds what Renovate's `git ls-files` lists, so an
+          // untracked config is not in it.
+          const inCopy = await locateConfig(copied.dir).catch(() => null);
+          if (inCopy && (presetPlatform || findLocalPresets(inCopy.config).length)) {
+            route = local.scope;
+            copy = { dir: copied.dir, relPath: inCopy.relPath, config: inCopy.config, warnings: copied.warnings };
+          } else {
+            await removeRepoCopy(copied.dir);
+            if (hasLocalPresets && !inCopy) {
+              // Renovate would skip an untracked config file (and report a run
+              // that never read it) or read an untracked package.json from disk
+              // and fail on the local presets.
+              return {
+                isError: true,
+                content: [
+                  {
+                    type: "text",
+                    text: `\`${located.relPath}\` extends local presets but is not tracked by git, so it is not in dry_run's temporary copy and the presets cannot be flattened. Stage it (\`git add ${located.relPath}\`, no commit needed) and run again.`,
+                  },
+                ],
+              };
+            }
+            if (inCopy && inCopy.relPath !== located.relPath) {
+              mcpWarnings.push(
+                `\`${located.relPath}\` is not tracked by git, so Renovate's local platform reads \`${inCopy.relPath}\` instead. Stage it (\`git add ${located.relPath}\`) to have it evaluated.`,
+              );
+            }
+          }
+        }
       }
 
       const secrets = [...new Set([...collectSecrets(ruleList), ...autoRules.secrets])];
@@ -414,8 +452,7 @@ export function registerDryRun(server: McpServer): void {
       // is emitted regardless of how many triggers fire (no N+1 spam).
       const inlineSecretDetected =
         (typeof token === "string" && token.length > 0) || hasInlineHostRuleToken(ruleList);
-      const mcpWarnings: string[] = [];
-      if (inlineSecretDetected) mcpWarnings.push(INLINE_SECRET_WARNING);
+      if (inlineSecretDetected) mcpWarnings.unshift(INLINE_SECRET_WARNING);
       mcpWarnings.push(...autoRules.warnings);
       const fileRules: HostRule[] = [...autoRules.rules, ...ruleList];
       if (!hostRulesSlot && autoRules.rules.length > 0) {
@@ -425,12 +462,12 @@ export function registerDryRun(server: McpServer): void {
       }
       if (!isRemotePlatform && endpoint !== undefined && !copy) {
         mcpWarnings.push(
-          "`endpoint` was ignored: under `platform=local` it only routes the local presets dry_run flattens, and this run flattens none (no local preset in the repo config, or `dryRunMode=extract`).",
+          "`endpoint` was ignored: under `platform=local` it only routes the local presets dry_run flattens, and this run flattens none (no local preset in the repo config, or an `extract` run without a route).",
         );
       }
       if (presetPlatform !== undefined && !copy) {
         mcpWarnings.push(
-          "`presetPlatform` was ignored: it only applies to a `platform=local` run in `lookup` or `full` mode on a repository with a Renovate config.",
+          "`presetPlatform` was ignored: it only applies to a `platform=local` run on a repository with a tracked Renovate config, and needs a route.",
         );
       }
       if (copy) mcpWarnings.push(...copy.warnings);

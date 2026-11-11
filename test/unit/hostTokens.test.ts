@@ -448,6 +448,24 @@ describe("buildHostTokenRules", () => {
     expect(out.secrets).toEqual(["gh"]);
   });
 
+  it("leaves out an env rule that would outrank or tie-beat a covering rule in Renovate's find()", () => {
+    const env = { GITHUB_TOKEN: "gh", GITLAB_TOKEN: "gl", GITEA_TOKEN: "gt" };
+    const left = (covered: Array<{ hostType?: string; matchHost?: string }>) =>
+      buildHostTokenRules(env, covered).rules.map((r) => r.hostType);
+    // No hostType: rank 2 against the env rule's 3, on the same host, a subdomain or a parent domain.
+    expect(left([{ matchHost: "github.com" }])).toEqual(["gitlab", "gitea"]);
+    expect(left([{ matchHost: "api.github.com" }])).toEqual(["gitlab", "gitea"]);
+    expect(left([{ matchHost: "https://gitlab.com/api/v4/" }])).toEqual(["github", "gitea"]);
+    // No matchHost: rank 1, covers every host of its hostType.
+    expect(left([{ hostType: "gitea" }])).toEqual(["github", "gitlab"]);
+    // Both, on a parent domain: the env rule's longer matchHost would win the tie.
+    expect(left([{ hostType: "github", matchHost: "com" }])).toEqual(["gitlab", "gitea"]);
+    // Both, on a subdomain: the covering rule is longer and wins without help.
+    expect(left([{ hostType: "github", matchHost: "api.github.com" }])).toEqual(["github", "gitlab", "gitea"]);
+    // Another hostType or an unrelated host covers nothing.
+    expect(left([{ hostType: "npm", matchHost: "github.com" }, { matchHost: "example.com" }])).toEqual(["github", "gitlab", "gitea"]);
+  });
+
   it("deduplicates secrets", () => {
     const env = { GITHUB_TOKEN: "same", GITLAB_TOKEN: "same" };
     expect(buildHostTokenRules(env).secrets).toEqual(["same"]);

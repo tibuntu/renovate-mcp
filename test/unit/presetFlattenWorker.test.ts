@@ -388,6 +388,19 @@ describe("resolveLocalPresetRoute", () => {
     }
   });
 
+  it("takes the env platform for an origin whose hostname shows no flavour, when RENOVATE_ENDPOINT is on that host", async () => {
+    const repo = repoWithOrigin("https://git.example.com/acme/w.git");
+    const env = { RENOVATE_PLATFORM: "gitlab", RENOVATE_ENDPOINT: "https://git.example.com/api/v4" };
+    expect(await resolveLocalPresetRoute(repo, {}, env)).toEqual({
+      ok: true,
+      scope: { platform: "gitlab", endpoint: "https://git.example.com/api/v4" },
+    });
+    // An env endpoint on another host says nothing about this origin.
+    expect(
+      await resolveLocalPresetRoute(repo, {}, { RENOVATE_PLATFORM: "gitlab", RENOVATE_ENDPOINT: "https://gitlab.corp.example/api/v4" }),
+    ).toEqual({ ok: false, reason: expect.stringContaining("could not be classified") });
+  });
+
   it("refuses Bitbucket, whose local presets Renovate reads through an initialised platform client", async () => {
     expect(await resolveLocalPresetRoute(repoWithOrigin("git@bitbucket.org:acme/w.git"), {}, noEnv)).toEqual({
       ok: false,

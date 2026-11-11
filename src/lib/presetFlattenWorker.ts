@@ -161,6 +161,8 @@ export type LocalPresetRoute =
  * For an origin-derived platform `RENOVATE_ENDPOINT` applies only when it is
  * on the origin's host (or a subdomain, api.github.com for github.com): the
  * env endpoint names where the env platform lives, not where this repo does.
+ * An origin whose hostname shows no flavour takes the env platform when
+ * `RENOVATE_ENDPOINT` is on its host.
  * Refuses an origin it cannot classify, a self-hosted origin without an
  * endpoint, Bitbucket, and an endpoint the validator blocks.
  */
@@ -177,16 +179,21 @@ export async function resolveLocalPresetRoute(
     const url = await readOriginRemote(repoPath);
     const remote = url ? parseRemoteUrl(url) : null;
     const classified = remote ? classifyRemoteHost(remote.host) : null;
-    if (!remote || !classified || classified.flavor === "unknown") {
+    // A hostname that shows no flavour (git.example.com) is the env platform
+    // when RENOVATE_ENDPOINT is on that host: the env names it exactly.
+    const home = homeScope({}, env);
+    const envFlavor =
+      remote && home.platform && home.endpoint && matchesHost(remote.host, home.endpoint) ? home.platform : undefined;
+    if (!remote || !classified || (classified.flavor === "unknown" && !envFlavor)) {
       const what = remote ? `the origin host \`${remote.host}\` could not be classified` : "the repository has no parseable origin remote";
       return {
         ok: false,
-        reason: `The config extends local presets, which dry_run flattens before a local run, but ${what}. Pass \`presetPlatform\` (github, gitlab, gitea or forgejo) plus \`endpoint\` for a self-hosted host.`,
+        reason: `The config extends local presets, which dry_run flattens before a local run, but ${what}. Pass \`presetPlatform\` (github, gitlab, gitea or forgejo) plus \`endpoint\` for a self-hosted host, or set \`RENOVATE_PLATFORM\` and \`RENOVATE_ENDPOINT\` for that host on the MCP server.`,
       };
     }
     originHost = remote.host;
     if (classified.classified === "self-hosted") {
-      platform = classified.flavor as HostedPlatform;
+      platform = (classified.flavor === "unknown" ? envFlavor : classified.flavor) as HostedPlatform;
       selfHostedHost = remote.host;
     } else {
       platform = classified.classified as HostedPlatform;

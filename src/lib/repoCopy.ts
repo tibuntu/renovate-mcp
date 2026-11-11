@@ -10,6 +10,8 @@ import { listRepoFiles } from "./pathSelection.js";
  * (ADR-0009). The copy holds the files Renovate's local platform would list
  * (`git ls-files`, else every file), so the spawned Renovate sees the same
  * tree with the flattened config written in. The original is only read.
+ * Files Renovate reads from disk without listing them (an untracked or
+ * gitignored `.npmrc`) are not in a git-listed copy.
  */
 
 export type CopyResult =
@@ -30,7 +32,11 @@ type Entry = { rel: string; kind: "file"; size: number } | { rel: string; kind: 
 /** Run `fn` over `items`, at most COPY_CONCURRENCY at a time. */
 async function eachLimited<T>(items: T[], fn: (item: T) => Promise<void>): Promise<void> {
   for (let i = 0; i < items.length; i += COPY_CONCURRENCY) {
-    await Promise.all(items.slice(i, i + COPY_CONCURRENCY).map(fn));
+    // allSettled: on a failure the whole batch has stopped before the caller
+    // removes the copy, so nothing is still writing into it.
+    const results = await Promise.allSettled(items.slice(i, i + COPY_CONCURRENCY).map(fn));
+    const failed = results.find((r) => r.status === "rejected");
+    if (failed) throw failed.reason;
   }
 }
 
@@ -108,6 +114,14 @@ export async function copyRepo(repoPath: string, limits: CopyLimits = {}): Promi
   } catch (err) {
     await removeRepoCopy(dir);
     return { ok: false, reason: `Could not copy the repository for dry_run's temporary copy: ${(err as Error).message}` };
+  }
+  // ponytail: only the root `.npmrc` is checked. Renovate reads other
+  // untracked files from disk too (docs/tools.md lists the limit); warn per
+  // file when one of them turns out to matter.
+  if (source === "git" && !listed.includes(".npmrc") && (await fs.stat(path.join(realRepo, ".npmrc")).catch(() => null))) {
+    warnings.push(
+      "`.npmrc` is not tracked by git, so it is not in the temporary copy this run uses: npm lookups run without its registries and credentials and may report no updates. Pass the credentials as `hostRules` or set them on the MCP server instead.",
+    );
   }
   warnings.sort();
   return { ok: true, dir, source, warnings };
