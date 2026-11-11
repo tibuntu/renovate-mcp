@@ -284,16 +284,36 @@ describe("dry_run local-preset flattening", () => {
     ]);
   });
 
-  it("leaves extract mode, configs without local presets, and remote runs in repoPath", async () => {
+  it("flattens in extract mode too: Renovate resolves presets during repo init in every dry-run mode", async () => {
+    await gitRepo({ "renovate.json": CONFIG }, "git@gitlab.example.com:acme/app.git");
+    const { dump } = await start({}, PRESETS);
+
+    const result = await dryRun({ dryRunMode: "extract", endpoint: GITLAB_API });
+
+    expect(result.isError).toBeFalsy();
+    const seen = await readDump(dump);
+    expect(seen.cwd).not.toBe(repo);
+    expect(seen.config).toMatchObject({ extends: [":semanticCommits"], prHourlyLimit: 3 });
+    expect(await readdir(tmp)).toEqual([]);
+  });
+
+  it("lets a per-call hostRule without a hostType win over the env token of its host", async () => {
+    await gitRepo({ "renovate.json": JSON.stringify({ extends: ["acme/presets"] }) }, "https://github.com/acme/app.git");
+    const { dump, log } = await start({ GITHUB_TOKEN: "ghp-env-no-access" }, {
+      [githubPresetUrl("acme/presets")]: repoFileRoute({ automerge: true }),
+    });
+
+    const result = await dryRun({ hostRules: [{ matchHost: "github.com", token: "ghp-per-call" }] });
+
+    expect(result.isError).toBeFalsy();
+    expect((await readFetchLog(log)).map((r) => r.authorization)).toEqual(["token ghp-per-call"]);
+    // The env rule (hostType + matchHost) would outrank the per-call one in Renovate's find().
+    expect((await readDump(dump)).hostRules).toEqual([{ matchHost: "github.com", token: "ghp-per-call" }]);
+  });
+
+  it("leaves configs without local presets and remote runs in repoPath", async () => {
     await gitRepo({ "renovate.json": CONFIG }, "git@gitlab.example.com:acme/app.git");
     const { dump, log } = await start({ GITLAB_TOKEN: "glpat-x" }, PRESETS);
-
-    const extract = await dryRun({ dryRunMode: "extract", presetPlatform: "gitlab" });
-    expect(extract.isError).toBeFalsy();
-    expect((await readDump(dump)).cwd).toBe(repo);
-    expect(JSON.parse(extract.content[0]!.text).warnings).toEqual(
-      expect.arrayContaining([expect.stringContaining("`presetPlatform` was ignored")]),
-    );
 
     const remote = await dryRun({ platform: "gitlab", repository: "acme/app", endpoint: GITLAB_API, token: "glpat-input" });
     expect(remote.isError).toBeFalsy();
@@ -311,16 +331,43 @@ describe("dry_run local-preset flattening", () => {
     expect(await readdir(tmp)).toEqual([]);
   });
 
-  it("does not flatten an untracked config, as Renovate does not see it either", async () => {
-    await gitRepo({ "package.json": "{}\n" }, undefined, { "renovate.json": CONFIG });
+  it("refuses an untracked config with local presets, which Renovate would skip without a word", async () => {
+    await gitRepo({ "package.json": "{}\n" }, "git@gitlab.example.com:acme/app.git", { "renovate.json": CONFIG });
     const { dump, log } = await start({}, PRESETS);
 
-    const result = await dryRun({});
+    const result = await dryRun({ endpoint: GITLAB_API });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]!.text).toMatch(/`renovate\.json` extends local presets but is not tracked by git.*git add renovate\.json/);
+    expect(await spawned(dump)).toBe(false);
+    expect(await readFetchLog(log)).toEqual([]);
+    expect(await readdir(tmp)).toEqual([]);
+  });
+
+  it("warns when an untracked config shadows the tracked one Renovate reads", async () => {
+    await gitRepo({ ".renovaterc": "{}\n" }, "git@gitlab.example.com:acme/app.git", { "renovate.json": CONFIG });
+    const { dump } = await start({}, PRESETS);
+
+    const result = await dryRun({ endpoint: GITLAB_API });
 
     expect(result.isError).toBeFalsy();
     expect((await readDump(dump)).cwd).toBe(repo);
-    expect(await readFetchLog(log)).toEqual([]);
+    expect(JSON.parse(result.content[0]!.text).warnings).toEqual(
+      expect.arrayContaining([expect.stringMatching(/`renovate\.json` is not tracked by git.*reads `\.renovaterc` instead/)]),
+    );
     expect(await readdir(tmp)).toEqual([]);
+  });
+
+  it("refuses an unroutable origin before copying the repository", async () => {
+    await gitRepo({ "renovate.json": CONFIG, "big.bin": "x" }, "https://git.example.com/acme/app.git");
+    // An unreadable tracked file would fail the copy: the route refusal comes first.
+    await chmod(path.join(repo, "big.bin"), 0o000);
+    await start({}, PRESETS);
+
+    const result = await dryRun({});
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]!.text).toMatch(/could not be classified/);
   });
 
   it("hints at presetPlatform when a run fails on a local preset nested in another preset", async () => {

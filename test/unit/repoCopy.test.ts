@@ -223,8 +223,23 @@ describe("copyRepo", () => {
     expect(await readdir(tmp)).toEqual([]);
   });
 
+  it("warns about an untracked root .npmrc, which Renovate would read from disk but the copy lacks", async () => {
+    await put("renovate.json", "{}\n");
+    git("init", "-q");
+    git("add", "-A");
+    await put(".npmrc", "//registry.example.com/:_authToken=secret\n");
+    const res = await copy();
+    expect(res).toMatchObject({ ok: true, warnings: [expect.stringMatching(/^`\.npmrc` is not tracked by git/)] });
+    if (res.ok) expect(await readdir(res.dir)).toEqual(["renovate.json"]);
+
+    git("add", "-A");
+    expect(await copy()).toMatchObject({ ok: true, warnings: [] });
+  });
+
   it.skipIf(process.getuid?.() === 0)("removes the partial copy when copying fails", async () => {
     await put("renovate.json", "{}\n");
+    // More files than one batch runs at once: siblings of the failing copy are in flight.
+    for (let i = 0; i < 40; i++) await put(`dir${i}/file.txt`);
     await put("unreadable.txt");
     await chmod(path.join(repo, "unreadable.txt"), 0o000);
     try {

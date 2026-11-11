@@ -219,22 +219,36 @@ export function selectToken(
  * on its bound bare host (`RENOVATE_TOKEN` first on the env home platform's
  * host, its own token when that is unset), then every host-token entry, so entries win
  * an equal-length tie. `GITHUB_COM_TOKEN` is left to Renovate, which reads it
- * from env. Rules whose hostType and matchHost appear in `covered` are left
- * out: a later rule for the same pair (per-call hostRules, the platform rule)
- * wins anyway. Entries whose variable is unset are skipped with a warning; a
- * malformed var yields `error` and no rules.
+ * from env. Rules a `covered` entry (per-call hostRules, the platform rule)
+ * must win over are left out. Renovate's `find()` ranks hostType + matchHost
+ * over matchHost alone over hostType alone, then the longer matchHost, then
+ * the later rule, so an env rule goes when the entry has no other hostType and
+ * the env rule sits on the entry's host or below it (a tie the env rule would
+ * win or lose to the later entry anyway), or when the entry has no hostType
+ * and sits below the env rule's host (the env rule outranks it). An entry
+ * without a matchHost covers every host of its hostType. Entries whose
+ * variable is unset are skipped with a warning; a malformed var yields `error`
+ * and no rules.
  */
 export function buildHostTokenRules(
   env: Env = process.env,
-  covered: Array<{ hostType: string; matchHost: string }> = [],
+  covered: Array<{ hostType?: string; matchHost?: string }> = [],
 ): { rules: HostTokenRule[]; secrets: string[]; warnings: string[]; error?: string } {
   const parsed = parseHostTokens(env);
   if (!parsed.ok) return { rules: [], secrets: [], warnings: [], error: parsed.error };
 
   const rules: HostTokenRule[] = [];
   const warnings: string[] = [];
+  /** `host` (bare or URL form) is `matchHost` or falls under it. */
+  const under = (host: string, matchHost: string) =>
+    host === matchHost || matchesHost(matchHost, parseUrl(host) ? host : `https://${host}`);
   const isCovered = (r: CandidateRule) =>
-    covered.some((c) => c.hostType === r.hostType && c.matchHost === r.matchHost);
+    covered.some((c) => {
+      if (c.hostType !== undefined && c.hostType !== r.hostType) return false;
+      if (c.matchHost === undefined) return true;
+      if (under(r.matchHost, c.matchHost)) return true;
+      return c.hostType === undefined && under(c.matchHost, r.matchHost);
+    });
   for (const rule of candidateRules(env, parsed.entries)) {
     const envVar = rule.vars.find((v) => env[v]);
     if (envVar && !isCovered(rule)) rules.push({ hostType: rule.hostType, matchHost: rule.matchHost, token: env[envVar]! });

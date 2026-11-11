@@ -641,8 +641,9 @@ process.exit(0);
   });
 
   it("preflight: does NOT error for dryRunMode=extract even when config extends local> under platform=local", async () => {
-    // Manifest-only extraction is the user's escape hatch — let it through
-    // and let Renovate produce its own error if it can't resolve the preset.
+    // Manifest-only extraction is the user's escape hatch — without a route
+    // (no origin here) let it through with a warning and let Renovate produce
+    // its own error. With a route, extract is flattened like the other modes.
     await writeFile(
       path.join(repo, "renovate.json"),
       JSON.stringify({ extends: ["local>devops/bots/renovate:renovate.brainbits.json#main"] }),
@@ -663,6 +664,9 @@ process.exit(0);
     });
 
     expect(res.result?.isError).toBeFalsy();
+    expect(JSON.parse(res.result!.content[0]!.text).warnings).toEqual(
+      expect.arrayContaining([expect.stringMatching(/`presetPlatform`.*continues without flattening/)]),
+    );
     const dumped = JSON.parse(await readFile(argvDump, "utf8")) as { args: string[] };
     expect(dumped.args).toContain("--dry-run=extract");
   });
@@ -971,6 +975,26 @@ process.exit(0);
     expect(res.result?.isError).toBeFalsy();
     const dumped = JSON.parse(await readFile(argvDump, "utf8")) as { renovateToken: string | null };
     expect(dumped.renovateToken).toBe("renovate-home");
+  });
+
+  it("names RENOVATE_ENDPOINT when the env endpoint of a remote run is not a URL", async () => {
+    session = await startServer({
+      RENOVATE_BIN: await makeArgvEnvDump(repo),
+      RENOVATE_PLATFORM: "gitlab",
+      RENOVATE_ENDPOINT: "gitlab.example.com/api/v4",
+      GITLAB_TOKEN: "glpat-self-hosted",
+    });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: { repoPath: repo, repository: "devops/gitops" },
+    });
+
+    expect(res.result?.isError).toBe(true);
+    expect(res.result?.content[0]?.text).toMatch(/`RENOVATE_ENDPOINT` on the MCP server is not a valid URL/);
   });
 
   it("binds GITLAB_TOKEN to RENOVATE_ENDPOINT when the endpoint input is unset and the platform input equals RENOVATE_PLATFORM", async () => {
