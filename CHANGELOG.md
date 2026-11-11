@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.8.2](https://github.com/tibuntu/renovate-mcp/compare/v1.8.1...v1.8.2) (2026-11-11)
+
+
+### Bug Fixes
+
+* **presets:** classify prefix-less owner/repo extends entries as local&gt; like Renovate ([6d78b8a](https://github.com/tibuntu/renovate-mcp/commit/6d78b8a699db6ad336e62bf0e06beed4fdde8a68))
+* **presets:** use Renovate's internal namespace list and parse scoped npm consistently ([97c8a00](https://github.com/tibuntu/renovate-mcp/commit/97c8a003a18afe2dad6590891dcf5e5dc5a46377))
+* **resolve_config:** reject dot-segment traversal in external preset URLs ([9fb16d9](https://github.com/tibuntu/renovate-mcp/commit/9fb16d9e6e5f5f537cab534341b15882acfd9870))
+* **resolve_config:** resolve renamed and removed built-in presets like Renovate ([7bfb769](https://github.com/tibuntu/renovate-mcp/commit/7bfb769eb8c2fcd9040660fee094bf399308ceab))
+* **write_config:** keep the target's permission bits instead of forcing 0600 ([6e3a778](https://github.com/tibuntu/renovate-mcp/commit/6e3a77898321cc3bfaeac35d2f69d2cb8c629d62))
+
 ## [1.8.1](https://github.com/tibuntu/renovate-mcp/compare/v1.8.0...v1.8.1) (2026-11-08)
 
 
