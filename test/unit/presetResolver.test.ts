@@ -779,6 +779,12 @@ describe("removed / renamed built-in presets (Renovate removedPresets)", () => {
     expect(r.presetsUnresolved.map((u) => u.preset)).toEqual(["config:base(x)"]);
   });
 
+  it("does not trim the entry before the map lookup (raw-string lookup)", async () => {
+    const r = await resolveConfig({ extends: [" config:base"] });
+    expect(r.presetsUnresolved.map((u) => u.preset)).toEqual([" config:base"]);
+    expect(r.warnings.some((w) => w.message.includes("renamed"))).toBe(false);
+  });
+
   it("lands a dangling rename target in presetsUnresolved, naming the original entry", async () => {
     const r = await resolveConfig({ extends: ["monorepo:HotChocolate"] });
     expect(r.presetsUnresolved).toHaveLength(1);
