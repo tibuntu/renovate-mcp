@@ -736,7 +736,7 @@ setInterval(() => {}, 1000);
 
   it.skipIf(process.platform === "win32")(
     "gives a new file the default mode for the process umask",
-    async () => {
+    async (ctx) => {
       const validator = await makeFakeValidator(repo, "fake-pass.mjs", 0);
       session = await startServer({ RENOVATE_CONFIG_VALIDATOR_BIN: validator });
       // Probe what a plain create yields under this process's umask.
@@ -744,6 +744,9 @@ setInterval(() => {}, 1000);
       await writeFile(probe, "x");
       const probeMode = (await stat(probe)).mode & 0o777;
       await rm(probe);
+      // Under umask 077 the default IS 0600, so the test could not tell the
+      // fix from the bug; report that as skipped rather than a vacuous pass.
+      if ((probeMode & 0o077) === 0) ctx.skip();
 
       const res = await session.request<{
         content: Array<{ type: string; text: string }>;
@@ -756,7 +759,7 @@ setInterval(() => {}, 1000);
       expect(res.result?.isError).toBeFalsy();
       const mode = (await stat(path.join(repo, "renovate.json"))).mode & 0o777;
       expect(mode).toBe(probeMode);
-      if ((probeMode & 0o077) !== 0) expect(mode).not.toBe(0o600);
+      expect(mode).not.toBe(0o600);
     },
   );
 });
