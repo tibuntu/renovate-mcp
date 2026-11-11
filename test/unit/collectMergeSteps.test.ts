@@ -8,6 +8,15 @@ import { collectMergeSteps, OWN_SOURCE } from "../../src/lib/presetResolver.js";
  * merge in *what* order). It does NOT merge — it only collects.
  */
 describe("collectMergeSteps", () => {
+  it("labels a renamed preset's steps with the entry as written", async () => {
+    const { steps } = await collectMergeSteps({ extends: ["config:base"] });
+    expect(steps.length).toBeGreaterThan(0);
+    // Labels/via show the entry as written, never the rename target.
+    const names = steps.flatMap((s) => [s.label, ...s.via]);
+    expect(names).not.toContain("config:recommended");
+    expect(steps.every((s) => s.via[0] === "config:base")).toBe(true);
+  });
+
   it("emits a single <own> step for a config with no extends", async () => {
     const { steps, presetsResolved } = await collectMergeSteps({
       schedule: ["before 6am"],

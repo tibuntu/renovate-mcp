@@ -48,7 +48,7 @@ For `package.json` the edit is rooted at the `renovate` key instead of the docum
 
 `resolve_config` expands `extends` against a committed snapshot of Renovate's built-in presets at `src/data/presets.generated.ts`. Five generated snapshot files exist:
 
-- `src/data/presets.generated.ts` — built-in preset catalogue
+- `src/data/presets.generated.ts` — built-in preset catalogue, plus Renovate's removed/renamed preset map (`REMOVED_PRESETS`)
 - `src/data/managers.generated.ts` — valid manager-name list for `lint_config`'s `matchManagers-unknown-name` rule, and for the `renovate://managers` resource
 - `src/data/migrations.generated.ts` — deprecated-key rename map for `lint_config`'s `deprecated-key` rule
 - `src/data/options.generated.ts` — config option definitions (name, type, default, `allowedValues`, `globalOnly`, etc.) for the `renovate://options` / `renovate://option/{name}` resources

@@ -1,4 +1,4 @@
-import { PRESETS } from "../data/presets.generated.js";
+import { PRESETS, REMOVED_PRESETS } from "../data/presets.generated.js";
 import { fetchExternalPreset, type FetchResult } from "./externalPresetFetcher.js";
 import { HOSTED_PLATFORMS, type HostedPlatform } from "./gitRemote.js";
 import { runMerge } from "./mergeWorker.js";
@@ -270,7 +270,30 @@ async function collectSteps(
         continue;
       }
 
-      const parsed = parsePreset(entry);
+      const redirect = followRemovedPresets(entry);
+      if (redirect.kind === "cycle") {
+        ctx.presetsUnresolved.push({
+          preset: entry,
+          reason: `Cycle detected in Renovate's removed/renamed preset map: ${redirect.chain.join(" → ")}`,
+        });
+        continue;
+      }
+      if (redirect.kind === "removed") {
+        ctx.warnings.push({
+          preset: entry,
+          message: `Preset "${entry}" was removed in Renovate and is ignored (it resolves to nothing); remove it from \`extends\` (migrate_config does this).`,
+        });
+        ctx.presetsResolved.push(entry);
+        continue;
+      }
+      const renamedTo = redirect.kind === "renamed" ? redirect.target : null;
+      // The target carries no args, so the original entry's args never apply
+      // (same as Renovate). `original` stays what the user wrote so unresolved
+      // records and labels name the entry as written.
+      const parsed =
+        renamedTo === null
+          ? parsePreset(entry)
+          : { ...parsePreset(renamedTo), original: entry };
       if (ctx.stack.includes(parsed.key)) {
         ctx.presetsUnresolved.push({
           preset: entry,
@@ -279,7 +302,20 @@ async function collectSteps(
         continue;
       }
 
+      const unresolvedBefore = ctx.presetsUnresolved.length;
       const body = await loadPresetBody(parsed, ctx);
+      if (renamedTo !== null) {
+        if (!body) {
+          for (const u of ctx.presetsUnresolved.slice(unresolvedBefore)) {
+            u.reason += ` (Renovate renamed "${entry}" to "${renamedTo}".)`;
+          }
+        } else {
+          ctx.warnings.push({
+            preset: entry,
+            message: `Preset "${entry}" was renamed in Renovate to "${renamedTo}" and was resolved as that preset; update \`extends\` (migrate_config does this).`,
+          });
+        }
+      }
       if (!body) continue;
 
       const { value, missingArgs, unknownTemplates } = applyArgs(
@@ -309,6 +345,37 @@ async function collectSteps(
       via: [...viaChain],
       config: ownKeys,
     });
+  }
+}
+
+type RemovedRedirect =
+  | { kind: "none" }
+  | { kind: "renamed"; target: string }
+  | { kind: "removed" }
+  | { kind: "cycle"; chain: string[] };
+
+/**
+ * Follow Renovate's `removedPresets` map on the exact raw entry (args included,
+ * no trimming), repeatedly like Renovate's recursive lookup. A string value is a
+ * rename, null means Renovate drops the preset. Bounded by a visited set.
+ */
+function followRemovedPresets(entry: string): RemovedRedirect {
+  const lookup = (name: string): string | null | undefined =>
+    Object.hasOwn(REMOVED_PRESETS, name) ? REMOVED_PRESETS[name] : undefined;
+  const seen = [entry];
+  let current = entry;
+  for (;;) {
+    const next = lookup(current);
+    // Renovate treats an empty-string value as falsy, i.e. not a redirect.
+    if (next === undefined || next === "") {
+      return current === entry ? { kind: "none" } : { kind: "renamed", target: current };
+    }
+    if (next === null) {
+      return { kind: "removed" };
+    }
+    if (seen.includes(next)) return { kind: "cycle", chain: [...seen, next] };
+    seen.push(next);
+    current = next;
   }
 }
 

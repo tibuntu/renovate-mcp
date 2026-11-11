@@ -4,12 +4,15 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { getConfigFileNames } from "renovate/dist/config/app-strings.js";
 import { getOptions } from "renovate/dist/config/options/index.js";
+import { removedPresets } from "renovate/dist/config/presets/common.js";
 
 import {
   LATER_TEXT_ANCHOR_TOKENS,
   PACKAGE_RULE_ACTION_KEYS,
 } from "../../src/lib/configLinter.js";
 import { CONFIG_FILE_NAMES } from "../../src/lib/configLocations.js";
+import { parsePreset } from "../../src/lib/presetResolver.js";
+import { PRESETS, REMOVED_PRESETS } from "../../src/data/presets.generated.js";
 import { SKIP_HINTS } from "../../src/lib/dependencyExplainer.js";
 
 // Drift guards for the hand-maintained allow-lists in src/lib that mirror Renovate
@@ -165,5 +168,31 @@ describe("CONFIG_FILE_NAMES vs Renovate's config-file discovery", () => {
     // No platform argument: locateConfig has no platform input, and Renovate only
     // adds per-platform directories (e.g. .forgejo/renovate.json) when one is set.
     expect(CONFIG_FILE_NAMES).toEqual(getConfigFileNames());
+  });
+});
+
+describe("REMOVED_PRESETS vs Renovate's removedPresets", () => {
+  // Renamed targets that exist nowhere in Renovate itself (upstream typos).
+  const KNOWN_DANGLING = new Set(["monorepo:hotchocolate", "group:hotchocolateMonorepo"]);
+
+  it("is a verbatim snapshot", () => {
+    expect(REMOVED_PRESETS).toEqual(removedPresets);
+  });
+
+  it("every chain end is null, a catalogued preset, or a known-dangling target", () => {
+    const dangling = new Set<string>();
+    for (const start of Object.keys(REMOVED_PRESETS)) {
+      let cur: string = start;
+      const seen = new Set<string>();
+      while (Object.hasOwn(REMOVED_PRESETS, cur) && REMOVED_PRESETS[cur]) {
+        expect(seen.has(cur), `cycle at ${cur}`).toBe(false);
+        seen.add(cur);
+        cur = REMOVED_PRESETS[cur] as string;
+      }
+      if (Object.hasOwn(REMOVED_PRESETS, cur)) continue; // null: removed
+      const key = parsePreset(cur).key;
+      if (!(key in PRESETS)) dangling.add(key);
+    }
+    expect([...dangling].sort()).toEqual([...KNOWN_DANGLING].sort());
   });
 });
