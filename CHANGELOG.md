@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.0.0](https://github.com/tibuntu/renovate-mcp/compare/v1.8.2...v2.0.0) (2026-11-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* env tokens are bound to hosts. RENOVATE_TOKEN is used only when RENOVATE_PLATFORM names a hosted platform, and only on that platform's host (RENOVATE_ENDPOINT, else its public host). Each per-platform token goes only to its platform's public host and the env home. An endpoint that only a tool call names, or that dry_run derives from the origin, gets no env token: set RENOVATE_PLATFORM / RENOVATE_ENDPOINT on the server or add a RENOVATE_MCP_HOST_TOKENS entry. The endpoint input of the resolve_config family routes only local> presets; github>, gitlab>, gitea> and forgejo> always go to their public API, and without a platform input local> follows RENOVATE_PLATFORM / RENOVATE_ENDPOINT. A remote dry_run exports the token chosen for its API host and drops an inherited RENOVATE_ENDPOINT when the platform input differs from RENOVATE_PLATFORM or that is unset. Under platform=local the token and endpoint inputs are ignored with a warning, RENOVATE_TOKEN is not exported, and env tokens reach Renovate as hostRules.
+
+### Features
+
+* bind tokens to their host and flatten local presets in local dry runs ([be3ba98](https://github.com/tibuntu/renovate-mcp/commit/be3ba984d1b4dfe711e7bd889d95de36899f315c))
+
+
+### Bug Fixes
+
+* **dry_run:** close gaps in host-rule precedence and local-preset flattening ([6a93b3b](https://github.com/tibuntu/renovate-mcp/commit/6a93b3b80869dfd1dd471f6d310ee66de89c7d12))
+
 ## [1.8.2](https://github.com/tibuntu/renovate-mcp/compare/v1.8.1...v1.8.2) (2026-11-11)
 
 
