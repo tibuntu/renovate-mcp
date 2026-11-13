@@ -17,6 +17,11 @@
   },
   "packageRules": [
     {
+      "description": "GitHub-maintained and active (code commits through 2026-09, dependency bumps through 2026-10); it just releases slowly. Not abandoned.",
+      "matchDepNames": ["actions/dependency-review-action"],
+      "abandonmentThreshold": null
+    },
+    {
       "description": "npm rejects lockfile-only updates for packages listed in `overrides` (EOVERRIDE: override spec must equal the requested spec). Bump the override range in package.json instead.",
       "matchManagers": ["npm"],
       "matchDepTypes": ["overrides"],
