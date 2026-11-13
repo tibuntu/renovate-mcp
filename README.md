@@ -30,7 +30,7 @@ Then try the prompt: *"List the namespaces available under `renovate://presets`.
 
 ## Tools & resources
 
-Nineteen tools, seven resources, and four workflow prompts. Each tool name below links to its full reference in [`docs/tools.md`](docs/tools.md).
+Nineteen tools, seven resources, and five workflow prompts. Each tool name below links to its full reference in [`docs/tools.md`](docs/tools.md).
 
 | Tool | Purpose |
 | --- | --- |
@@ -61,7 +61,7 @@ Nineteen tools, seven resources, and four workflow prompts. Each tool name below
 | [`renovate://managers`](docs/tools.md#renovatemanagers) (resource) | Markdown list of all manager names, including custom managers. |
 | [`renovate://datasources`](docs/tools.md#renovatedatasources) (resource) | Markdown list of all built-in datasource ids. |
 
-**Prompts.** Four workflow prompts package the tool sequences above into ready-to-run starting points. Claude Code surfaces MCP prompts as slash commands (e.g. `/mcp__renovate__design-renovate-config`); other MCP clients expose them through their own prompt picker.
+**Prompts.** Five workflow prompts package the tool sequences above into ready-to-run starting points. Claude Code surfaces MCP prompts as slash commands (e.g. `/mcp__renovate__design-renovate-config`); other MCP clients expose them through their own prompt picker.
 
 | Prompt | Drives |
 | --- | --- |
@@ -69,6 +69,7 @@ Nineteen tools, seven resources, and four workflow prompts. Each tool name below
 | [`debug-package-rule`](docs/tools.md#debug-package-rule) | `check_setup` → `read_config` → `test_package_rules` (matches + rendered names) → `dry_run` (with `reportOutputPath`) → `annotate_dry_run` → `explain_dependency` → a verdict naming rule indices and matchers. |
 | [`author-custom-manager`](docs/tools.md#author-custom-manager) | Draft a `customManagers` entry → `preview_custom_manager` iteratively → `validate_config`/`lint_config` → `dry_run` → `write_config` on confirmation. |
 | [`onboard-repo`](docs/tools.md#onboard-repo) | For repos without a config: `check_setup` → `read_config` (expect none) → `dry_run` (extract mode) → `suggest_presets` → `lint_config`/`validate_config` → `write_config` on confirmation → full `dry_run`. |
+| [`check-config-after-upgrade`](docs/tools.md#check-config-after-upgrade) | After a Renovate bot upgrade: `check_setup` (version comparison) → `read_config` → `migrate_config`/`lint_config`/`validate_config` → `dry_run` (extract mode) → new features from release notes or `renovate://options` → `write_config` on confirmation. |
 
 ## Requirements
 

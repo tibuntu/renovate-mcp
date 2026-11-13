@@ -15,6 +15,10 @@ function userMessage(text: string) {
   };
 }
 
+// Version args are interpolated into prompt text; a single token keeps a
+// newline from smuggling extra instruction lines in.
+const VERSION_PATTERN = /^[\w.+-]+$/;
+
 export function registerWorkflowPrompts(server: McpServer): void {
   server.registerPrompt(
     "design-renovate-config",
@@ -145,6 +149,51 @@ export function registerWorkflowPrompts(server: McpServer): void {
           "6. Summarize the draft config and the detected ecosystems, and ask the user to confirm. dry_run has no inline config input, so the draft must be written before a full dry run can use it.",
           "7. Only after the user explicitly confirms, call write_config with repoPath to save. Never call write_config before that confirmation.",
           `8. Call dry_run with repoPath "${repoPath}" (default full mode) to preview the actual updates Renovate would propose with the new config, and report the result.`,
+        ].join("\n"),
+      ),
+  );
+
+  // ponytail: no version-to-version diff data exists in this server (one
+  // snapshot, bundled version only), so feature discovery is LLM judgment over
+  // release notes or the current option list. Add a committed per-bump option
+  // history + resource if this needs to be deterministic.
+  server.registerPrompt(
+    "check-config-after-upgrade",
+    {
+      title: "Check a config after a Renovate upgrade",
+      description:
+        "After upgrading the Renovate bot: compare versions with check_setup, apply migrations and lint/validate the existing config, detect the repo's managers, then surface new options or features relevant to this repo. write_config only on confirmation.",
+      argsSchema: {
+        repoPath: z.string().max(4096).describe("Absolute path to the repository root."),
+        fromVersion: z
+          .string()
+          .max(64)
+          .regex(VERSION_PATTERN, "Expected a version like 41.0.0.")
+          .optional()
+          .describe('Renovate version the bot ran before the upgrade, e.g. "41.0.0".'),
+        toVersion: z
+          .string()
+          .max(64)
+          .regex(VERSION_PATTERN, "Expected a version like 44.238.2.")
+          .optional()
+          .describe('Renovate version the bot runs now, e.g. "44.238.2".'),
+      },
+    },
+    ({ repoPath, fromVersion, toVersion }) =>
+      userMessage(
+        [
+          `The Renovate bot for the repo at ${repoPath} was upgraded${fromVersion ? ` from ${fromVersion}` : ""}${toVersion ? ` to ${toVersion}` : ""}. Check whether the config needs changes and which new features are worth adopting.`,
+          "",
+          `1. Call check_setup with repoPath "${repoPath}". Note the Renovate version it reports: every check below runs against that version, not necessarily the user's bot.${toVersion ? ` Compare it with ${toVersion}.` : " Ask the user which Renovate version their bot runs now (a hosted bot is usually the latest release)."} If they differ, say so up front: an older bundled version can miss newer migrations or deprecations, a newer one can flag changes the bot does not need yet.`,
+          `2. Call read_config with repoPath "${repoPath}" to load the current config and its path.`,
+          "3. Required changes: call migrate_config, lint_config and validate_config on that config. Report the migration diff (deprecated keys, renamed or reshaped options), the deprecated-key and other lint findings, and any validation errors.",
+          `4. Call dry_run with repoPath "${repoPath}" and dryRunMode "extract" to list the managers and package files the repo uses.`,
+          fromVersion
+            ? `5. Feature discovery: if you can read Renovate's release notes between ${fromVersion} and ${toVersion ?? "the current version"} (https://github.com/renovatebot/renovate/releases), pick out new options, managers, presets and behaviour changes that affect this repo's managers and config. Otherwise read renovate://options and renovate://managers and look for options relevant to the detected managers that the config does not use yet.`
+            : "5. Feature discovery: ask the user for the previous version if they know it, and if you can read Renovate's release notes for that range (https://github.com/renovatebot/renovate/releases), pick out new options, managers, presets and behaviour changes that affect this repo. Otherwise read renovate://options and renovate://managers and look for options relevant to the detected managers that the config does not use yet.",
+          "   State which source you used: release notes give a real version diff, the option list only shows what exists now, not what is new.",
+          "6. Summarize in two parts: required changes (from step 3) and optional features (from step 5, each tied to something in this repo). Propose a concrete updated config and ask the user to confirm.",
+          "7. Only after the user explicitly confirms, call write_config with repoPath to save. Never call write_config before that confirmation.",
         ].join("\n"),
       ),
   );

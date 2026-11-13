@@ -40,6 +40,7 @@ Detailed reference for every tool and resource exposed by `renovate-mcp`. The [R
 - [`debug-package-rule`](#debug-package-rule)
 - [`author-custom-manager`](#author-custom-manager)
 - [`onboard-repo`](#onboard-repo)
+- [`check-config-after-upgrade`](#check-config-after-upgrade)
 
 ## Common input rules
 
@@ -532,3 +533,11 @@ Drives drafting a `customManagers` entry (regex or jsonata) → `preview_custom_
 **Arguments:** `repoPath` (required) — absolute path to the repository root. `intent` (optional) — free-text description of what Renovate should do.
 
 For a repo with no Renovate config yet (if `read_config` finds one, it redirects to `design-renovate-config`). Drives `check_setup` → `read_config` (expecting no config) → `dry_run` with `dryRunMode: "extract"` to detect managers and package files → `suggest_presets` with a query built from the detected ecosystems plus `intent` → `lint_config` + `validate_config` on the draft → `write_config` on confirmation → a full `dry_run` with the written config. `dry_run` has no inline config input, so the full dry run comes after the write.
+
+### `check-config-after-upgrade`
+
+**Arguments:** `repoPath` (required) — absolute path to the repository root. `fromVersion` (optional) — the Renovate version the bot ran before the upgrade. `toVersion` (optional) — the version it runs now. Both versions must be a single token (letters, digits, `.`, `_`, `+`, `-`); anything else is rejected.
+
+For "I upgraded my Renovate bot — does my config need changes, and what's new for this repo?". Drives `check_setup` (compares the Renovate version this server runs with `toVersion`, or asks for it) → `read_config` → `migrate_config` + `lint_config` + `validate_config` for required changes → `dry_run` with `dryRunMode: "extract"` to detect managers → feature discovery → a two-part summary (required changes, optional features tied to the repo) → `write_config` on confirmation.
+
+Every check runs against the Renovate version bundled with (or configured for) this server, not the user's bot; the prompt has the model call out a mismatch first. The server has no version-to-version diff data and does not fetch release notes itself: feature discovery uses Renovate's release notes when the client can read them, and otherwise falls back to `renovate://options` / `renovate://managers`, which show what exists in the bundled version, not what is new. The model is told to state which source it used.
