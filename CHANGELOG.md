@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.1.0](https://github.com/tibuntu/renovate-mcp/compare/v2.0.0...v2.1.0) (2026-11-13)
+
+
+### Features
+
+* **prompts:** add check-config-after-upgrade workflow prompt ([506377b](https://github.com/tibuntu/renovate-mcp/commit/506377bfea508d7911ee009fe6217cb1e085d1d1))
+
+
+### Bug Fixes
+
+* **deps:** update dependency renovate to v44.238.2 ([854d3f6](https://github.com/tibuntu/renovate-mcp/commit/854d3f6725aaa4577e281f7251aae08912b82b6d))
+* **lint:** flag Renovate's Dependency Dashboard object migration in deprecated-key ([cd5611d](https://github.com/tibuntu/renovate-mcp/commit/cd5611d9f15a70403aa5e5a0ee0ecf1803de0bc3))
+
 ## [2.0.0](https://github.com/tibuntu/renovate-mcp/compare/v1.8.2...v2.0.0) (2026-11-11)
 
 This major release changes how tokens reach hosts: **every env token is now bound to the host it belongs to**, so a tool call or a repository's git config can no longer steer a token to a host of its choosing. It also makes **a local `dry_run` resolve `local>` presets** instead of failing on them. The token change breaks setups that relied on the old behaviour, so read the upgrade note before you update.
