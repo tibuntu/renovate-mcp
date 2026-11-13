@@ -48,7 +48,7 @@ describe("migrate_config", () => {
     }
     const payload = JSON.parse(res.result!.content[0]!.text) as MigratePayload;
     expect(payload.isMigrated).toBe(true);
-    expect(payload.migrated).toEqual({ dependencyDashboard: true });
+    expect(payload.migrated).toEqual({ dependencyDashboard: { enabled: true } });
     expect(payload.migrated).not.toHaveProperty("masterIssue");
     expect(payload.diff).toContain("dependencyDashboard");
   });
@@ -62,7 +62,10 @@ describe("migrate_config", () => {
     }>("tools/call", {
       name: "migrate_config",
       arguments: {
-        configContent: { extends: ["config:recommended"], dependencyDashboard: true },
+        configContent: {
+          extends: ["config:recommended"],
+          dependencyDashboard: { enabled: true },
+        },
       },
     });
 
@@ -71,7 +74,7 @@ describe("migrate_config", () => {
     expect(payload.isMigrated).toBe(false);
     expect(payload.migrated).toEqual({
       extends: ["config:recommended"],
-      dependencyDashboard: true,
+      dependencyDashboard: { enabled: true },
     });
     expect(payload.diff).toBe("");
   });
