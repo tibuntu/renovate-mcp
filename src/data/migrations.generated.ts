@@ -63,6 +63,38 @@ export const DEPRECATED_KEYS: readonly DeprecatedKeyEntry[] = Object.freeze([
     "newKey": "changelogUrl"
   },
   {
+    "oldKey": "customizeDashboard",
+    "newKey": "dependencyDashboard.customize"
+  },
+  {
+    "oldKey": "dependencyDashboardAutoclose",
+    "newKey": "dependencyDashboard.autoclose"
+  },
+  {
+    "oldKey": "dependencyDashboardFooter",
+    "newKey": "dependencyDashboard.footer"
+  },
+  {
+    "oldKey": "dependencyDashboardHeader",
+    "newKey": "dependencyDashboard.header"
+  },
+  {
+    "oldKey": "dependencyDashboardLabels",
+    "newKey": "dependencyDashboard.labels"
+  },
+  {
+    "oldKey": "dependencyDashboardOSVVulnerabilitySummary",
+    "newKey": "dependencyDashboard.osvVulnerabilitySummary"
+  },
+  {
+    "oldKey": "dependencyDashboardReportAbandonment",
+    "newKey": "dependencyDashboard.reportAbandonment"
+  },
+  {
+    "oldKey": "dependencyDashboardTitle",
+    "newKey": "dependencyDashboard.title"
+  },
+  {
     "oldKey": "endpoints",
     "newKey": "hostRules"
   },
@@ -114,23 +146,23 @@ export const DEPRECATED_KEYS: readonly DeprecatedKeyEntry[] = Object.freeze([
   },
   {
     "oldKey": "masterIssueAutoclose",
-    "newKey": "dependencyDashboardAutoclose"
+    "newKey": "dependencyDashboard.autoclose"
   },
   {
     "oldKey": "masterIssueFooter",
-    "newKey": "dependencyDashboardFooter"
+    "newKey": "dependencyDashboard.footer"
   },
   {
     "oldKey": "masterIssueHeader",
-    "newKey": "dependencyDashboardHeader"
+    "newKey": "dependencyDashboard.header"
   },
   {
     "oldKey": "masterIssueLabels",
-    "newKey": "dependencyDashboardLabels"
+    "newKey": "dependencyDashboard.labels"
   },
   {
     "oldKey": "masterIssueTitle",
-    "newKey": "dependencyDashboardTitle"
+    "newKey": "dependencyDashboard.title"
   },
   {
     "oldKey": "multipleMajorPrs",
