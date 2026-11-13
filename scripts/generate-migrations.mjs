@@ -14,6 +14,9 @@
  *     rewrites. Each is instantiated with empty configs and emitted (without
  *     `newKey`) when it is flagged `deprecated` and its `propertyName` is a
  *     string (two migrations match a RegExp of keys and are skipped).
+ * Plus the flat Dependency Dashboard options (`dependencyDashboardTitle`, …),
+ * emitted with their `dependencyDashboard.<field>` target. Rename chains are
+ * followed to the final key.
  * lint_config flags every entry; migrate_config shows the replacement.
  */
 import {
@@ -42,6 +45,31 @@ for (const CustomMigration of MigrationsService.customMigrations) {
   if (migration.deprecated !== true || typeof migration.propertyName !== "string") continue;
   if (!byOldKey.has(migration.propertyName)) {
     byOldKey.set(migration.propertyName, { oldKey: migration.propertyName });
+  }
+}
+// `DependencyDashboardMigration` matches a RegExp and isn't flagged
+// `deprecated` (it keeps `dependencyDashboard` itself), but it moves each flat
+// option into a field of the `dependencyDashboard` object. Its exported map
+// names them; a missing export fails the generator instead of dropping them.
+const { flatDependencyDashboardOptions } = await import(
+  "renovate/dist/config/migrations/custom/dependency-dashboard-migration.js"
+);
+if (!flatDependencyDashboardOptions) {
+  throw new Error("renovate no longer exports flatDependencyDashboardOptions");
+}
+for (const [oldKey, { field }] of Object.entries(flatDependencyDashboardOptions)) {
+  byOldKey.set(oldKey, { oldKey, newKey: `dependencyDashboard.${field}` });
+}
+// Follow rename chains (masterIssueTitle → dependencyDashboardTitle →
+// dependencyDashboard.title) so a finding never suggests another deprecated
+// key. A chain ending in a custom migration keeps no `newKey`.
+for (const entry of byOldKey.values()) {
+  const seen = new Set([entry.oldKey]);
+  while (entry.newKey !== undefined && byOldKey.has(entry.newKey) && !seen.has(entry.newKey)) {
+    seen.add(entry.newKey);
+    const next = byOldKey.get(entry.newKey).newKey;
+    if (next === undefined) delete entry.newKey;
+    else entry.newKey = next;
   }
 }
 const entries = [...byOldKey.values()].sort((a, b) =>

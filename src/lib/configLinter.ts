@@ -604,7 +604,9 @@ function makeDeprecatedKeyFinding(
     severity: "warn",
     path,
     value: oldKey,
-    message: `Key '${oldKey}' is deprecated; Renovate renames it to '${newKey}'. Run migrate_config to auto-apply, or rename manually.`,
+    message: newKey.includes(".")
+      ? `Key '${oldKey}' is deprecated; Renovate moves it to '${newKey}'. Run migrate_config to auto-apply, or move it manually.`
+      : `Key '${oldKey}' is deprecated; Renovate renames it to '${newKey}'. Run migrate_config to auto-apply, or rename manually.`,
     suggestion: newKey,
   };
 }
@@ -615,6 +617,22 @@ function checkDeprecatedKeys(config: unknown, findings: LintFinding[]): void {
   for (const key of Object.keys(config)) {
     const entry = DEPRECATED_KEY_LOOKUP.get(key);
     if (entry) findings.push(makeDeprecatedKeyFinding(entry, key));
+  }
+
+  // ponytail: Renovate's only value-shape deprecation on a kept key; hand-checked
+  // here because the migrations snapshot is key-based. Mirrors toObject() in
+  // DependencyDashboardMigration (booleans and the strings "true"/"false").
+  const dashboard = config["dependencyDashboard"];
+  if (typeof dashboard === "boolean" || dashboard === "true" || dashboard === "false") {
+    const enabled = dashboard === true || dashboard === "true";
+    findings.push({
+      ruleId: "deprecated-key",
+      severity: "warn",
+      path: "dependencyDashboard",
+      value: "dependencyDashboard",
+      message: `A non-object 'dependencyDashboard' is deprecated; Renovate migrates it to { "enabled": ${enabled} }. Run migrate_config to auto-apply.`,
+      suggestion: "dependencyDashboard.enabled",
+    });
   }
 
   for (const container of DEPRECATED_KEY_CONTAINERS) {

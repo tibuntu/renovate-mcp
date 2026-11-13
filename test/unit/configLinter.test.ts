@@ -259,6 +259,37 @@ describe("lintConfig", () => {
       expect(findings[0]!.message).toContain("migrate_config");
     });
 
+    it("flags a flat Dependency Dashboard option with its dependencyDashboard.<field> target", () => {
+      const findings = lintConfig({ dependencyDashboardTitle: "Deps" });
+      expect(findings).toHaveLength(1);
+      expect(findings[0]).toMatchObject({
+        ruleId: "deprecated-key",
+        path: "dependencyDashboardTitle",
+        suggestion: "dependencyDashboard.title",
+      });
+      expect(findings[0]!.message).toContain("moves it to 'dependencyDashboard.title'");
+    });
+
+    it("follows a rename chain to the final key (masterIssueTitle → dependencyDashboard.title)", () => {
+      const findings = lintConfig({ masterIssueTitle: "Deps" });
+      expect(findings).toHaveLength(1);
+      expect(findings[0]!.suggestion).toBe("dependencyDashboard.title");
+    });
+
+    it.each([true, false, "true", "false"])(
+      "flags a non-object dependencyDashboard (%j)",
+      (value) => {
+        const findings = lintConfig({ dependencyDashboard: value });
+        expect(findings).toHaveLength(1);
+        expect(findings[0]).toMatchObject({
+          ruleId: "deprecated-key",
+          path: "dependencyDashboard",
+          suggestion: "dependencyDashboard.enabled",
+        });
+        expect(findings[0]!.message).toContain(`"enabled": ${value === true || value === "true"}`);
+      },
+    );
+
     it("flags a deprecated key inside packageRules[]", () => {
       const findings = lintConfig({
         packageRules: [{ matchPackageNames: ["lodash"], versionScheme: "semver" }],
