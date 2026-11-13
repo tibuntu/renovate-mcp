@@ -2,16 +2,21 @@
 
 ## [2.1.0](https://github.com/tibuntu/renovate-mcp/compare/v2.0.0...v2.1.0) (2026-11-13)
 
+This release adds **a workflow prompt for checking a config after a Renovate upgrade** and moves the bundled Renovate to 44.238.2, which **reshapes the Dependency Dashboard options**. `lint_config` now flags the old shape, and `migrate_config` rewrites it; see the upgrade note.
 
-### Features
+### New features
 
-* **prompts:** add check-config-after-upgrade workflow prompt ([506377b](https://github.com/tibuntu/renovate-mcp/commit/506377bfea508d7911ee009fe6217cb1e085d1d1))
+**`check-config-after-upgrade` walks through a Renovate upgrade.** Give it `repoPath` and, if you know them, the `fromVersion` and `toVersion` of your bot. The prompt has the model compare the Renovate version this server runs with your bot's and call out a mismatch, run `migrate_config`, `lint_config` and `validate_config` on the existing config, detect the repo's managers with an extract `dry_run`, and then look for new features that fit those managers. The result comes in two parts, required changes and optional features, and `write_config` only runs once you confirm. Feature discovery reads Renovate's release notes when your client can fetch them and otherwise falls back to `renovate://options`, which shows what exists in the bundled version rather than what is new. The model says which source it used.
 
+### Fixes & improvements
 
-### Bug Fixes
+* `lint_config`'s `deprecated-key` rule flags the flat Dependency Dashboard options (`dependencyDashboardTitle`, `dependencyDashboardLabels`, `customizeDashboard`, …) with the field they move to, such as `dependencyDashboard.title`. Rename chains resolve to the final key, so `masterIssueTitle` points at `dependencyDashboard.title`. A boolean `dependencyDashboard` is flagged as well.
+* The manager and datasource lists behind `lint_config` and the `renovate://` resources pick up the `gemspec` manager and the `swift-package-registry` datasource.
+* Dependency updates: renovate 44.238.2.
 
-* **deps:** update dependency renovate to v44.238.2 ([854d3f6](https://github.com/tibuntu/renovate-mcp/commit/854d3f6725aaa4577e281f7251aae08912b82b6d))
-* **lint:** flag Renovate's Dependency Dashboard object migration in deprecated-key ([cd5611d](https://github.com/tibuntu/renovate-mcp/commit/cd5611d9f15a70403aa5e5a0ee0ecf1803de0bc3))
+> **Upgrading:**
+>
+> * `migrate_config` now returns `dependencyDashboard` as an object: `true` becomes `{ "enabled": true }`, and `dependencyDashboardTitle` and its siblings move under it. This follows Renovate 44.232 and later. Configs in the old shape keep working, since Renovate migrates them when it loads them.
 
 ## [2.0.0](https://github.com/tibuntu/renovate-mcp/compare/v1.8.2...v2.0.0) (2026-11-11)
 
