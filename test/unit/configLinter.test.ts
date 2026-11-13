@@ -304,7 +304,7 @@ describe("lintConfig", () => {
     it("returns no findings for a config with only modern keys", () => {
       const findings = lintConfig({
         extends: ["config:recommended"],
-        dependencyDashboard: true,
+        dependencyDashboard: { enabled: true },
         packageRules: [{ matchPackageNames: ["lodash"], versioning: "semver" }],
       });
       expect(findings.filter((f) => f.ruleId === "deprecated-key")).toEqual([]);
