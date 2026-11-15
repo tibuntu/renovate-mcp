@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.1](https://github.com/tibuntu/renovate-mcp/compare/v2.1.0...v2.1.1) (2026-11-15)
+
+
+### Bug Fixes
+
+* **deps:** update dependency renovate to v44.239.1 ([35f5e42](https://github.com/tibuntu/renovate-mcp/commit/35f5e42c94f2056b2a2d4c4a5677a52d6d945faf))
+
 ## [2.1.0](https://github.com/tibuntu/renovate-mcp/compare/v2.0.0...v2.1.0) (2026-11-13)
 
 This release adds **a workflow prompt for checking a config after a Renovate upgrade** and moves the bundled Renovate to 44.238.2, which **reshapes the Dependency Dashboard options**. `lint_config` now flags the old shape, and `migrate_config` rewrites it; see the upgrade note.
