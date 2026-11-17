@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.2](https://github.com/tibuntu/renovate-mcp/compare/v2.1.1...v2.1.2) (2026-11-17)
+
+
+### Bug Fixes
+
+* **deps:** update dependency ignore to v7.0.16 ([9e2e5aa](https://github.com/tibuntu/renovate-mcp/commit/9e2e5aa0b7dba1e2daac01dca72739dc6fb26c8b))
+
 ## [2.1.1](https://github.com/tibuntu/renovate-mcp/compare/v2.1.0...v2.1.1) (2026-11-15)
 
 
