@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.1.2](https://github.com/tibuntu/renovate-mcp/compare/v2.1.1...v2.1.2) (2026-11-18)
+
+
+### Bug Fixes
+
+* **deps:** update dependency ignore to v7.0.16 ([9e2e5aa](https://github.com/tibuntu/renovate-mcp/commit/9e2e5aa0b7dba1e2daac01dca72739dc6fb26c8b))
+* **deps:** update dependency npm to v12.2.3 ([e1003cc](https://github.com/tibuntu/renovate-mcp/commit/e1003cc2bea213192833cee8fb1b7d2db63d062a))
+
 ## [2.1.1](https://github.com/tibuntu/renovate-mcp/compare/v2.1.0...v2.1.1) (2026-11-15)
 
 
