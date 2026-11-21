@@ -92,5 +92,14 @@ jobs:
       - name: Authenticate to MCP Registry
         run: ./mcp-publisher login github-oidc
 
+      # The registry looks the version up on npm, which can lag `npm publish`
+      # by a minute or more (2.2.0 failed with "version '2.2.0' was not found").
+      # Retry instead of failing the release.
       - name: Publish server to MCP Registry
-        run: ./mcp-publisher publish
+        run: |
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            ./mcp-publisher publish && exit 0
+            echo "Registry publish attempt ${attempt} failed; retrying in 30s"
+            sleep 30
+          done
+          exit 1
