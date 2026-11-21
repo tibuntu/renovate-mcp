@@ -94,3 +94,46 @@ export const DATASOURCES: readonly string[] = Object.freeze([
   "unity3d",
   "unity3d-packages"
 ]);
+
+/**
+ * Datasources that never report a release timestamp (`releaseTimestampSupport`
+ * is `false` and none of their source emits one). Datasources with partial
+ * support (docker, terraform-*) are deliberately absent: only a certain miss is listed.
+ */
+export const DATASOURCES_WITHOUT_RELEASE_TIMESTAMP: readonly string[] = Object.freeze([
+  "aws-eks-addon",
+  "aws-rds",
+  "azure-bicep-resource",
+  "azure-pipelines-tasks",
+  "azure-tags",
+  "bazel",
+  "bitbucket-server-tags",
+  "cdnjs",
+  "conan",
+  "dart-version",
+  "deb",
+  "git-refs",
+  "git-tags",
+  "glasskube-packages",
+  "hackage",
+  "hermit",
+  "java-version",
+  "kubernetes-api",
+  "pod",
+  "repology",
+  "rpm",
+  "sbt-plugin",
+  "swift-package-registry"
+]);
+
+/**
+ * Ids flagged `releaseTimestampSupport = false` that nevertheless emit a
+ * timestamp, so they are kept out of the list above. Drift-checked in tests.
+ */
+export const RELEASE_TIMESTAMP_EXCLUSIONS: readonly string[] = Object.freeze([
+  "custom",
+  "nextcloud",
+  "python-version",
+  "typst",
+  "unity3d-packages"
+]);

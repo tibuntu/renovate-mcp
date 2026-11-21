@@ -1421,6 +1421,83 @@ describe("lintConfig", () => {
     });
   });
 
+  describe("release-age-without-timestamp", () => {
+    const RULE = "release-age-without-timestamp";
+    const lint = (config: unknown) =>
+      lintConfig(config).filter((f) => f.ruleId === RULE);
+    const rule = (extra: Record<string, unknown> = {}) => ({
+      matchDatasources: ["git-tags"],
+      minimumReleaseAge: "3 days",
+      ...extra,
+    });
+
+    it("warns on a datasource that reports no release timestamp", () => {
+      const findings = lint({ packageRules: [rule()] });
+      expect(findings).toHaveLength(1);
+      expect(findings[0]).toMatchObject({
+        severity: "warn",
+        path: "packageRules[0].minimumReleaseAge",
+        value: "3 days",
+      });
+      expect(findings[0]!.message).toContain("git-tags");
+      expect(findings[0]!.message).toContain("pending");
+      expect(findings[0]!.message).toContain(
+        "https://docs.renovatebot.com/key-concepts/minimum-release-age/",
+      );
+    });
+
+    it("names every offending datasource in one finding per rule", () => {
+      const findings = lint({
+        packageRules: [rule({ matchDatasources: ["git-tags", "npm", "deb"] })],
+      });
+      expect(findings).toHaveLength(1);
+      expect(findings[0]!.message).toContain("git-tags");
+      expect(findings[0]!.message).toContain("deb");
+      expect(findings[0]!.message).not.toContain("npm");
+    });
+
+    it("stays quiet for datasources with timestamps, partial support, or timestamp-emitting despite the flag", () => {
+      for (const ds of ["npm", "docker", "terraform-provider", "python-version", "custom.mine"]) {
+        expect(lint({ packageRules: [rule({ matchDatasources: [ds] })] }), ds).toEqual([]);
+      }
+    });
+
+    it("ignores negations, regexes and globs (not literal ids)", () => {
+      expect(
+        lint({ packageRules: [rule({ matchDatasources: ["!git-tags", "/^git-/", "git*"] })] }),
+      ).toEqual([]);
+    });
+
+    it("needs both minimumReleaseAge and matchDatasources", () => {
+      expect(lint({ packageRules: [{ matchDatasources: ["git-tags"], automerge: true }] })).toEqual([]);
+      expect(lint({ packageRules: [{ minimumReleaseAge: "3 days", automerge: true }] })).toEqual([]);
+      expect(lint({ packageRules: [rule({ minimumReleaseAge: null })] })).toEqual([]);
+    });
+
+    it("is silenced by timestamp-optional on the rule or the root", () => {
+      expect(
+        lint({ packageRules: [rule({ minimumReleaseAgeBehaviour: "timestamp-optional" })] }),
+      ).toEqual([]);
+      expect(
+        lint({ minimumReleaseAgeBehaviour: "timestamp-optional", packageRules: [rule()] }),
+      ).toEqual([]);
+    });
+
+    it("lets the rule's own timestamp-required override a root timestamp-optional", () => {
+      expect(
+        lint({
+          minimumReleaseAgeBehaviour: "timestamp-optional",
+          packageRules: [rule({ minimumReleaseAgeBehaviour: "timestamp-required" })],
+        }),
+      ).toHaveLength(1);
+    });
+
+    it("reports the index of the offending rule", () => {
+      const findings = lint({ packageRules: [{ matchManagers: ["npm"], automerge: true }, rule()] });
+      expect(findings.map((f) => f.path)).toEqual(["packageRules[1].minimumReleaseAge"]);
+    });
+  });
+
   describe("schedule-without-timezone", () => {
     const RULE = "schedule-without-timezone";
 

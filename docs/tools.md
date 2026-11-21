@@ -226,6 +226,7 @@ Schema validation catches structural bugs; the linter catches Renovate-specific 
 - `host-rule-inline-secret`
 - `schedule-without-timezone`
 - `package-rule-labels-overrides`
+- `release-age-without-timestamp`
 
 The ruleset is intentionally small, scoped to the regex-aware and manager-aware fields plus a handful of `packageRules`-level footguns, and tuned to avoid false positives on benign exact strings containing a `.`:
 
@@ -244,6 +245,7 @@ The ruleset is intentionally small, scoped to the regex-aware and manager-aware 
 - **`host-rule-inline-secret`** (warn) — a `hostRules` entry has a plain-string `token` or `password` (anything not wrapped as a `{{ }}` template). Since repo config is committed and readable by everyone with repo access, the secret belongs in the `encrypted` sub-object, a `{{ secrets.NAME }}` template, or the self-hosted/global config instead.
 - **`schedule-without-timezone`** (warn) — a `schedule` (top level, in a `packageRules` entry, in `lockFileMaintenance`, or anywhere else `invalid-schedule` looks) restricts timing, but the root config has no `timezone`, so Renovate evaluates it in UTC. Reported once per config, at the first offending path; set a top-level `timezone` to an IANA name such as `Europe/Berlin`. `"at any time"` / empty schedules don't count. The linter doesn't expand `extends`, so ignore the finding if a preset sets the timezone.
 - **`package-rule-labels-overrides`** (warn) — a `packageRules` entry sets `labels` while the root config has a non-empty `labels` array. Inside a rule `labels` replaces the inherited labels; `addLabels` appends to them. Doesn't fire when the root has no labels, and root labels that come from an extended preset aren't seen, since the linter doesn't expand `extends`.
+- **`release-age-without-timestamp`** (warn) — a `packageRules` entry sets `minimumReleaseAge` and names, through literal `matchDatasources` ids, a datasource that never reports a release timestamp (e.g. `git-tags`, `deb`, `java-version`). Since Renovate 42 `minimumReleaseAgeBehaviour` defaults to `"timestamp-required"`, so those updates have no `releaseTimestamp` to compare, stay pending, and never pass the age check. Fix: set `minimumReleaseAgeBehaviour: "timestamp-optional"` on that rule, or drop `minimumReleaseAge` for those datasources (see [Renovate's docs](https://docs.renovatebot.com/key-concepts/minimum-release-age/)). One finding per rule, naming every offending id. Silenced by `timestamp-optional` on the entry or the root (an entry's own value wins). Negations, regexes and globs are skipped, as are datasources with partial or registry-dependent support (`docker`, `terraform-*`) and ones that emit timestamps despite their flag (`python-version`, `nextcloud`, …). Like the other rules it does not expand presets, so a root value set by a preset is invisible to it.
 
 ## `dry_run`
 

@@ -1,5 +1,8 @@
 import { ALL_MANAGERS, CUSTOM_MANAGERS } from "../data/managers.generated.js";
-import { DATASOURCES } from "../data/datasources.generated.js";
+import {
+  DATASOURCES,
+  DATASOURCES_WITHOUT_RELEASE_TIMESTAMP,
+} from "../data/datasources.generated.js";
 import {
   DEPRECATED_KEYS,
   type DeprecatedKeyEntry,
@@ -21,7 +24,8 @@ export type LintRuleId =
   | "duplicate-package-rule-matchers"
   | "host-rule-inline-secret"
   | "schedule-without-timezone"
-  | "package-rule-labels-overrides";
+  | "package-rule-labels-overrides"
+  | "release-age-without-timestamp";
 
 export interface LintFinding {
   ruleId: LintRuleId;
@@ -47,6 +51,10 @@ const VALID_MANAGER_NAMES: ReadonlySet<string> = new Set([
 ]);
 
 const VALID_DATASOURCES: ReadonlySet<string> = new Set(DATASOURCES);
+
+const NO_TIMESTAMP_DATASOURCES: ReadonlySet<string> = new Set(
+  DATASOURCES_WITHOUT_RELEASE_TIMESTAMP,
+);
 
 const DEPRECATED_KEY_LOOKUP: ReadonlyMap<string, DeprecatedKeyEntry> = new Map(
   DEPRECATED_KEYS.map((e) => [e.oldKey, e]),
@@ -282,6 +290,7 @@ export function lintConfig(config: unknown): LintFinding[] {
   checkDatasourceTemplates(config, findings);
   checkScheduleWithoutTimezone(config, findings);
   checkPackageRuleLabelsOverrides(config, findings);
+  checkReleaseAgeWithoutTimestamp(config, findings);
   return findings;
 }
 
@@ -548,6 +557,44 @@ function checkPackageRuleLabelsOverrides(config: unknown, findings: LintFinding[
       message:
         `packageRules[${i}].labels replaces the root labels (${JSON.stringify(config.labels)}) for matched deps instead of adding to them.`,
       suggestion: `Use addLabels in packageRules[${i}] to append to the root labels.`,
+    });
+  });
+}
+
+// Since Renovate 42 `minimumReleaseAgeBehaviour` defaults to "timestamp-required":
+// a release without a `releaseTimestamp` can never satisfy `minimumReleaseAge`
+// and stays pending (filterInternalChecks / checkMinimumReleaseAge). Only
+// literal ids in `matchDatasources` are checked, and only datasources that
+// never report timestamps (partial-support ones like docker are not listed).
+// Offline like the other rules: a `minimumReleaseAgeBehaviour` set by a preset
+// at the root is invisible here, as is one under an `updateType` block.
+function checkReleaseAgeWithoutTimestamp(config: unknown, findings: LintFinding[]): void {
+  if (!isRecord(config) || !Array.isArray(config.packageRules)) return;
+  config.packageRules.forEach((entry, i) => {
+    if (!isRecord(entry)) return;
+    const age = entry.minimumReleaseAge;
+    if (typeof age !== "string" || age === "") return;
+    const behaviour = entry.minimumReleaseAgeBehaviour ?? config.minimumReleaseAgeBehaviour;
+    if (behaviour === "timestamp-optional") return;
+    const ids = entry.matchDatasources;
+    if (!Array.isArray(ids)) return;
+    const offending = ids.filter(
+      (id): id is string => typeof id === "string" && NO_TIMESTAMP_DATASOURCES.has(id),
+    );
+    if (offending.length === 0) return;
+    const list = offending.map((id) => `'${id}'`).join(", ");
+    findings.push({
+      ruleId: "release-age-without-timestamp",
+      severity: "warn",
+      path: `packageRules[${i}].minimumReleaseAge`,
+      value: age,
+      message:
+        `packageRules[${i}] sets minimumReleaseAge for ${list}, which reports no release timestamp. ` +
+        `With minimumReleaseAgeBehaviour "timestamp-required" (the default since Renovate 42) the update has no releaseTimestamp to compare, so it stays pending and never passes the age check. ` +
+        `This lint does not expand presets, so a value a preset sets at the root is not seen. ` +
+        `See https://docs.renovatebot.com/key-concepts/minimum-release-age/.`,
+      suggestion:
+        `Set minimumReleaseAgeBehaviour: "timestamp-optional" on packageRules[${i}], or drop minimumReleaseAge for these datasources.`,
     });
   });
 }
