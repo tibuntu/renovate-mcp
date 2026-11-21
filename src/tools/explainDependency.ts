@@ -6,7 +6,7 @@ import {
   toMatchedRule,
 } from "../lib/packageRulesAnalysis.js";
 import { explainDependency, type DependencyHit } from "../lib/dependencyExplainer.js";
-import { readReportPath } from "../lib/reportInput.js";
+import { resolveReportInput } from "../lib/reportInput.js";
 import { configRecord, pathString, reportRecord } from "../lib/inputLimits.js";
 import { loadConfigSource, OFFLINE_READ_ONLY_ANNOTATIONS } from "../lib/toolInputs.js";
 
@@ -29,13 +29,16 @@ export function registerExplainDependency(server: McpServer): void {
       title: "Explain why a dependency was or wasn't updated",
       annotations: OFFLINE_READ_ONLY_ANNOTATIONS,
       description:
-        "Answer \"why was/wasn't dependency X updated?\" from an existing `dry_run` report — offline, no CLI. Finds every extracted occurrence of the dependency under `packageFiles` (matched case-insensitively against `depName` and `packageName`; exact by default, `partial: true` for substring) and returns per hit its `skipReason` / `skipStage`, proposed `updates`, and `warnings`, plus a one-line `verdict` (`not found in report`, `skipped: <reason>`, `up to date`, or `N update(s) available`), remedy `hints`, and `relatedProblems` (report/repo `problems` entries mentioning the dep). Pass the report inline (`report`, raw or a full `dry_run` summary) or via `reportPath` (pair with `dry_run`'s reportOutputPath). Optionally add a config source (`repoPath` or `configContent`) to attach `matchedRules` — the packageRules that matched each hit, evaluated with Renovate's real matchers in a worker thread.",
+        "Answer \"why was/wasn't dependency X updated?\" from an existing `dry_run` report — offline, no CLI. Finds every extracted occurrence of the dependency under `packageFiles` (matched case-insensitively against `depName` and `packageName`; exact by default, `partial: true` for substring) and returns per hit its `skipReason` / `skipStage`, proposed `updates`, and `warnings`, plus a one-line `verdict` (`not found in report`, `skipped: <reason>`, `up to date`, or `N update(s) available`), remedy `hints`, and `relatedProblems` (report/repo `problems` entries mentioning the dep). Pass the report inline (`report`, raw or a full `dry_run` summary) via `reportPath` (pair with `dry_run`'s reportOutputPath) or as `logPath` (a Renovate JSON-lines debug log from a real bot run, `LOG_LEVEL=debug LOG_FORMAT=json`). Optionally add a config source (`repoPath` or `configContent`) to attach `matchedRules` — the packageRules that matched each hit, evaluated with Renovate's real matchers in a worker thread.",
       inputSchema: z.object({
         report: reportRecord(
           "A Renovate dry-run report — the raw report (`{ repositories }`) or a full `dry_run` summary (`{ report }`); the tool unwraps `report` automatically. Use instead of reportPath.",
         ).optional(),
         reportPath: pathString(
           "Absolute path to a JSON file containing the report (pair with `dry_run`'s reportOutputPath). Use instead of report.",
+        ).optional(),
+        logPath: pathString(
+          "Absolute path to a Renovate JSON-lines debug log from a real run (`LOG_LEVEL=debug LOG_FORMAT=json`), read as a report. Use instead of report / reportPath.",
         ).optional(),
         depName: z
           .string()
@@ -52,28 +55,11 @@ export function registerExplainDependency(server: McpServer): void {
         ).optional(),
       }),
     },
-    async ({ report, reportPath, depName, partial, manager, repoPath, configContent }) => {
-      if (!report && !reportPath) {
-        return {
-          isError: true,
-          content: [{ type: "text", text: "Provide either report or reportPath (run dry_run first)." }],
-        };
-      }
-      if (report && reportPath) {
-        return {
-          isError: true,
-          content: [{ type: "text", text: "Pass either report or reportPath, not both." }],
-        };
-      }
-
-      let reportValue: unknown = report;
-      let reportSource: "inline" | "reportPath" = "inline";
-      if (reportPath) {
-        const res = await readReportPath(reportPath);
-        if (!res.ok) return { isError: true, content: [{ type: "text", text: res.error }] };
-        reportValue = res.value;
-        reportSource = "reportPath";
-      }
+    async ({ report, reportPath, logPath, depName, partial, manager, repoPath, configContent }) => {
+      const input = await resolveReportInput({ report, reportPath, logPath });
+      if (!input.ok) return { isError: true, content: [{ type: "text", text: input.error }] };
+      const reportValue = input.value;
+      const reportSource = input.source;
 
       const explanation = explainDependency(reportValue, { depName, partial, manager });
       const warnings: string[] = [];

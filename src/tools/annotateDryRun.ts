@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { extractReport, identityKey, readArray, readRecord } from "../lib/dryRunDiff.js";
-import { readReportPath } from "../lib/reportInput.js";
+import { resolveReportInput } from "../lib/reportInput.js";
 import {
   analyzePackageRules,
   MATCHER_META,
@@ -87,13 +87,16 @@ export function registerAnnotateDryRun(server: McpServer): void {
       title: "Attribute dry_run updates to packageRules",
       annotations: NETWORK_READ_ONLY_ANNOTATIONS,
       description:
-        "Given a `dry_run` report and a config, attribute EACH proposed update to the `packageRules` that matched it — answering \"which of my rules produced these updates?\". Stateless and offline: run `dry_run` first, then pass its report here (inline `report` or `reportPath`, same shapes as `dry_run_diff`) plus a config source (`repoPath` or `configContent`). Each update is matched with Renovate's REAL matchers in a worker thread against the facts present in the report; fields the report doesn't carry (e.g. datasource, depType) are reported under each update's `unevaluatable` and aggregated in `fieldGaps` rather than silently treated as non-matches. `rulesNeverMatched` flags likely-dead rules. Deprecated matcher keys are warned about — run migrate_config first. Run dry_run for full-fidelity confirmation.",
+        "Given a `dry_run` report and a config, attribute EACH proposed update to the `packageRules` that matched it — answering \"which of my rules produced these updates?\". Stateless and offline: run `dry_run` first, then pass its report here (inline `report`, `reportPath`, or `logPath` — a Renovate JSON-lines debug log from a real bot run; same shapes as `dry_run_diff`) plus a config source (`repoPath` or `configContent`). Each update is matched with Renovate's REAL matchers in a worker thread against the facts present in the report; fields the report doesn't carry (e.g. datasource, depType) are reported under each update's `unevaluatable` and aggregated in `fieldGaps` rather than silently treated as non-matches. `rulesNeverMatched` flags likely-dead rules. Deprecated matcher keys are warned about — run migrate_config first. Run dry_run for full-fidelity confirmation.",
       inputSchema: z.object({
         report: reportRecord(
           "A Renovate dry-run report — the raw report (`{ repositories }`) or a full `dry_run` summary (`{ report }`); the tool unwraps `report` automatically. Use instead of reportPath.",
         ).optional(),
         reportPath: pathString(
           "Absolute path to a JSON file containing the report (pair with `dry_run`'s reportOutputPath). Use instead of report.",
+        ).optional(),
+        logPath: pathString(
+          "Absolute path to a Renovate JSON-lines debug log from a real run (`LOG_LEVEL=debug LOG_FORMAT=json`), read as a report. Use instead of report / reportPath.",
         ).optional(),
         repoPath: pathString(
           "Absolute path to the repository root; the tool locates and expands its renovate config to get the packageRules. Use instead of configContent.",
@@ -116,32 +119,11 @@ export function registerAnnotateDryRun(server: McpServer): void {
           .describe("The platform `local>` presets live on — same semantics as resolve_config (routes only; never moves a token)."),
       }),
     },
-    async ({ report, reportPath, repoPath, configContent, externalPresets, endpoint, platform }) => {
-      if (!report && !reportPath) {
-        return {
-          isError: true,
-          content: [{ type: "text", text: "Provide either report or reportPath (run dry_run first)." }],
-        };
-      }
-      if (report && reportPath) {
-        return {
-          isError: true,
-          content: [{ type: "text", text: "Pass either report or reportPath, not both." }],
-        };
-      }
-
-      // Resolve the report.
-      let reportValue: unknown;
-      let reportSource: "inline" | "reportPath";
-      if (reportPath) {
-        const res = await readReportPath(reportPath);
-        if (!res.ok) return { isError: true, content: [{ type: "text", text: res.error }] };
-        reportValue = res.value;
-        reportSource = "reportPath";
-      } else {
-        reportValue = report;
-        reportSource = "inline";
-      }
+    async ({ report, reportPath, logPath, repoPath, configContent, externalPresets, endpoint, platform }) => {
+      const input = await resolveReportInput({ report, reportPath, logPath });
+      if (!input.ok) return { isError: true, content: [{ type: "text", text: input.error }] };
+      const reportValue = input.value;
+      const reportSource = input.source;
 
       // Resolve the config's effective packageRules.
       const src = await loadConfigSource({ repoPath, configContent });
