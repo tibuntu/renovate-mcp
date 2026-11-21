@@ -25,7 +25,7 @@ export function registerWorkflowPrompts(server: McpServer): void {
     {
       title: "Design a Renovate config",
       description:
-        "Go from intent to a validated, saved Renovate config: check_setup, read_config, suggest_presets, resolve/explain the draft, validate + lint, dry_run, then write_config on confirmation.",
+        "Go from intent to a validated, saved Renovate config: check_setup, read_config, suggest_presets, resolve/explain the draft, validate + lint, dry_run the draft, then write_config on confirmation.",
       argsSchema: z.object({
         repoPath: z.string().max(4096).describe("Absolute path to the repository root."),
         intent: z
@@ -47,7 +47,7 @@ export function registerWorkflowPrompts(server: McpServer): void {
             : '3. Ask the user what they want Renovate to do, then call suggest_presets with that intent as the query.',
           "4. Call resolve_config and explain_config on the resulting draft/config so you can show what it actually resolves to and which preset set each field.",
           "5. Call validate_config and lint_config against the draft to catch schema errors and Renovate-specific footguns, and explain_paths with repoPath (plus the draft as configContent) to check which files its includePaths / ignorePaths keep — presets like config:recommended silently ignore test/ and examples/ directories.",
-          "6. Call dry_run against the repo to preview the actual updates Renovate would propose.",
+          "6. Call dry_run with repoPath and the draft as configContent to preview the actual updates Renovate would propose with it. The draft runs in a temporary copy of the repo, so nothing is written yet; check configSource is \"input\" and read reportErrors for config errors.",
           "7. Summarize the plan (presets used, resolved effective config, dry-run results) and ask the user to confirm.",
           "8. Only after the user explicitly confirms, call write_config with repoPath to save. Never call write_config before that confirmation.",
         ].join("\n"),
@@ -94,7 +94,7 @@ export function registerWorkflowPrompts(server: McpServer): void {
     {
       title: "Author a custom manager",
       description:
-        "Draft and iterate on a customManagers entry (regex or jsonata) with preview_custom_manager, then validate + lint + dry_run, and write_config on confirmation.",
+        "Draft and iterate on a customManagers entry (regex or jsonata) with preview_custom_manager, then validate + lint + dry_run the draft config, and write_config on confirmation.",
       argsSchema: z.object({
         repoPath: z.string().max(4096).describe("Absolute path to the repository root."),
         description: z
@@ -112,7 +112,7 @@ export function registerWorkflowPrompts(server: McpServer): void {
           "2. Draft a customManagers entry (customType \"regex\" or \"jsonata\") matching the description above.",
           "3. Call preview_custom_manager with repoPath and the draft manager. Iterate on managerFilePatterns/matchStrings until the file/line hits and extracted dep info look right.",
           "4. Call validate_config and lint_config against the full config (existing config plus the new customManagers entry).",
-          "5. Call dry_run against the repo to confirm the manager behaves as expected end to end.",
+          "5. Call dry_run with repoPath and the full config from step 4 (existing config plus the new customManagers entry) as configContent to confirm the manager behaves as expected end to end. The draft runs in a temporary copy of the repo, so nothing is written yet; read reportErrors for config errors.",
           "6. Summarize the entry and the dry-run result, and ask the user to confirm.",
           "7. Only after the user explicitly confirms, call write_config with repoPath to save. Never call write_config before that confirmation.",
         ].join("\n"),
@@ -124,7 +124,7 @@ export function registerWorkflowPrompts(server: McpServer): void {
     {
       title: "Onboard a repo without a Renovate config",
       description:
-        "Create a first Renovate config for a repo that has none: check_setup, read_config (expect none), dry_run in extract mode to detect ecosystems, suggest_presets, validate + lint, write_config on confirmation, then a full dry_run.",
+        "Create a first Renovate config for a repo that has none: check_setup, read_config (expect none), dry_run in extract mode to detect ecosystems, suggest_presets, validate + lint, a full dry_run of the draft, then write_config on confirmation.",
       argsSchema: z.object({
         repoPath: z.string().max(4096).describe("Absolute path to the repository root."),
         intent: z
@@ -146,9 +146,9 @@ export function registerWorkflowPrompts(server: McpServer): void {
             ? `4. Call suggest_presets with a query combining the detected ecosystems and the user's intent "${intent}" (e.g. "npm and github-actions monorepo, automerge patch updates, pin digests"), and use the returned draft.config as the starting point.`
             : '4. Ask the user what they want Renovate to do, then call suggest_presets with a query combining the detected ecosystems and that intent (e.g. "npm and github-actions monorepo, automerge patch updates, pin digests"), and use the returned draft.config as the starting point.',
           "5. Call lint_config and validate_config against the draft and fix any findings. Then call explain_paths with repoPath and the draft as configContent to confirm its ignorePaths (including the ones presets add) do not drop package files detected in step 3.",
-          "6. Summarize the draft config and the detected ecosystems, and ask the user to confirm. dry_run has no inline config input, so the draft must be written before a full dry run can use it.",
-          "7. Only after the user explicitly confirms, call write_config with repoPath to save. Never call write_config before that confirmation.",
-          `8. Call dry_run with repoPath "${repoPath}" (default full mode) to preview the actual updates Renovate would propose with the new config, and report the result.`,
+          `6. Call dry_run with repoPath "${repoPath}" (default full mode) and the draft as configContent to preview the actual updates Renovate would propose with it. The draft runs in a temporary copy of the repo, so nothing is written yet; read reportErrors for config errors and fix the draft if needed.`,
+          "7. Summarize the draft config, the detected ecosystems and the dry-run results, and ask the user to confirm.",
+          "8. Only after the user explicitly confirms, call write_config with repoPath to save. Never call write_config before that confirmation.",
         ].join("\n"),
       ),
   );

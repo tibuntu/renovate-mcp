@@ -45,7 +45,7 @@ Nineteen tools, seven resources, and five workflow prompts. Each tool name below
 | [`preview_custom_manager`](docs/tools.md#preview_custom_manager) | Preview a `customManagers` entry (regex or JSONata) against a local repo. Offline. |
 | [`validate_config`](docs/tools.md#validate_config) | Run `renovate-config-validator` against a file or inline object. |
 | [`lint_config`](docs/tools.md#lint_config) | Semantic lint pass for Renovate-specific footguns the schema validator declares valid. Offline. |
-| [`dry_run`](docs/tools.md#dry_run) | Run Renovate with `--dry-run` and return the structured JSON report. Local-by-default, flattening `local>` presets with Renovate's own resolver into a temporary copy first; remote with `platform` + `endpoint` + `token` + `repository`. No PRs, no pushes. |
+| [`dry_run`](docs/tools.md#dry_run) | Run Renovate with `--dry-run` and return the structured JSON report. Local-by-default, flattening `local>` presets with Renovate's own resolver into a temporary copy first; a draft passed as `configContent` runs in that copy too, so it can be tested before `write_config`; remote with `platform` + `endpoint` + `token` + `repository`. No PRs, no pushes. |
 | [`dry_run_diff`](docs/tools.md#dry_run_diff) | Stateless semantic diff between two `dry_run` reports — added / removed / changed updates. |
 | [`annotate_dry_run`](docs/tools.md#annotate_dry_run) | Attribute each proposed update in a `dry_run` report to the `packageRules` that caused it; flags rules that never matched and report fields the matchers needed but the report lacked. Stateless + offline. |
 | [`explain_dependency`](docs/tools.md#explain_dependency) | Answer "why was/wasn't dependency X updated?" from a `dry_run` report: per-occurrence `skipReason`, proposed `updates`, `warnings`, a one-line verdict and remedy hints; optionally the `packageRules` that matched it. Stateless + offline. |
@@ -65,10 +65,10 @@ Nineteen tools, seven resources, and five workflow prompts. Each tool name below
 
 | Prompt | Drives |
 | --- | --- |
-| [`design-renovate-config`](docs/tools.md#design-renovate-config) | `check_setup` → `read_config` → `suggest_presets` → `resolve_config`/`explain_config` → `validate_config`/`lint_config` → `dry_run` → `write_config` on confirmation. |
+| [`design-renovate-config`](docs/tools.md#design-renovate-config) | `check_setup` → `read_config` → `suggest_presets` → `resolve_config`/`explain_config` → `validate_config`/`lint_config` → `dry_run` of the draft (`configContent`) → `write_config` on confirmation. |
 | [`debug-package-rule`](docs/tools.md#debug-package-rule) | `check_setup` → `read_config` → `test_package_rules` (matches + rendered names) → `dry_run` (with `reportOutputPath`) → `annotate_dry_run` → `explain_dependency` → a verdict naming rule indices and matchers. |
-| [`author-custom-manager`](docs/tools.md#author-custom-manager) | Draft a `customManagers` entry → `preview_custom_manager` iteratively → `validate_config`/`lint_config` → `dry_run` → `write_config` on confirmation. |
-| [`onboard-repo`](docs/tools.md#onboard-repo) | For repos without a config: `check_setup` → `read_config` (expect none) → `dry_run` (extract mode) → `suggest_presets` → `lint_config`/`validate_config` → `write_config` on confirmation → full `dry_run`. |
+| [`author-custom-manager`](docs/tools.md#author-custom-manager) | Draft a `customManagers` entry → `preview_custom_manager` iteratively → `validate_config`/`lint_config` → `dry_run` of the draft (`configContent`) → `write_config` on confirmation. |
+| [`onboard-repo`](docs/tools.md#onboard-repo) | For repos without a config: `check_setup` → `read_config` (expect none) → `dry_run` (extract mode) → `suggest_presets` → `lint_config`/`validate_config` → full `dry_run` of the draft (`configContent`) → `write_config` on confirmation. |
 | [`check-config-after-upgrade`](docs/tools.md#check-config-after-upgrade) | After a Renovate bot upgrade: `check_setup` (version comparison) → `read_config` → `migrate_config`/`lint_config`/`validate_config` → `dry_run` (extract mode) → new features from release notes or `renovate://options` → `write_config` on confirmation. |
 
 ## Requirements
@@ -214,6 +214,7 @@ Once the server is wired up, try prompts like these. Written for Claude but work
 
 - "Validate this proposed config against Renovate's schema without writing it anywhere."
 - "Do a dry run and show me which PRs Renovate would open — no pushes."
+- "Dry-run this draft config against the repo before we write it."
 - "Why didn't Renovate update `lodash`? Run a dry run and explain that dependency."
 - "Add `:semanticCommits` to my `extends`, validate it, and save back to `renovate.json`."
 
@@ -235,9 +236,9 @@ A transcript-style walkthrough: design a Dockerfile custom manager from scratch,
 >
 > **Claude** calls `validate_config` with the inline config. → valid.
 >
-> **You:** Now dry-run so I can see what Renovate would actually open.
+> **You:** Now dry-run that config so I can see what Renovate would actually open, before anything is saved.
 >
-> **Claude** calls `dry_run`. → 2 updates: `postgres` 15.3-alpine → 15.5-alpine, `redis` 7.2 → 7.4. No entries in `problems`.
+> **Claude** calls `dry_run` with the same config as `configContent`. It runs in a temporary copy of the repo, so `renovate.json` is untouched. → `configSource: "input"`, 2 updates: `postgres` 15.3-alpine → 15.5-alpine, `redis` 7.2 → 7.4. No entries in `problems`.
 >
 > **You:** Save it.
 >

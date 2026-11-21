@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { execFileSync } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, realpath, rm, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { startServer, type McpSession } from "../helpers/mcpSession.js";
@@ -74,6 +74,7 @@ writeFileSync(${JSON.stringify(dump)}, JSON.stringify({
   cwd,
   ceiling: process.env.GIT_CEILING_DIRECTORIES ?? null,
   config: existsSync('renovate.json') ? JSON.parse(readFileSync('renovate.json', 'utf8')) : null,
+  packageJson: existsSync('package.json') ? JSON.parse(readFileSync('package.json', 'utf8')) : null,
   hostRules: process.env.RENOVATE_CONFIG_FILE ? JSON.parse(readFileSync(process.env.RENOVATE_CONFIG_FILE, 'utf8')).hostRules : null,
 }));
 const problems = process.env.FAKE_PROBLEM ? [{ level: 50, validationError: process.env.FAKE_PROBLEM }] : [];
@@ -117,6 +118,7 @@ const readDump = async (dump: string) =>
     ceiling: string | null;
     config: Record<string, unknown> | null;
     hostRules: Array<Record<string, unknown>> | null;
+    packageJson: Record<string, unknown> | null;
   };
 const spawned = async (dump: string) => readFile(dump).then(() => true, () => false);
 
@@ -429,5 +431,132 @@ describe("dry_run local-preset flattening", () => {
       expect(res.error ?? res.result?.isError).toBeTruthy();
       expect(await spawned(dump)).toBe(false);
     });
+  });
+});
+
+describe("dry_run with a draft config (configContent)", () => {
+  const DRAFT = { extends: [":semanticCommits"], labels: ["draft"] };
+  const summaryOf = (result: ToolResult) => JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+
+  it("runs Renovate in a temp copy holding the draft, leaving repoPath byte-identical", async () => {
+    await gitRepo({ "renovate.json": CONFIG, "package.json": "{}\n" });
+    const { dump } = await start({});
+
+    const result = await dryRun({ configContent: DRAFT });
+
+    expect(result.isError).toBeFalsy();
+    const seen = await readDump(dump);
+    expect(path.basename(seen.cwd)).toMatch(/^renovate-mcp-dryrun-/);
+    expect(seen.config).toEqual(DRAFT);
+    const summary = summaryOf(result);
+    expect(summary.configSource).toBe("input");
+    expect(summary).not.toHaveProperty("flattenedPresets");
+    expect(result.content[0]!.text).not.toContain(seen.cwd);
+    expect(await readFile(path.join(repo, "renovate.json"), "utf8")).toBe(CONFIG);
+    expect(await readdir(tmp)).toEqual([]);
+  });
+
+  it("reports configSource repo when no draft is passed", async () => {
+    await gitRepo({ "renovate.json": JSON.stringify(DRAFT) });
+    const { dump } = await start({});
+
+    const result = await dryRun({});
+
+    expect(summaryOf(result).configSource).toBe("repo");
+    expect((await readDump(dump)).cwd).toBe(repo);
+  });
+
+  it("flattens local presets in the draft through the existing step", async () => {
+    await gitRepo({ "renovate.json": JSON.stringify(DRAFT) }, "git@gitlab.example.com:acme/app.git");
+    const { dump } = await start({}, PRESETS);
+
+    const result = await dryRun({ configContent: JSON.parse(CONFIG), endpoint: GITLAB_API });
+
+    expect(result.isError).toBeFalsy();
+    expect((await readDump(dump)).config).toMatchObject({ extends: [":semanticCommits"], labels: ["own"], prHourlyLimit: 3 });
+    expect(summaryOf(result).flattenedPresets).toEqual(expect.arrayContaining(["local>acme/presets"]));
+    expect(await readFile(path.join(repo, "renovate.json"), "utf8")).toBe(JSON.stringify(DRAFT));
+    expect(await readdir(tmp)).toEqual([]);
+  });
+
+  it("still runs an extract draft unflattened when its local presets have no route", async () => {
+    await gitRepo({ "renovate.json": JSON.stringify(DRAFT) });
+    const { dump } = await start({});
+
+    const result = await dryRun({ configContent: JSON.parse(CONFIG), dryRunMode: "extract" });
+
+    expect((await readDump(dump)).config).toEqual(JSON.parse(CONFIG));
+    expect(summaryOf(result).warnings).toEqual(
+      expect.arrayContaining([expect.stringContaining("continues without flattening")]),
+    );
+    expect(await readFile(path.join(repo, "renovate.json"), "utf8")).toBe(JSON.stringify(DRAFT));
+    expect(await readdir(tmp)).toEqual([]);
+  });
+
+  it("refuses a draft on a remote run, which reads its config from the platform", async () => {
+    await gitRepo({ "renovate.json": CONFIG });
+    const { dump } = await start({});
+
+    const result = await dryRun({ configContent: DRAFT, platform: "gitlab", repository: "acme/app", token: "glpat-x" });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]!.text).toMatch(/`configContent`.*`platform=local`/);
+    expect(await spawned(dump)).toBe(false);
+    expect(await readdir(tmp)).toEqual([]);
+  });
+
+  it("writes a new renovate.json into the copy of a repo without any config (onboarding)", async () => {
+    await gitRepo({ "package.json": "{}\n" });
+    const { dump } = await start({});
+
+    const result = await dryRun({ configContent: DRAFT });
+
+    expect(result.isError).toBeFalsy();
+    expect((await readDump(dump)).config).toEqual(DRAFT);
+    expect(await readdir(repo)).toEqual([".git", "package.json"]);
+    expect(await readdir(tmp)).toEqual([]);
+  });
+
+  it("puts the draft under package.json#renovate, keeping the other keys", async () => {
+    const pkg = JSON.stringify({ name: "app", renovate: { labels: ["old"] } }, null, 2) + "\n";
+    await gitRepo({ "package.json": pkg });
+    const { dump } = await start({});
+
+    const result = await dryRun({ configContent: DRAFT });
+
+    expect(result.isError).toBeFalsy();
+    const seen = await readDump(dump);
+    expect(seen.packageJson).toEqual({ name: "app", renovate: DRAFT });
+    expect(seen.config).toBeNull();
+    expect(await readFile(path.join(repo, "package.json"), "utf8")).toBe(pkg);
+  });
+
+  it("copies a non-git directory whole and runs the draft there", async () => {
+    await writeFile(path.join(repo, "renovate.json"), CONFIG);
+    await writeFile(path.join(repo, "package.json"), "{}\n");
+    const { dump } = await start({});
+
+    const result = await dryRun({ configContent: DRAFT });
+
+    expect(result.isError).toBeFalsy();
+    const seen = await readDump(dump);
+    expect(seen.cwd).not.toBe(repo);
+    expect(seen.config).toEqual(DRAFT);
+    expect(seen.packageJson).toEqual({});
+    expect(await readFile(path.join(repo, "renovate.json"), "utf8")).toBe(CONFIG);
+  });
+
+  it("refuses a repository over the copy caps before spawning", async () => {
+    // A sparse file: over the 512 MiB byte cap without writing it.
+    await writeFile(path.join(repo, "huge.bin"), "");
+    await truncate(path.join(repo, "huge.bin"), 513 * 1024 * 1024);
+    const { dump } = await start({});
+
+    const result = await dryRun({ configContent: DRAFT });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]!.text).toMatch(/over the limit of \d+ bytes/);
+    expect(await spawned(dump)).toBe(false);
+    expect(await readdir(tmp)).toEqual([]);
   });
 });

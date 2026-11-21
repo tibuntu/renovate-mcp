@@ -249,9 +249,9 @@ The ruleset is intentionally small, scoped to the regex-aware and manager-aware 
 
 Run Renovate with `--dry-run` and return the structured JSON report. No PRs, no pushes.
 
-**Inputs.** `repoPath` follows the [Common input rules](#common-input-rules) and is checked before anything is spawned (a missing `cwd` would otherwise surface as a spawn `ENOENT`, indistinguishable from a missing binary). `dryRunMode` is `extract` (detect manifests only), `lookup` (also resolve latest versions) or `full` (default; full simulation including branches/PRs). `logLevel` is `info` (default) or `debug`. `timeoutMs` defaults to 5 minutes and is capped at 15; on overrun the run is killed (including its child processes) and the tool returns an `isError` that says `timed out after`. `repository` must not start with `-` (Renovate would parse it as a flag). `reportOutputPath` must be an absolute path inside an existing directory, and must not exist yet itself — both are checked before Renovate is spawned (a missing parent directory returns an `isError` naming it); the file is created with `O_EXCL` and mode 0600, and a pre-existing file or symlink at that path yields an `isError` saying `already exists` instead of an overwrite.
+**Inputs.** `repoPath` follows the [Common input rules](#common-input-rules) and is checked before anything is spawned (a missing `cwd` would otherwise surface as a spawn `ENOENT`, indistinguishable from a missing binary). `dryRunMode` is `extract` (detect manifests only), `lookup` (also resolve latest versions) or `full` (default; full simulation including branches/PRs). `logLevel` is `info` (default) or `debug`. `timeoutMs` defaults to 5 minutes and is capped at 15; on overrun the run is killed (including its child processes) and the tool returns an `isError` that says `timed out after`. `repository` must not start with `-` (Renovate would parse it as a flag). `reportOutputPath` must be an absolute path inside an existing directory, and must not exist yet itself — both are checked before Renovate is spawned (a missing parent directory returns an `isError` naming it); the file is created with `O_EXCL` and mode 0600, and a pre-existing file or symlink at that path yields an `isError` saying `already exists` instead of an overwrite. `configContent` (optional, object, max ~1,000,000 bytes serialized) is a draft config to run instead of the repo's own, without writing it; see **Draft configs** below.
 
-**Platform selection.** Defaults to `--platform=local` against `repoPath`. Pass `platform` + `endpoint` + `repository` (and `token` when no env token applies) to run as a real GitHub/GitLab client against the remote repository. A local run whose config extends `local>` presets (or the bare `owner/repo` spelling of one) flattens them first (see **Local presets in local mode** below). When `platform` is not passed, the tool reads `RENOVATE_PLATFORM` from the MCP server's env before defaulting to `local`. The response echoes `platformSource` (`input` / `env` / `default`) and `effectivePlatform`, and an advisory warning fires when env-derived platform is non-local so a surprising `gitlab`/`github` is never mysterious. Preflight error messages also tag the platform origin.
+**Platform selection.** Defaults to `--platform=local` against `repoPath`. Pass `platform` + `endpoint` + `repository` (and `token` when no env token applies) to run as a real GitHub/GitLab client against the remote repository. A local run whose config extends `local>` presets (or the bare `owner/repo` spelling of one) flattens them first (see **Local presets in local mode** below). When `platform` is not passed, the tool reads `RENOVATE_PLATFORM` from the MCP server's env before defaulting to `local`. The response echoes `platformSource` (`input` / `env` / `default`), `effectivePlatform` and `configSource` (`input` for a draft passed as `configContent`, else `repo`), and an advisory warning fires when env-derived platform is non-local so a surprising `gitlab`/`github` is never mysterious. Preflight error messages also tag the platform origin.
 
 **Token resolution.** Tokens are host-scoped, as in the preset fetcher ([Security & secrets — token resolution](security.md#token-resolution)). On a remote run (`github` / `gitlab`) the platform token is the `token` input, else the env token bound to the API host — `RENOVATE_TOKEN` then `GITHUB_TOKEN` / `GITLAB_TOKEN` on the `RENOVATE_PLATFORM` / `RENOVATE_ENDPOINT` host, `GITHUB_TOKEN` / `GITLAB_TOKEN` on the public host, or a `RENOVATE_MCP_HOST_TOKENS` entry for that host — exported as `RENOVATE_TOKEN` for the spawned Renovate CLI. An `endpoint` input never binds an env token to its host. The API host is `endpoint`, else `RENOVATE_ENDPOINT` (only when `platform` is unset or equals `RENOVATE_PLATFORM`; otherwise it is removed from the child's environment), else api.github.com / gitlab.com. The effective endpoint is passed as `--endpoint`. Without such a token the call fails before spawning, naming the host and the variables it tried. Under `platform=local` there is no platform host, so no `RENOVATE_TOKEN` reaches Renovate as its platform token (an inherited one is removed from the child env) and a `token` input is ignored with a warning. Every other env token reaches Renovate as a host rule on its own host (see **Per-call `hostRules`** below); a malformed `RENOVATE_MCP_HOST_TOKENS` is an `isError` before spawning, and an entry whose variable is unset is skipped with a warning.
 
@@ -277,6 +277,16 @@ Limits:
 - Host rules from the operator's `RENOVATE_HOST_RULES` or `RENOVATE_CONFIG_FILE` do not authenticate the preset fetches; they still reach the spawned Renovate.
 - The resolver is the bundled Renovate's, also when `RENOVATE_BIN` points at another Renovate install.
 - Flattening runs before Renovate starts and has its own `timeoutMs` budget.
+
+**Draft configs (`configContent`).** Pass a draft as `configContent` to dry-run it before `write_config` saves it. `repoPath` stays byte-identical: the draft goes into the same temporary copy local-preset flattening uses ([ADR-0009](adrs/0009-dry-run-local-preset-flattening.md), addendum), never into the repository.
+
+1. Local runs only. With `platform: github` / `gitlab` (passed, or from `RENOVATE_PLATFORM`) the call is an `isError` before anything is spawned: a remote run reads its config from the platform, so the draft would not be what ran.
+2. The repository is copied as in step 3 above (tracked files of a git repository, every file of a non-git directory) and under the same caps; a repository over them is refused before the run.
+3. The draft replaces the config file Renovate would read in the copy. When the copy has none (the onboarding case, or a config git does not track), it becomes a new `renovate.json`, first in Renovate's order. A `package.json#renovate` config is replaced under the `renovate` key with the other keys kept.
+4. Local presets in the draft are flattened first, exactly as above, with the same route, refusals and `flattenedPresets` / `keptExtends`. An `extract` run without a route writes the draft unflattened, with the same warning.
+5. Validation is Renovate's own: the tool spawns no validator, and a config error surfaces in `reportErrors` (with `ok: false`). Run `validate_config` / `lint_config` first for faster feedback.
+
+The result carries `configSource: "input"`. The limits of the copy listed above apply: no `.git`, and untracked files such as a local `.npmrc` are missing.
 
 **`endpoint` in local mode.** On remote runs `endpoint` is forwarded as `--endpoint`. Under `platform=local` it only routes the local presets that are flattened; on a run that flattens nothing it is ignored with a warning. `presetPlatform` is ignored with a warning in the same cases and on remote runs. `gitlab>…` / `github>…` presets always go to gitlab.com / github.com.
 
@@ -516,7 +526,7 @@ MCP prompts package the documented multi-tool workflows into ready-to-run starti
 
 **Arguments:** `repoPath` (required) — absolute path to the repository root. `intent` (optional) — free-text description of what Renovate should do.
 
-Drives `check_setup` → `read_config` → `suggest_presets` (with `intent`) → `resolve_config` + `explain_config` on the resulting draft → `validate_config` + `lint_config` → `dry_run` → `write_config` on confirmation.
+Drives `check_setup` → `read_config` → `suggest_presets` (with `intent`) → `resolve_config` + `explain_config` on the resulting draft → `validate_config` + `lint_config` → `dry_run` with the draft as `configContent` (it runs in a temporary copy, nothing is written) → `write_config` on confirmation.
 
 ### `debug-package-rule`
 
@@ -528,13 +538,13 @@ Drives `check_setup` → `read_config` → `test_package_rules` for the (hypothe
 
 **Arguments:** `repoPath` (required) — absolute path to the repository root. `description` (required) — what to extract, and from which files.
 
-Drives drafting a `customManagers` entry (regex or jsonata) → `preview_custom_manager` iteratively until the hits look right → `validate_config` + `lint_config` → `dry_run` → `write_config` on confirmation.
+Drives drafting a `customManagers` entry (regex or jsonata) → `preview_custom_manager` iteratively until the hits look right → `validate_config` + `lint_config` → `dry_run` with the full draft config (existing config plus the new entry) as `configContent` (it runs in a temporary copy, nothing is written) → `write_config` on confirmation.
 
 ### `onboard-repo`
 
 **Arguments:** `repoPath` (required) — absolute path to the repository root. `intent` (optional) — free-text description of what Renovate should do.
 
-For a repo with no Renovate config yet (if `read_config` finds one, it redirects to `design-renovate-config`). Drives `check_setup` → `read_config` (expecting no config) → `dry_run` with `dryRunMode: "extract"` to detect managers and package files → `suggest_presets` with a query built from the detected ecosystems plus `intent` → `lint_config` + `validate_config` on the draft → `write_config` on confirmation → a full `dry_run` with the written config. `dry_run` has no inline config input, so the full dry run comes after the write.
+For a repo with no Renovate config yet (if `read_config` finds one, it redirects to `design-renovate-config`). Drives `check_setup` → `read_config` (expecting no config) → `dry_run` with `dryRunMode: "extract"` to detect managers and package files → `suggest_presets` with a query built from the detected ecosystems plus `intent` → `lint_config` + `validate_config` on the draft → a full `dry_run` with the draft as `configContent` (it runs in a temporary copy, nothing is written) → `write_config` on confirmation.
 
 ### `check-config-after-upgrade`
 

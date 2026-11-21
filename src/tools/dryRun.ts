@@ -41,6 +41,7 @@ import {
   BASE_BRANCHES_MAX_ITEMS,
   BRANCH_NAME_MAX_BYTES,
   HOST_RULES_MAX_ITEMS,
+  configRecord,
   endpointString,
   hostRuleRecord,
   pathString,
@@ -220,6 +221,9 @@ export function registerDryRun(server: McpServer): void {
           .describe(
             "Local runs only: the platform the config's local presets (`local>owner/repo`, or an unprefixed `owner/repo`) live on. Under `platform=local` Renovate cannot resolve them, so dry_run resolves them first with Renovate's own preset resolver, writes the result into a temporary copy of the repository and runs Renovate there. When unset, it is derived from the origin remote (github.com, gitlab.com, gitea.com, codeberg.org, code.forgejo.org, or the flavour of a self-hosted host, which then needs `endpoint` or `RENOVATE_ENDPOINT`; a host whose flavour the name does not show is taken as `RENOVATE_PLATFORM` when `RENOVATE_ENDPOINT` is on it). Passing it also flattens a config whose local presets only appear inside other presets. `bitbucket` is refused: Renovate reads Bitbucket local presets through its platform client. Like `platform` in `resolve_config` it routes the presets but never moves an env token to their host.",
           ),
+        configContent: configRecord(
+          "Local runs only: a draft Renovate config to run instead of the repo's own, without writing it. dry_run copies the repository into a temporary directory (the same copy and caps as local-preset flattening), writes the draft there over the config file Renovate would read (a new `renovate.json` when there is none; under `package.json#renovate` the other keys are kept), runs Renovate in the copy and removes it; `repoPath` is never written. Local presets in the draft are flattened as usual. Validation is Renovate's own: config errors surface in `reportErrors`. Refused with `platform: github` / `gitlab`, whose runs read the config from the platform. The result's `configSource` says which config ran (`input` or `repo`).",
+        ).optional(),
         readConfigFromBaseBranch: z
           .boolean()
           .optional()
@@ -243,6 +247,7 @@ export function registerDryRun(server: McpServer): void {
         baseBranches,
         readConfigFromBaseBranch,
         presetPlatform,
+        configContent,
       },
       ctx,
     ) => {
@@ -335,6 +340,19 @@ export function registerDryRun(server: McpServer): void {
             ? "`RENOVATE_PLATFORM` env"
             : "default"
       })`;
+      // Testing a draft against the platform's config instead would be worse
+      // than refusing.
+      if (configContent && isRemotePlatform) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text: `\`configContent\` only works under \`platform=local\`, but this run is \`${effectivePlatform}\` ${platformOriginTag}: a remote run reads its config from the platform, so the draft would not be tested. Pass \`platform: 'local'\`, or write the config and push it to a branch (see \`baseBranches\`).`,
+            },
+          ],
+        };
+      }
 
       // Host-scoped tokens (ADR-0008). Env tokens bind to their public hosts
       // and to the env scope (RENOVATE_PLATFORM + RENOVATE_ENDPOINT) only; the
@@ -350,8 +368,12 @@ export function registerDryRun(server: McpServer): void {
       // init in all of them) whose config names a local preset (or that
       // pass `presetPlatform`) flatten it first (ADR-0009): the repo is copied,
       // the copy's config is the one Renovate would read, and `route` is where
-      // its `local>` presets are fetched from.
-      let copy: { dir: string; relPath: string; config: Record<string, unknown>; warnings: string[] } | undefined;
+      // its `local>` presets are fetched from. A draft (`configContent`) is the
+      // copy's second trigger: it is written into the copy, flattened first
+      // when it names local presets.
+      let copy:
+        | { dir: string; relPath: string; config: Record<string, unknown>; warnings: string[]; flatten: boolean }
+        | undefined;
       let route: TokenScope = homeScope({ platform: effectivePlatform, endpoint });
       const mcpWarnings: string[] = [];
       const apiUrl = isRemotePlatform ? (route.endpoint ?? DEFAULT_API_URL[effectivePlatform]) : undefined;
@@ -394,10 +416,11 @@ export function registerDryRun(server: McpServer): void {
 
       // Every refusal that needs no copy comes first: the copy can be 512 MiB.
       if (!isRemotePlatform) {
-        const located = await locateConfig(repoPath).catch(() => null);
-        const hasLocalPresets = located ? findLocalPresets(located.config).length > 0 : false;
+        const located = configContent ? null : await locateConfig(repoPath).catch(() => null);
+        const config = configContent ?? located?.config;
+        const hasLocalPresets = config ? findLocalPresets(config).length > 0 : false;
         const local =
-          located && (presetPlatform || hasLocalPresets)
+          config && (presetPlatform || hasLocalPresets)
             ? await resolveLocalPresetRoute(repoPath, { presetPlatform, endpoint })
             : undefined;
         if (local && !local.ok) {
@@ -405,7 +428,22 @@ export function registerDryRun(server: McpServer): void {
           // manifest-only escape hatch); Renovate then reports the preset itself.
           if (dryRunMode !== "extract") return { isError: true, content: [{ type: "text", text: local.reason }] };
           mcpWarnings.push(`${local.reason} This \`extract\` run continues without flattening; Renovate will fail on the local presets.`);
-        } else if (located && local) {
+        }
+        if (configContent) {
+          const copied = await copyRepo(repoPath);
+          if (!copied.ok) return { isError: true, content: [{ type: "text", text: copied.reason }] };
+          // The draft replaces the config Renovate would read in the copy, or
+          // becomes its renovate.json (first in Renovate's order).
+          const inCopy = await locateConfig(copied.dir).catch(() => null);
+          if (local?.ok) route = local.scope;
+          copy = {
+            dir: copied.dir,
+            relPath: inCopy?.relPath ?? "renovate.json",
+            config: configContent,
+            warnings: copied.warnings,
+            flatten: local?.ok === true,
+          };
+        } else if (located && local?.ok) {
           const copied = await copyRepo(repoPath);
           if (!copied.ok) return { isError: true, content: [{ type: "text", text: copied.reason }] };
           // The copy holds what Renovate's `git ls-files` lists, so an
@@ -413,7 +451,7 @@ export function registerDryRun(server: McpServer): void {
           const inCopy = await locateConfig(copied.dir).catch(() => null);
           if (inCopy && (presetPlatform || findLocalPresets(inCopy.config).length)) {
             route = local.scope;
-            copy = { dir: copied.dir, relPath: inCopy.relPath, config: inCopy.config, warnings: copied.warnings };
+            copy = { dir: copied.dir, relPath: inCopy.relPath, config: inCopy.config, warnings: copied.warnings, flatten: true };
           } else {
             await removeRepoCopy(copied.dir);
             if (hasLocalPresets && !inCopy) {
@@ -460,12 +498,12 @@ export function registerDryRun(server: McpServer): void {
           `Host rules for the env tokens were skipped: both \`RENOVATE_CONFIG_FILE\` and \`RENOVATE_ADDITIONAL_CONFIG_FILE\` are set on the MCP server, so there is no file slot left for them. Add them to one of those files if Renovate needs them.`,
         );
       }
-      if (!isRemotePlatform && endpoint !== undefined && !copy) {
+      if (!isRemotePlatform && endpoint !== undefined && !copy?.flatten) {
         mcpWarnings.push(
           "`endpoint` was ignored: under `platform=local` it only routes the local presets dry_run flattens, and this run flattens none (no local preset in the repo config, or an `extract` run without a route).",
         );
       }
-      if (presetPlatform !== undefined && !copy) {
+      if (presetPlatform !== undefined && !copy?.flatten) {
         mcpWarnings.push(
           "`presetPlatform` was ignored: it only applies to a `platform=local` run on a repository with a tracked Renovate config, and needs a route.",
         );
@@ -553,7 +591,7 @@ export function registerDryRun(server: McpServer): void {
         await fs.writeFile(reportPath, "", { flag: "wx", mode: 0o600 });
 
         let flattened: { flattenedPresets: string[]; keptExtends: string[] } | undefined;
-        if (copy) {
+        if (copy?.flatten) {
           emit(`Flattening local presets via ${route.platform}`);
           // The resolver authenticates like the spawned Renovate will: env
           // token rules, per-call rules, then GITHUB_COM_TOKEN as Renovate
@@ -569,10 +607,14 @@ export function registerDryRun(server: McpServer): void {
             signal: ctx?.mcpReq.signal,
           });
           if (!result.ok) return { isError: true, content: [{ type: "text", text: clean(result.reason) }] };
-          const written = await writeFlattenedConfig(copy.dir, copy.relPath, result.config);
-          if (!written.ok) return { isError: true, content: [{ type: "text", text: written.reason }] };
+          copy.config = result.config;
           mcpWarnings.push(...result.warnings);
           flattened = { flattenedPresets: result.flattenedPresets, keptExtends: result.keptExtends };
+        }
+        // The flattened config or the draft; never anywhere but the copy.
+        if (copy?.flatten || configContent) {
+          const written = await writeFlattenedConfig(copy!.dir, copy!.relPath, copy!.config);
+          if (!written.ok) return { isError: true, content: [{ type: "text", text: written.reason }] };
         }
 
         const args = [
@@ -738,6 +780,7 @@ export function registerDryRun(server: McpServer): void {
           hasReport: report !== null,
           platformSource,
           effectivePlatform,
+          configSource: configContent ? "input" : "repo",
           ...(flattened ?? {}),
           report: reportSummary,
         };
