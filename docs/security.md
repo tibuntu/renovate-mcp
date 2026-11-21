@@ -114,6 +114,10 @@ Renovate and `renovate-config-validator` read global self-hosted config from the
 
 The worker threads (merge, packageRules, schedule, migration, preset flattening) import only Renovate modules that never reach the global config loader.
 
+## Reading Renovate debug logs (`logPath`)
+
+`explain_dependency`, `annotate_dry_run` and `dry_run_diff` accept a `logPath`. The server reads that file, streaming, and parses only lines carrying the `packageFiles with updates` or `branches info extended` message; every other line is skipped unparsed and nothing else is retained. Renovate has already sanitized those records (secrets are redacted by its logger) and the tool adds no new redaction, so treat the output as exactly as sensitive as the log. Like `reportPath`, the path is read as given with the server's own file permissions; it is never written to.
+
 ## On-disk artifacts during `dry_run`
 
 `dry_run` uses `--report-type=file` so we get a structured JSON report instead of scraping stdout. The report path is pre-created with mode 0600 before Renovate is spawned (Renovate overwrites in place with `O_TRUNC`, preserving the mode), so the on-disk JSON is never world-readable while the run is in flight — Renovate's `problems` array can carry host-rule values that we don't want exposed under the default `umask`. The file is unlinked in a `finally` block.

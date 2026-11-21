@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { startServer, type McpSession } from "../helpers/mcpSession.js";
+import { syntheticLog } from "../helpers/botLog.js";
 
 let session: McpSession;
 let scratch: string;
@@ -136,6 +137,29 @@ describe("explain_dependency", () => {
     expect(body.hits).toEqual([]);
     expect(body.verdict).toBe("not found in report");
     expect(body.hints.join("\n")).toMatch(/enabledManagers/);
+  });
+
+  it("reads a Renovate debug log from logPath as the report", async () => {
+    const logPath = path.join(scratch, "bot.log");
+    await writeFile(logPath, syntheticLog());
+    session = await startServer({});
+    const result = await call({ logPath, depName: "lodash" });
+    expect(result.isError).toBeFalsy();
+    const body = JSON.parse(result.content[0]!.text) as Body;
+    expect(body.reportSource).toBe("logPath");
+    expect(body.hits[0]).toMatchObject({ repository: "example/repo", manager: "npm", depName: "lodash" });
+  });
+
+  it("rejects logPath together with reportPath, and a log without the debug lines", async () => {
+    const logPath = path.join(scratch, "empty.log");
+    await writeFile(logPath, "nothing useful\n");
+    session = await startServer({});
+    const both = await call({ reportPath: logPath, logPath, depName: "lodash" });
+    expect(both.isError).toBe(true);
+    expect(both.content[0]!.text).toBe("Pass either reportPath or logPath, not both.");
+    const empty = await call({ logPath, depName: "lodash" });
+    expect(empty.isError).toBe(true);
+    expect(empty.content[0]!.text).toMatch(/LOG_LEVEL=debug.*LOG_FORMAT=json/);
   });
 
   it("returns isError when neither report nor reportPath is provided", async () => {

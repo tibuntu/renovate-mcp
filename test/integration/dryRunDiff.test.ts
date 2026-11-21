@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { startServer, type McpSession } from "../helpers/mcpSession.js";
+import { syntheticLog } from "../helpers/botLog.js";
 
 let scratch: string;
 let session: McpSession;
@@ -152,5 +153,47 @@ describe("dry_run_diff path-based inputs", () => {
 
     expect(res.result?.isError).toBe(true);
     expect(res.result!.content[0]!.text).toMatch(/not valid JSON/);
+  });
+});
+
+describe("dry_run_diff logPath input", () => {
+  it("reads a Renovate debug log as a report; branch upgrades get their manager back", async () => {
+    const logPath = path.join(scratch, "bot.log");
+    await writeFile(logPath, syntheticLog());
+    session = await startServer({});
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run_diff",
+      arguments: { before: { logPath }, after: REPORT_AFTER },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    const body = JSON.parse(res.result!.content[0]!.text) as {
+      summary: { changed: number; removed: number };
+      changed: Array<{ depName: string }>;
+    };
+    // lodash matches on (manager, packageFile, depName) only because the manager was backfilled.
+    expect(body.changed.map((c) => c.depName)).toEqual(["lodash"]);
+    expect(body.summary.removed).toBe(3);
+  });
+
+  it("returns isError naming the side when the log has neither debug line", async () => {
+    const logPath = path.join(scratch, "empty.log");
+    await writeFile(logPath, "nothing useful\n");
+    session = await startServer({});
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run_diff",
+      arguments: { before: REPORT_BEFORE, after: { logPath } },
+    });
+
+    expect(res.result?.isError).toBe(true);
+    expect(res.result!.content[0]!.text).toMatch(/^`after`: .*LOG_LEVEL=debug.*LOG_FORMAT=json/);
   });
 });

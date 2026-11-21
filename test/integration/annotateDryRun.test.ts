@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { startServer, type McpSession } from "../helpers/mcpSession.js";
+import { syntheticLog } from "../helpers/botLog.js";
 
 let session: McpSession;
 let scratch: string;
@@ -126,6 +127,34 @@ describe("annotate_dry_run", () => {
     expect(body.reportSource).toBe("reportPath");
     expect(body.configPath).toBe("renovate.json");
     expect(body.annotations[0]!.matchedRules[0]!.matchedBy).toContain("matchManagers");
+  });
+
+  it("reads a Renovate debug log from logPath as the report", async () => {
+    const logPath = path.join(scratch, "bot.log");
+    await writeFile(logPath, syntheticLog());
+    session = await startServer({});
+    const result = await call({
+      logPath,
+      configContent: { packageRules: [{ matchManagers: ["npm"], automerge: true }] },
+    });
+    expect(result.isError).toBeFalsy();
+    const body = JSON.parse(result.content[0]!.text) as Body;
+    expect(body.reportSource).toBe("logPath");
+    // The log's branch upgrades carry no manager; it is recovered from packageFiles.
+    expect(body.updateCount).toBe(4);
+    expect(body.annotations[0]!.matchedRules[0]!.matchedBy).toContain("matchManagers");
+  });
+
+  it("rejects logPath together with report, and a log without the debug lines", async () => {
+    const logPath = path.join(scratch, "empty.log");
+    await writeFile(logPath, "nothing useful\n");
+    session = await startServer({});
+    const both = await call({ report: reportWith(LODASH), logPath, configContent: {} });
+    expect(both.isError).toBe(true);
+    expect(both.content[0]!.text).toBe("Pass either report or logPath, not both.");
+    const empty = await call({ logPath, configContent: {} });
+    expect(empty.isError).toBe(true);
+    expect(empty.content[0]!.text).toMatch(/LOG_LEVEL=debug.*LOG_FORMAT=json/);
   });
 
   it("returns isError when no report is provided", async () => {
