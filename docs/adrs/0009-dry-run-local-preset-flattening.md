@@ -93,3 +93,19 @@ flowchart TD
     Worker -->|flattened config written into the copy| Spawn2["spawn Renovate in the copy"]
     Spawn2 --> Clean["copy removed, paths rewritten to repoPath"]
 ```
+
+## Addendum (2026-11-21): a draft config as the copy's second trigger
+
+**Context.** `dry_run` is the only full-fidelity check, but it read the config from disk only, so every authoring flow had to `write_config` first and test afterwards; the `onboard-repo` prompt even documented the workaround. The temporary copy this ADR introduced is exactly what a draft needs: a place to put a config Renovate will read without touching `repoPath`.
+
+**Decision.** `dry_run` gains `configContent`. It is a second trigger for the copy, next to a local preset in the repo config or `presetPlatform`:
+
+- **Local runs only.** With an effective `github` / `gitlab` platform the call is an `isError` before anything else: a remote run reads its config from the platform, and silently testing the wrong config is worse than refusing.
+- **Target file.** The draft is written over the config file `locateConfig` finds in the copy, else into a new `renovate.json` (first in Renovate's order, so it wins over anything else in the copy). It goes through `writeFlattenedConfig` like a flattened config: the parent must resolve inside the copy, the existing entry is unlinked first, and `package.json` keeps its other keys.
+- **Local presets in the draft** trigger the flattening step unchanged: same route, same refusals, same worker. An `extract` run without a route writes the draft unflattened, with the existing warning.
+- **Validation** stays Renovate's: no validator is spawned, and config errors surface through `reportErrors`. A draft with local presets is still validated by the worker, as above.
+- **Provenance.** The result carries `configSource: "input" | "repo"`.
+
+Everything else (copy caps, `GIT_CEILING_DIRECTORIES`, path rewriting to `repoPath`, removal in `finally`) is the existing machinery. The repo's own config is not read on a draft run, so its untracked-config refusal and shadowing warning do not apply.
+
+**Consequences.** Authoring flows can dry-run before writing; the `design-renovate-config` and `onboard-repo` prompts now do. A draft run pays for a copy even when nothing is flattened, under the same caps.

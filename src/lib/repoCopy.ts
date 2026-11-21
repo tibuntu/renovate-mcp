@@ -128,9 +128,9 @@ export async function copyRepo(repoPath: string, limits: CopyLimits = {}): Promi
 }
 
 /**
- * Write the flattened config at `relPath` inside the copy `dir`. The parent
- * directory must resolve inside the copy (a symlinked directory could point
- * anywhere). The existing entry is unlinked first, so a symlinked config is
+ * Write the flattened config (or a `dry_run` draft) at `relPath` inside the
+ * copy `dir`. The parent directory must resolve inside the copy (a symlinked
+ * directory could point anywhere). The existing entry is unlinked first, so a symlinked config is
  * replaced, never written through: other configs get fresh JSON bytes, and
  * `package.json` gets its `renovate` key round-tripped with the siblings kept.
  */
@@ -144,10 +144,10 @@ export async function writeFlattenedConfig(
   if (parent === null || !isInside(parent, await fs.realpath(dir))) {
     return {
       ok: false,
-      reason: `Refusing to write the flattened config: the directory of \`${relPath}\` is missing or resolves outside the temporary copy.`,
+      reason: `Refusing to write the config into the temporary copy: the directory of \`${relPath}\` is missing or resolves outside the temporary copy.`,
     };
   }
-  const fail = (why: string) => ({ ok: false as const, reason: `Could not write the flattened config into \`${relPath}\`: ${why}.` });
+  const fail = (why: string) => ({ ok: false as const, reason: `Could not write the config into \`${relPath}\`: ${why}.` });
   try {
     const existing = path.basename(relPath) === "package.json" ? await fs.readFile(target, "utf8") : undefined;
     const serialized = serializeConfig({ targetPath: target, nextConfig: config, existing });

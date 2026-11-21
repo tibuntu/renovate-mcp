@@ -333,7 +333,7 @@ describe("writeFlattenedConfig", () => {
       await mkdir(path.join(dir, name, "child"), { recursive: true });
       expect(await writeFlattenedConfig(dir, name, flattened)).toEqual({
         ok: false,
-        reason: expect.stringContaining(`Could not write the flattened config into \`${name}\``),
+        reason: expect.stringContaining(`Could not write the config into \`${name}\``),
       });
     },
   );

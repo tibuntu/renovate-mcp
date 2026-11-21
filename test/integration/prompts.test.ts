@@ -185,6 +185,24 @@ describe("MCP prompts", () => {
     expect(messages[0]?.content.text).toContain("check_setup");
   });
 
+  it.each([
+    ["design-renovate-config", {}],
+    ["onboard-repo", {}],
+    ["author-custom-manager", { description: "docker image tags from Dockerfiles" }],
+  ])("%s dry-runs the draft as configContent before write_config", async (name, extra) => {
+    session = await startServer();
+    const res = await session.request<{
+      messages: Array<{ role: string; content: { type: string; text: string } }>;
+    }>("prompts/get", { name, arguments: { repoPath: "/tmp/example", ...extra } });
+    const lines = (res.result?.messages[0]?.content.text ?? "").split("\n");
+    const draftRun = lines.findIndex((l) => l.includes("dry_run") && l.includes("configContent"));
+    const write = lines.findIndex((l) => l.includes("call write_config"));
+    expect(draftRun).toBeGreaterThan(-1);
+    expect(write).toBeGreaterThan(draftRun);
+    // No full dry run is left for after the write.
+    expect(lines.slice(write + 1).some((l) => l.includes("dry_run"))).toBe(false);
+  });
+
   it("errors when a required argument is missing", async () => {
     session = await startServer();
     const res = await session.request("prompts/get", {
