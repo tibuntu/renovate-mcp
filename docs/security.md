@@ -104,6 +104,14 @@ This does not stop a config from naming any JSON file in any repository the toke
 
 External preset fetches cap the response body at 1 MB. A `Content-Length` over the cap is rejected up front; chunked responses without a declared length are streamed into a bounded buffer that aborts the read once the running total passes the cap. Auth-failure bodies (401/403) are read with an 8 KB cap so a misconfigured endpoint returning a giant HTML error page can't OOM the long-lived MCP process. Preset bodies are tiny in practice, so the cap is well above any legitimate value.
 
+## Working-directory config
+
+Renovate and `renovate-config-validator` read global self-hosted config from the file `RENOVATE_CONFIG_FILE` names, or from `config.js` in their working directory when it is unset, and load script formats (`.js`, `.cjs`, `.mjs`, `.ts`, `.cts`, `.mts`) by running them. A spawned process only loads config the operator or the caller named, and only as data:
+
+- **Validator spawns** (`validate_config`, `write_config`, and `check_setup`'s `--version` probe when a binary override makes it spawn) run in a fresh, private, empty temp directory that is removed afterwards — never the server's own working directory, which is often a project root. Every path they get is absolute.
+
+The worker threads (merge, packageRules, schedule, migration, preset flattening) import only Renovate modules that never reach the global config loader.
+
 ## On-disk artifacts during `dry_run`
 
 `dry_run` uses `--report-type=file` so we get a structured JSON report instead of scraping stdout. The report path is pre-created with mode 0600 before Renovate is spawned (Renovate overwrites in place with `O_TRUNC`, preserving the mode), so the on-disk JSON is never world-readable while the run is in flight — Renovate's `problems` array can carry host-rule values that we don't want exposed under the default `umask`. The file is unlinked in a `finally` block.

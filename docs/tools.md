@@ -197,6 +197,8 @@ Run `renovate-config-validator` against a file or inline object. Pair with [`lin
 
 **Inputs.** `configPath` (absolute path) **or** `configContent` (inline object, written to a mode-0600 temp file that is removed afterwards) — never both, see [Common input rules](#common-input-rules). `strict: true` passes `--strict` so warnings and pending migrations fail validation too.
 
+**Working directory.** The validator runs in a fresh, empty temp directory, so a `config.js` in the server's working directory is never picked up as global config (`write_config` validates the same way). See [Security — working-directory config](security.md#working-directory-config).
+
 **Validated as a repo config.** The validator treats a positional file as *global* self-hosted config by default, which silently accepts global-only options such as `token` or `platform`. The tool always passes `--no-global`, so those options are rejected the same way Renovate would reject them in a repository's `renovate.json`. (`write_config` validates the same way.)
 
 **Timeout.** The validator has a fixed 30 s budget. Overrunning it returns an `isError` that says `timed out after` — distinct from the missing-binary error, which points at `check_setup`.

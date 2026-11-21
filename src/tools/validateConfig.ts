@@ -50,7 +50,8 @@ export function registerValidateConfig(server: McpServer): void {
         };
       }
 
-      let target = configPath;
+      // Resolved here: the validator runs in an empty scratch directory.
+      let target = configPath && path.resolve(configPath);
       let cleanup: (() => Promise<void>) | undefined;
       if (!target) {
         const tmp = path.join(tmpdir(), `renovate-mcp-${randomUUID()}.json`);
