@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { NO_CONFIG_FOUND } from "../lib/toolInputs.js";
 
 // ponytail: prompts return exactly one user-role text message each — the
@@ -26,14 +26,14 @@ export function registerWorkflowPrompts(server: McpServer): void {
       title: "Design a Renovate config",
       description:
         "Go from intent to a validated, saved Renovate config: check_setup, read_config, suggest_presets, resolve/explain the draft, validate + lint, dry_run, then write_config on confirmation.",
-      argsSchema: {
+      argsSchema: z.object({
         repoPath: z.string().max(4096).describe("Absolute path to the repository root."),
         intent: z
           .string()
           .max(2048)
           .optional()
           .describe('Free-text intent, e.g. "automerge patches, group dev deps".'),
-      },
+      }),
     },
     ({ repoPath, intent }) =>
       userMessage(
@@ -60,14 +60,14 @@ export function registerWorkflowPrompts(server: McpServer): void {
       title: "Debug why a packageRule did or didn't match",
       description:
         "Trace a packageRules decision for a dependency: read_config, test_package_rules, dry_run with a report file, annotate_dry_run, explain_dependency, then a verdict naming rule indices and matchers.",
-      argsSchema: {
+      argsSchema: z.object({
         repoPath: z.string().max(4096).describe("Absolute path to the repository root."),
         depName: z
           .string()
           .max(2048)
           .optional()
           .describe("The dependency name to investigate, if known."),
-      },
+      }),
     },
     ({ repoPath, depName }) =>
       userMessage(
@@ -95,13 +95,13 @@ export function registerWorkflowPrompts(server: McpServer): void {
       title: "Author a custom manager",
       description:
         "Draft and iterate on a customManagers entry (regex or jsonata) with preview_custom_manager, then validate + lint + dry_run, and write_config on confirmation.",
-      argsSchema: {
+      argsSchema: z.object({
         repoPath: z.string().max(4096).describe("Absolute path to the repository root."),
         description: z
           .string()
           .max(2048)
           .describe("What to extract, and from which files, e.g. \"docker image tags from Dockerfiles\"."),
-      },
+      }),
     },
     ({ repoPath, description }) =>
       userMessage(
@@ -125,14 +125,14 @@ export function registerWorkflowPrompts(server: McpServer): void {
       title: "Onboard a repo without a Renovate config",
       description:
         "Create a first Renovate config for a repo that has none: check_setup, read_config (expect none), dry_run in extract mode to detect ecosystems, suggest_presets, validate + lint, write_config on confirmation, then a full dry_run.",
-      argsSchema: {
+      argsSchema: z.object({
         repoPath: z.string().max(4096).describe("Absolute path to the repository root."),
         intent: z
           .string()
           .max(2048)
           .optional()
           .describe('Free-text intent, e.g. "automerge patches, pin digests".'),
-      },
+      }),
     },
     ({ repoPath, intent }) =>
       userMessage(
@@ -163,7 +163,7 @@ export function registerWorkflowPrompts(server: McpServer): void {
       title: "Check a config after a Renovate upgrade",
       description:
         "After upgrading the Renovate bot: compare versions with check_setup, apply migrations and lint/validate the existing config, detect the repo's managers, then surface new options or features relevant to this repo. write_config only on confirmation.",
-      argsSchema: {
+      argsSchema: z.object({
         repoPath: z.string().max(4096).describe("Absolute path to the repository root."),
         fromVersion: z
           .string()
@@ -177,7 +177,7 @@ export function registerWorkflowPrompts(server: McpServer): void {
           .regex(VERSION_PATTERN, "Expected a version like 44.238.2.")
           .optional()
           .describe('Renovate version the bot runs now, e.g. "44.238.2".'),
-      },
+      }),
     },
     ({ repoPath, fromVersion, toVersion }) =>
       userMessage(

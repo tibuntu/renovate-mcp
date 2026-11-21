@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { suggestPresets } from "../lib/presetSuggester.js";
 import { pathString, queryString } from "../lib/inputLimits.js";
 import { OFFLINE_READ_ONLY_ANNOTATIONS } from "../lib/toolInputs.js";
@@ -20,7 +20,7 @@ export function registerSuggestPresets(server: McpServer): void {
         "",
         "This tool never validates the draft (that would require the Renovate CLI). Pass `draft.config` to `validate_config`, then `lint_config`, before adopting it — and fetch `renovate://preset/{name}` for a matched preset's full expanded body.",
       ].join("\n"),
-      inputSchema: {
+      inputSchema: z.object({
         query: queryString(
           "The intent to search for, in natural language (e.g. \"automerge patch updates and group dev dependencies\").",
         ),
@@ -73,7 +73,7 @@ export function registerSuggestPresets(server: McpServer): void {
           .max(100_000)
           .optional()
           .describe("Safety cap on presets indexed from presetsPath (default 500)."),
-      },
+      }),
     },
     async ({
       query,

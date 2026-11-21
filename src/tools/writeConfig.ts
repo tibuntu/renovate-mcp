@@ -2,7 +2,7 @@ import { z } from "zod";
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import { randomUUID } from "node:crypto";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import {
   run,
   resolveRenovateTool,
@@ -47,7 +47,7 @@ export function registerWriteConfig(server: McpServer): void {
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
       description:
         "Write a Renovate config to disk. Runs renovate-config-validator first — refuses to write if validation fails unless force=true (which additionally requires confirmForce).",
-      inputSchema: {
+      inputSchema: z.object({
         repoPath: pathString("Absolute path to the repository root"),
         config: configRecord("The Renovate config object"),
         filename: filenameString(
@@ -63,7 +63,7 @@ export function registerWriteConfig(server: McpServer): void {
           .describe(
             `Must be set to the literal '${FORCE_CONFIRMATION_TOKEN}' when force is true. The unusual literal exists to make accidental overrides harder under prompt-injected tool calls.`,
           ),
-      },
+      }),
     },
     async ({ repoPath, config, filename, force, confirmForce }) => {
       if (force && confirmForce !== FORCE_CONFIRMATION_TOKEN) {

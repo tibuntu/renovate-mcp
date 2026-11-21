@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { configRecord, endpointString, pathString } from "../lib/inputLimits.js";
 import { DEFAULT_MAX_FILES, explainPaths } from "../lib/pathSelection.js";
 import { FETCH_PLATFORMS } from "../lib/presetResolver.js";
@@ -22,7 +22,7 @@ export function registerExplainPaths(server: McpServer): void {
       annotations: NETWORK_READ_ONLY_ANNOTATIONS,
       description:
         "Offline: resolve the repo's config (presets included, so hidden ignorePaths like `:ignoreModulesAndTests` from config:recommended show up), list the repo's files the way Renovate does (`git ls-files`), and apply Renovate's includePaths → ignorePaths filter. Returns every pattern with the preset or `<own>` config that set it, how many files it matched and a sample; `deadPatterns` (user-owned patterns matching no file, including packageRules[].matchFileNames entries); `substringOnlyHits` (files dropped only because an ignorePaths entry is a substring of the path, e.g. `test` dropping `src/latest/package.json`, with the glob that was probably meant); per-rule matchFileNames counts against the kept files; and a summary. Pass `configContent` to try a config other than the repo's own. Same `externalPresets` / `endpoint` / `platform` opt-ins as resolve_config.",
-      inputSchema: {
+      inputSchema: z.object({
         repoPath: pathString("Absolute path to the repository root whose files are evaluated."),
         configContent: configRecord(
           "Inline config to evaluate instead of the repo's own config file.",
@@ -43,7 +43,7 @@ export function registerExplainPaths(server: McpServer): void {
           .max(1_000_000)
           .optional()
           .describe(`Cap on the number of listed files evaluated (default ${DEFAULT_MAX_FILES}); truncation is reported.`),
-      },
+      }),
     },
     async ({ repoPath, configContent, externalPresets, endpoint, platform, maxFiles }) => {
       const repoError = await assertRepoDir(repoPath);

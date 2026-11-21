@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { extractReport, identityKey, readArray, readRecord } from "../lib/dryRunDiff.js";
 import { readReportPath } from "../lib/reportInput.js";
 import {
@@ -88,7 +88,7 @@ export function registerAnnotateDryRun(server: McpServer): void {
       annotations: NETWORK_READ_ONLY_ANNOTATIONS,
       description:
         "Given a `dry_run` report and a config, attribute EACH proposed update to the `packageRules` that matched it — answering \"which of my rules produced these updates?\". Stateless and offline: run `dry_run` first, then pass its report here (inline `report` or `reportPath`, same shapes as `dry_run_diff`) plus a config source (`repoPath` or `configContent`). Each update is matched with Renovate's REAL matchers in a worker thread against the facts present in the report; fields the report doesn't carry (e.g. datasource, depType) are reported under each update's `unevaluatable` and aggregated in `fieldGaps` rather than silently treated as non-matches. `rulesNeverMatched` flags likely-dead rules. Deprecated matcher keys are warned about — run migrate_config first. Run dry_run for full-fidelity confirmation.",
-      inputSchema: {
+      inputSchema: z.object({
         report: reportRecord(
           "A Renovate dry-run report — the raw report (`{ repositories }`) or a full `dry_run` summary (`{ report }`); the tool unwraps `report` automatically. Use instead of reportPath.",
         ).optional(),
@@ -114,7 +114,7 @@ export function registerAnnotateDryRun(server: McpServer): void {
           .enum(FETCH_PLATFORMS)
           .optional()
           .describe("The platform `local>` presets live on — same semantics as resolve_config (routes only; never moves a token)."),
-      },
+      }),
     },
     async ({ report, reportPath, repoPath, configContent, externalPresets, endpoint, platform }) => {
       if (!report && !reportPath) {

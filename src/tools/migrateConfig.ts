@@ -1,9 +1,10 @@
 import { promises as fs } from "node:fs";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import JSON5 from "json5";
 import { runMigration } from "../lib/migrationWorker.js";
 import { configRecord, pathString } from "../lib/inputLimits.js";
 import { OFFLINE_READ_ONLY_ANNOTATIONS } from "../lib/toolInputs.js";
+import { z } from "zod";
 
 export function registerMigrateConfig(server: McpServer): void {
   server.registerTool(
@@ -13,12 +14,12 @@ export function registerMigrateConfig(server: McpServer): void {
       annotations: OFFLINE_READ_ONLY_ANNOTATIONS,
       description:
         "Apply Renovate's built-in config migrations (deprecated key renames, template-variable rewrites, packageRules consolidation, host-rules unification, etc.) to a config and return the migrated result. Pass either configPath (file on disk, JSON or JSON5) or configContent (inline JSON object). Returns { isMigrated, migrated, diff }. Does not write — chain with write_config to persist. First call has higher latency than other tools (Renovate's migration library cold-loads in a worker thread).",
-      inputSchema: {
+      inputSchema: z.object({
         configPath: pathString("Absolute path to a config file to migrate").optional(),
         configContent: configRecord(
           "Inline config object to migrate",
         ).optional(),
-      },
+      }),
     },
     async ({ configPath, configContent }) => {
       if (!configPath && !configContent) {

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { runScheduleExplain, SCHEDULE_HORIZON_DAYS } from "../lib/scheduleWorker.js";
 import {
   EXPLAIN_SCHEDULE_FAITHFUL_DISCLAIMER,
@@ -19,7 +19,7 @@ export function registerExplainSchedule(server: McpServer): void {
       annotations: OFFLINE_READ_ONLY_ANNOTATIONS,
       description:
         "Offline: given a Renovate `schedule` (later-text like `before 4am on Monday` or cron with `*` minutes; a string or array, the same shape as the `schedule` / `automergeSchedule` options and a packageRules entry's `schedule`) and an optional `timezone`, report whether it is active at `from` (default: now) and the next `count` run windows (default 5) as ISO timestamps in both UTC and the timezone. Evaluated with Renovate's own parser and matcher in a worker thread by probing every hour over a 366-day horizon, so the windows match what Renovate's isScheduledNow decides. An invalid schedule or timezone returns `valid: false` with Renovate's own message plus the reminder that Renovate then runs at any time. Without `timezone` the schedule is evaluated in UTC — what Renovate does when the config has no `timezone` and its runner's clock is UTC. Renovate only starts work on a run that falls inside a window, so the real PR time also depends on how often it runs.",
-      inputSchema: {
+      inputSchema: z.object({
         schedule: z
           .union([scheduleEntry, z.array(scheduleEntry).max(32)])
           .describe("The schedule to explain — a string or an array of strings, exactly as written in the config."),
@@ -40,7 +40,7 @@ export function registerExplainSchedule(server: McpServer): void {
           .max(50)
           .optional()
           .describe("How many upcoming windows to return (1–50, default 5)."),
-      },
+      }),
     },
     async ({ schedule, timezone, from, count }) => {
       const fromMillis = from === undefined ? Date.now() : Date.parse(from);

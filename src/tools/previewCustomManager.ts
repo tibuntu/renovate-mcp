@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import {
   previewCustomManager,
   type CustomManager,
@@ -49,7 +49,7 @@ export function registerPreviewCustomManager(server: McpServer): void {
         "",
         "Run the `dry_run` tool afterwards for full-fidelity confirmation.",
       ].join("\n"),
-      inputSchema: {
+      inputSchema: z.object({
         repoPath: pathString("Absolute path to the repository root"),
         manager: managerSchema.describe(
           "A single Renovate customManagers entry. `managerFilePatterns` entries are matched against POSIX-style relative paths with Renovate's semantics: a glob (minimatch, dot + case-insensitive) or a `/regex/` (optionally `/regex/i`); `*` matches everything; entries are unioned like Renovate's extract phase, so a leading `!` adds the files the entry does NOT match rather than excluding them. The deprecated `fileMatch` (bare regex strings) is still accepted — each entry is converted to `/…/` and a warning is emitted.",
@@ -97,7 +97,7 @@ export function registerPreviewCustomManager(server: McpServer): void {
           .describe(
             "Per-file size cap in bytes (default 5242880 = 5 MiB). Files whose size exceeds this are skipped with a warning instead of being read into memory — protects against OOM when managerFilePatterns catches a lockfile, generated artifact, or other oversized file.",
           ),
-      },
+      }),
     },
     async ({
       repoPath,
