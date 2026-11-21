@@ -143,6 +143,9 @@ describe("annotate_dry_run", () => {
     // The log's branch upgrades carry no manager; it is recovered from packageFiles.
     expect(body.updateCount).toBe(4);
     expect(body.annotations[0]!.matchedRules[0]!.matchedBy).toContain("matchManagers");
+    // The branch verdicts Renovate recorded ride along on each annotation.
+    expect(body.annotations[0]).toMatchObject({ depName: "lodash", branchResult: "pending", prBlockedBy: "AwaitingTests" });
+    expect(body.annotations[3]).toMatchObject({ depName: "chalk", branchResult: "pr-created" });
   });
 
   it("rejects logPath together with report, and a log without the debug lines", async () => {

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isRecord } from "../lib/util.js";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { extractReport, identityKey, readArray, readRecord } from "../lib/dryRunDiff.js";
 import { resolveReportInput } from "../lib/reportInput.js";
@@ -34,6 +35,9 @@ interface UpdateEntry {
     currentVersion?: unknown;
     newVersion?: unknown;
     updateType?: unknown;
+    /** The owning branch's Renovate verdict, when the report records one (real bot runs only). */
+    branchResult?: string;
+    prBlockedBy?: string;
   };
   context: Record<string, unknown>;
 }
@@ -71,6 +75,8 @@ function collectUpdateEntries(report: unknown): UpdateEntry[] {
             currentVersion: u.currentVersion ?? u.currentValue,
             newVersion: u.newVersion ?? u.newValue,
             updateType: u.updateType,
+            ...(isRecord(branch) && typeof branch.result === "string" ? { branchResult: branch.result } : {}),
+            ...(isRecord(branch) && typeof branch.prBlockedBy === "string" ? { prBlockedBy: branch.prBlockedBy } : {}),
           },
           context,
         });
