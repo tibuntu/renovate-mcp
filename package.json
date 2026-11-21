@@ -1,6 +1,6 @@
 {
   "name": "renovate-mcp",
-  "version": "2.1.2",
+  "version": "2.2.0",
   "description": "MCP server for designing Renovate configurations interactively.",
   "mcpName": "io.github.tibuntu/renovate-mcp",
   "type": "module",
