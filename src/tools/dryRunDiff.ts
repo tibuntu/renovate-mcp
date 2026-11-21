@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { diffDryRunReports } from "../lib/dryRunDiff.js";
 import { pathString, reportRecord } from "../lib/inputLimits.js";
 import { readReportPath } from "../lib/reportInput.js";
@@ -56,10 +56,10 @@ export function registerDryRunDiff(server: McpServer): void {
       annotations: OFFLINE_READ_ONLY_ANNOTATIONS,
       description:
         "Compute a semantic diff between two `dry_run` reports — the proposed updates that were added, removed, or changed. Stateless: pass both reports as inputs. Each side accepts either the inline report (raw `{ repositories }` or a full `dry_run` summary with a `report` key) or `{ reportPath: \"<absolute path>\" }` pointing at a file produced by `dry_run`'s `reportOutputPath`. Mix and match freely. Updates are keyed by `(manager, packageFile, depName)`, so a version bump on the same dep shows up under `changed` rather than as `removed + added`. Compared fields per identity: `newValue`, `newVersion`, `updateType`, `branchName`, `groupName`, `schedule`. Returns a structured summary object plus a compact human-readable text rendering.",
-      inputSchema: {
+      inputSchema: z.object({
         before: reportInputSchema,
         after: reportInputSchema,
-      },
+      }),
     },
     async ({ before, after }) => {
       const [beforeRes, afterRes] = await Promise.all([

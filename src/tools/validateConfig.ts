@@ -3,7 +3,7 @@ import path from "node:path";
 import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import {
   run,
   resolveRenovateTool,
@@ -23,7 +23,7 @@ export function registerValidateConfig(server: McpServer): void {
       annotations: OFFLINE_READ_ONLY_ANNOTATIONS,
       description:
         "Validate a Renovate configuration against the official schema using renovate-config-validator. Pass either configPath (file on disk) or configContent (inline JSON object). Returns validation output and a boolean `valid`.",
-      inputSchema: {
+      inputSchema: z.object({
         configPath: pathString("Absolute path to a config file to validate").optional(),
         configContent: configRecord(
           "Inline config object to validate (written to a temp file)",
@@ -32,7 +32,7 @@ export function registerValidateConfig(server: McpServer): void {
           .boolean()
           .optional()
           .describe("Treat warnings as errors"),
-      },
+      }),
     },
     async ({ configPath, configContent, strict }) => {
       if (!configPath && !configContent) {

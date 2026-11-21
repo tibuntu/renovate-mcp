@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-MCP server that helps users design Renovate configurations interactively. TypeScript, Node ≥ 24.11 (aligns with Renovate's own engine requirement), built with `@modelcontextprotocol/sdk` 1.x, stdio transport.
+MCP server that helps users design Renovate configurations interactively. TypeScript, Node ≥ 24.11 (aligns with Renovate's own engine requirement), built with `@modelcontextprotocol/server` 2.x (the MCP TypeScript SDK v2), stdio transport.
 
 Surface is intentionally small: nineteen tools (`check_setup`, `read_config`, `suggest_presets`, `resolve_config`, `explain_config`, `resolve_config_diff`, `test_package_rules`, `preview_custom_manager`, `validate_config`, `lint_config`, `dry_run`, `dry_run_diff`, `annotate_dry_run`, `explain_dependency`, `explain_schedule`, `explain_paths`, `migrate_config`, `write_config`, `get_version`) plus the `renovate://presets` resource family (namespace index, per-namespace listings, per-preset JSON), the `renovate://options` resource family (options index, per-option JSON), `renovate://managers` (manager name list), `renovate://datasources` (datasource id list), and five workflow prompts. Don't grow this without a reason — the roadmap for expansion is tracked in `docs/roadmap.md`, not in ad-hoc additions.
 
@@ -66,7 +66,7 @@ Two tsconfigs: the root `tsconfig.json` includes both `src/` and `test/` and is 
 
 ## MCP SDK usage
 
-Use the `registerTool(name, config, handler)`, `registerResource(name, uriOrTemplate, metadata, handler)`, and `registerPrompt(name, config, handler)` forms (current 1.x API with structured config objects). Input/args schemas are zod raw shapes (plain object with zod types as values — not `z.object(...)`). Prompt `argsSchema` fields must be `z.string()` (optionally `.optional()`) — MCP prompt arguments are always strings on the wire, and the SDK's prompt-args type accepts any zod schema, but only string-shaped fields make sense here. Prompts live in `src/prompts/` as `register<Name>(server)` functions, same shape as tools/resources, and return `{ messages: [{ role: "user", content: { type: "text", text } }] }`.
+Use the `registerTool(name, config, handler)`, `registerResource(name, uriOrTemplate, metadata, handler)`, and `registerPrompt(name, config, handler)` forms (SDK v2 API with structured config objects). Input/args schemas are `z.object({ … })` schemas — not raw shapes. Prompt `argsSchema` fields must be `z.string()` (optionally `.optional()`) — MCP prompt arguments are always strings on the wire, and the SDK's prompt-args type accepts any zod schema, but only string-shaped fields make sense here. Prompts live in `src/prompts/` as `register<Name>(server)` functions, same shape as tools/resources, and return `{ messages: [{ role: "user", content: { type: "text", text } }] }`.
 
 ## Keep `README.md` and `docs/*.md` in sync
 

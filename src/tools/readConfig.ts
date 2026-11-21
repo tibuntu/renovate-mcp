@@ -1,4 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { locateConfig } from "../lib/configLocations.js";
 import { pathString } from "../lib/inputLimits.js";
 import {
@@ -6,6 +6,7 @@ import {
   NO_CONFIG_FOUND,
   OFFLINE_READ_ONLY_ANNOTATIONS,
 } from "../lib/toolInputs.js";
+import { z } from "zod";
 
 export function registerReadConfig(server: McpServer): void {
   server.registerTool(
@@ -15,9 +16,9 @@ export function registerReadConfig(server: McpServer): void {
       annotations: OFFLINE_READ_ONLY_ANNOTATIONS,
       description:
         "Locate and parse the Renovate configuration in a repository. Searches, in Renovate's own priority order, for renovate.json(|c|5), .github/renovate.json(|c|5), .gitlab/renovate.json(|c|5), .renovaterc, .renovaterc.json(|c|5), and finally the 'renovate' field of package.json.",
-      inputSchema: {
+      inputSchema: z.object({
         repoPath: pathString("Absolute path to the repository root"),
-      },
+      }),
     },
     async ({ repoPath }) => {
       const repoError = await assertRepoDir(repoPath);

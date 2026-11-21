@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import {
   analyzePackageRules,
   resolvePackageRules,
@@ -28,7 +28,7 @@ export function registerTestPackageRules(server: McpServer): void {
       annotations: NETWORK_READ_ONLY_ANNOTATIONS,
       description:
         "Offline \"what-if\": given a hypothetical dependency context and a config, report which `packageRules` match (in order), which matcher decided each, and what each matched rule contributes. Answers \"why didn't my rule match?\". Rules are evaluated with Renovate's REAL matchers in a worker thread (faithful), classified against the fields you actually supplied — a matcher that needs a field you didn't pass is reported as `unevaluatable`, never silently treated as a non-match. Matchers needing post-lookup data (matchUpdateTypes, matchCurrentVersion, matchNewValue, matchCurrentAge) or the merge-confidence API (matchConfidence) are unevaluatable offline; matchJsonata is advisory. Pass either `repoPath` (reads + expands the repo's config) or `configContent` (an inline config); `externalPresets`/`endpoint`/`platform` opt into external preset expansion so `extends`-provided rules are included (same semantics as resolve_config). Deprecated matcher keys (matchPackagePatterns, …) are warned about — run migrate_config first. Also renders the effective branchName / commitMessage / prTitle (and groupName) for the synthetic dependency under `rendered` — a preview built from the fields you supplied, which lists the post-lookup template variables it could not fill. Run dry_run for full-fidelity confirmation.",
-      inputSchema: {
+      inputSchema: z.object({
         repoPath: pathString(
           "Absolute path to the repository root. The tool locates and expands the repo's renovate config automatically.",
         ).optional(),
@@ -73,7 +73,7 @@ export function registerTestPackageRules(server: McpServer): void {
         isBreaking: z.boolean().optional().describe("Whether the update is breaking per its versioning (matchIsBreaking; post-lookup)."),
         currentVersionTimestamp: optString("Release timestamp of the current version (matchCurrentAge; post-lookup)."),
         mergeConfidenceLevel: optString("Merge-confidence level (matchConfidence; needs the merge-confidence API — unevaluatable offline)."),
-      },
+      }),
     },
     async ({ repoPath, configContent, externalPresets, endpoint, platform, ...ctx }) => {
       const src = await loadConfigSource({ repoPath, configContent });

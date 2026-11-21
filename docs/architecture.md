@@ -74,7 +74,7 @@ Per-PR CI installs the pinned Renovate via `npm ci` (it's a runtime dep), but th
 
 ## MCP SDK conventions
 
-The server uses the `registerTool(name, config, handler)`, `registerResource(name, uriOrTemplate, metadata, handler)`, and `registerPrompt(name, config, handler)` forms (current 1.x API with structured config objects). Input schemas are zod raw shapes (plain object with zod types as values — not `z.object(...)`).
+The server uses the `registerTool(name, config, handler)`, `registerResource(name, uriOrTemplate, metadata, handler)`, and `registerPrompt(name, config, handler)` forms (SDK v2 API, `@modelcontextprotocol/server`, with structured config objects). Input schemas are `z.object({ … })` schemas — not raw shapes.
 
 Tools live under `src/tools/`, resources under `src/resources/`, and prompts under `src/prompts/` — each a `register<Name>(server)` function wired into the single `McpServer` instance in `src/index.ts`. `src/prompts/workflows.ts` packages the documented multi-tool workflows (config design, packageRules debugging, custom-manager authoring, repo onboarding, post-upgrade config check) into five prompts that Claude Code surfaces as slash commands; each returns a single user-role text message rather than calling into any tool logic itself — it only tells the model which tools to call and in what order.
 

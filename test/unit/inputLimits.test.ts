@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z, type ZodRawShape } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-
+import type { McpServer } from "@modelcontextprotocol/server";
 import {
   CONFIG_JSON_MAX_BYTES,
   ENDPOINT_MAX_BYTES,
@@ -45,9 +44,9 @@ function captureTool(register: (server: McpServer) => void): CapturedTool {
   const fakeServer = {
     registerTool: (
       name: string,
-      config: { inputSchema: ZodRawShape },
+      config: { inputSchema: z.ZodObject<ZodRawShape> },
     ) => {
-      captured = { name, inputSchema: z.object(config.inputSchema) };
+      captured = { name, inputSchema: config.inputSchema };
     },
   } as unknown as McpServer;
   register(fakeServer);
