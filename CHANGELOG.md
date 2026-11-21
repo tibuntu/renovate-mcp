@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.2.0](https://github.com/tibuntu/renovate-mcp/compare/v2.1.2...v2.2.0) (2026-11-21)
+
+
+### Features
+
+* **dry_run:** run a draft config via configContent without writing it ([ffcb3ea](https://github.com/tibuntu/renovate-mcp/commit/ffcb3ea36cc892c43ddddf98a41276b29f757d53))
+* **dry_run:** stop Renovate and clean up when the call is cancelled ([9a482f6](https://github.com/tibuntu/renovate-mcp/commit/9a482f66c4aeed0260bb78ed6602616ba76b9d52))
+* **explain_dependency:** report held branch results ([69226b1](https://github.com/tibuntu/renovate-mcp/commit/69226b13c567630a013042b3f3991215b34c4717))
+* **lint:** flag minimumReleaseAge on datasources without release timestamps ([510cfc1](https://github.com/tibuntu/renovate-mcp/commit/510cfc11a2b8ab4272bcb44443aba832838dd359))
+* **registry:** add server.json and mcpName, sync its version on release ([3c481e6](https://github.com/tibuntu/renovate-mcp/commit/3c481e62cb69983208d48699b50729eea94b0b8c))
+* **report:** accept a Renovate debug log as a report ([b623ffe](https://github.com/tibuntu/renovate-mcp/commit/b623ffe58271925ece335e1986eddbfeea2d150d))
+* **validate_config:** validate self-hosted global config ([d72b576](https://github.com/tibuntu/renovate-mcp/commit/d72b576217dd763c1fc9b18150d1fc00d7b06c90))
+
+
+### Bug Fixes
+
+* **deps:** migrate to the MCP TypeScript SDK v2 ([f9ec03f](https://github.com/tibuntu/renovate-mcp/commit/f9ec03f8c32368ef47156a2cf5f2843d5abcb360))
+* **dry_run:** always occupy the RENOVATE_CONFIG_FILE slot ([eb72bdd](https://github.com/tibuntu/renovate-mcp/commit/eb72bddb6edd1f9b0e452cc21683c360c93bd432))
+* **renovate-cli:** isolate validator working directory ([e4352f5](https://github.com/tibuntu/renovate-mcp/commit/e4352f58121de1693394fbc89c7f6ae22a010d9c))
+* **validate_config:** only accept data config formats for configPath ([9369571](https://github.com/tibuntu/renovate-mcp/commit/93695717a6802e29c6a45f0a9c9f416b384865c6))
+
 ## [2.1.2](https://github.com/tibuntu/renovate-mcp/compare/v2.1.1...v2.1.2) (2026-11-18)
 
 
