@@ -27,7 +27,11 @@ export interface JsonRpcResponse {
 }
 
 export interface StartServerOptions {
-  /** Per-request wall-clock timeout in milliseconds. Default: 25_000. */
+  /**
+   * Per-request wall-clock timeout in milliseconds for `request()`. Default: 25_000.
+   * The initialize handshake never gets less than the default, so a short value
+   * does not race server startup on a slow runner.
+   */
   requestTimeoutMs?: number;
   /** Override the script to spawn. Default: dist/index.js of this repo. */
   serverEntry?: string;
@@ -204,6 +208,7 @@ export async function startServer(
   function request<T = unknown>(
     method: string,
     params?: unknown,
+    timeoutMs = requestTimeoutMs,
   ): Promise<JsonRpcResponse & { result?: T }> {
     if (terminated) {
       return Promise.reject(
@@ -217,10 +222,10 @@ export async function startServer(
         pending.delete(id);
         reject(
           new Error(
-            `MCP request ${method} (id=${id}) timed out after ${requestTimeoutMs}ms${stderrSuffix()}`,
+            `MCP request ${method} (id=${id}) timed out after ${timeoutMs}ms${stderrSuffix()}`,
           ),
         );
-      }, requestTimeoutMs);
+      }, timeoutMs);
       timer.unref?.();
       pending.set(id, {
         method,
@@ -242,11 +247,15 @@ export async function startServer(
   const init = await request<{
     instructions?: string;
     capabilities?: Record<string, unknown>;
-  }>("initialize", {
-    protocolVersion: "2025-06-18",
-    capabilities: {},
-    clientInfo: { name: "vitest", version: "0" },
-  });
+  }>(
+    "initialize",
+    {
+      protocolVersion: "2025-06-18",
+      capabilities: {},
+      clientInfo: { name: "vitest", version: "0" },
+    },
+    Math.max(requestTimeoutMs, DEFAULT_REQUEST_TIMEOUT_MS),
+  );
   notify("notifications/initialized");
 
   return {
