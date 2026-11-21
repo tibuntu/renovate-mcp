@@ -6,6 +6,7 @@ import { once } from "node:events";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { readLogPath, resolveReportInput } from "../../src/lib/reportInput.js";
+import { explainDependency } from "../../src/lib/dependencyExplainer.js";
 import { resolveBundledBinary } from "../../src/lib/renovateCli.js";
 import { BRANCHES, PACKAGE_FILES, REPO, logLine, syntheticLog } from "../helpers/botLog.js";
 
@@ -81,6 +82,39 @@ describe("readLogPath: synthetic bot log", () => {
     const res = await readLogPath(path.join(scratch, "nope.log"));
     expect(res).toMatchObject({ ok: false });
     if (!res.ok) expect(res.error).toMatch(/Could not read logPath/);
+  });
+});
+
+// A trimmed debug log from a real production run (Renovate 44.239.1, platform
+// github): the two messages verbatim, poetry section only, repository and
+// hostname replaced. Both branches were held by minimumReleaseAge
+// ("creation is disabled because internalChecksFilter was not met").
+describe("readLogPath: real bot log", () => {
+  const fixture = path.join(process.cwd(), "test/fixtures/bot-log-real.jsonl");
+
+  it("reads the real line shape, backfilling the manager on branch upgrades", async () => {
+    const repos = await load(fixture);
+    expect(Object.keys(repos)).toEqual(["example/repo"]);
+    const branches = repos["example/repo"]!.branches as Array<Record<string, unknown>>;
+    expect(branches.map((b) => [b.branchName, b.result, b.prNo])).toEqual([
+      ["renovate/ruff", "pending", null],
+      ["renovate/patch-updates", "pending", null],
+    ]);
+    for (const b of repos["example/repo"]!.branches) {
+      expect(b.upgrades.map((u) => u.manager)).toEqual(["poetry"]);
+    }
+  });
+
+  it("explain_dependency reports both updates as held: pending", async () => {
+    const res = await readLogPath(fixture);
+    if (!res.ok) throw new Error(res.error);
+    for (const [dep, branch] of [["ruff", "renovate/ruff"], ["zensical", "renovate/patch-updates"]] as const) {
+      const e = explainDependency(res.value, { depName: dep });
+      expect(e.verdict).toBe("1 update available; held: pending");
+      expect(e.hits.flatMap((h) => h.updates ?? [])).toMatchObject([{ branchName: branch, branchResult: "pending" }]);
+      expect(e.hints.join("\n")).toMatch(/minimumReleaseAge/);
+    }
+    expect(explainDependency(res.value, { depName: "mypy" }).verdict).toBe("up to date");
   });
 });
 
