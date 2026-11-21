@@ -195,7 +195,7 @@ See also: [Operational notes — `preview_custom_manager` caps & timeouts](opera
 
 Run `renovate-config-validator` against a file or inline object. Pair with [`lint_config`](#lint_config) for footguns the schema validator declares valid.
 
-**Inputs.** `configPath` (absolute path) **or** `configContent` (inline object, written to a mode-0600 temp file that is removed afterwards) — never both, see [Common input rules](#common-input-rules). `strict: true` passes `--strict` so warnings and pending migrations fail validation too.
+**Inputs.** `configPath` (absolute path) **or** `configContent` (inline object, written to a mode-0600 temp file that is removed afterwards) — never both, see [Common input rules](#common-input-rules). `configPath` must be a data format: `.json`, `.json5`, `.jsonc`, `.yaml`, `.yml`, or a file named `.renovaterc`; any other extension (including script configs such as `config.js`) is an `isError` naming it, and nothing is spawned. `strict: true` passes `--strict` so warnings and pending migrations fail validation too.
 
 **Working directory.** The validator runs in a fresh, empty temp directory, so a `config.js` in the server's working directory is never picked up as global config (`write_config` validates the same way). See [Security — working-directory config](security.md#working-directory-config).
 

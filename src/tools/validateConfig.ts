@@ -13,7 +13,7 @@ import {
   validatorTimeoutMs,
 } from "../lib/renovateCli.js";
 import { configRecord, pathString } from "../lib/inputLimits.js";
-import { OFFLINE_READ_ONLY_ANNOTATIONS } from "../lib/toolInputs.js";
+import { configPathFormatError, OFFLINE_READ_ONLY_ANNOTATIONS } from "../lib/toolInputs.js";
 
 export function registerValidateConfig(server: McpServer): void {
   server.registerTool(
@@ -24,7 +24,7 @@ export function registerValidateConfig(server: McpServer): void {
       description:
         "Validate a Renovate configuration against the official schema using renovate-config-validator. Pass either configPath (file on disk) or configContent (inline JSON object). Returns validation output and a boolean `valid`.",
       inputSchema: z.object({
-        configPath: pathString("Absolute path to a config file to validate").optional(),
+        configPath: pathString("Absolute path to a config file to validate (.json, .json5, .jsonc, .yaml, .yml or .renovaterc)").optional(),
         configContent: configRecord(
           "Inline config object to validate (written to a temp file)",
         ).optional(),
@@ -49,6 +49,9 @@ export function registerValidateConfig(server: McpServer): void {
           content: [{ type: "text", text: "Pass either configPath or configContent, not both." }],
         };
       }
+
+      const formatError = configPath ? configPathFormatError(configPath) : null;
+      if (formatError) return { isError: true, content: [{ type: "text", text: formatError }] };
 
       // Resolved here: the validator runs in an empty scratch directory.
       let target = configPath && path.resolve(configPath);
