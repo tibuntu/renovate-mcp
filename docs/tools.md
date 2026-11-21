@@ -197,9 +197,11 @@ Run `renovate-config-validator` against a file or inline object. Pair with [`lin
 
 **Inputs.** `configPath` (absolute path) **or** `configContent` (inline object, written to a mode-0600 temp file that is removed afterwards) — never both, see [Common input rules](#common-input-rules). `configPath` must be a data format: `.json`, `.json5`, `.jsonc`, `.yaml`, `.yml`, or a file named `.renovaterc`; any other extension (including script configs such as `config.js`) is an `isError` naming it, and nothing is spawned. `strict: true` passes `--strict` so warnings and pending migrations fail validation too.
 
-**Working directory.** The validator runs in a fresh, empty temp directory, so a `config.js` in the server's working directory is never picked up as global config (`write_config` validates the same way). See [Security — working-directory config](security.md#working-directory-config).
+`configType` (`"repo"` by default, or `"global"`) picks the config type. The default validates as a repo config: the tool passes `--no-global`, so global-only options such as `token`, `platform` or `autodiscover` are rejected the same way Renovate would reject them in a repository's `renovate.json`. `configType: "global"` validates a self-hosted global config (Renovate's own `global` type) and drops that flag, so those options are accepted there. `write_config` always validates as repo config.
 
-**Validated as a repo config.** The validator treats a positional file as *global* self-hosted config by default, which silently accepts global-only options such as `token` or `platform`. The tool always passes `--no-global`, so those options are rejected the same way Renovate would reject them in a repository's `renovate.json`. (`write_config` validates the same way.)
+**Global configs as JavaScript.** `configPath` does not accept `config.js` (see above). A global config written as JavaScript has to be exported to JSON first: pass the object as `configContent` with `configType: "global"`.
+
+**Working directory.** The validator runs in a fresh, empty temp directory, so a `config.js` in the server's working directory is never picked up as global config (`write_config` validates the same way). See [Security — working-directory config](security.md#working-directory-config).
 
 **Timeout.** The validator has a fixed 30 s budget. Overrunning it returns an `isError` that says `timed out after` — distinct from the missing-binary error, which points at `check_setup`.
 

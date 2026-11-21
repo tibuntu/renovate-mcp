@@ -22,19 +22,25 @@ export function registerValidateConfig(server: McpServer): void {
       title: "Validate Renovate config",
       annotations: OFFLINE_READ_ONLY_ANNOTATIONS,
       description:
-        "Validate a Renovate configuration against the official schema using renovate-config-validator. Pass either configPath (file on disk) or configContent (inline JSON object). Returns validation output and a boolean `valid`.",
+        "Validate a Renovate configuration against the official schema using renovate-config-validator. Pass either configPath (file on disk) or configContent (inline JSON object). Validates as a repo config by default; set configType to \"global\" for a self-hosted global config. Returns validation output and a boolean `valid`.",
       inputSchema: z.object({
         configPath: pathString("Absolute path to a config file to validate (.json, .json5, .jsonc, .yaml, .yml or .renovaterc)").optional(),
         configContent: configRecord(
           "Inline config object to validate (written to a temp file)",
         ).optional(),
+        configType: z
+          .enum(["repo", "global"])
+          .default("repo")
+          .describe(
+            "Validate as a repo config (default) or as a self-hosted global config (platform, autodiscover, token, ...)",
+          ),
         strict: z
           .boolean()
           .optional()
           .describe("Treat warnings as errors"),
       }),
     },
-    async ({ configPath, configContent, strict }) => {
+    async ({ configPath, configContent, configType, strict }) => {
       if (!configPath && !configContent) {
         return {
           isError: true,
@@ -76,7 +82,8 @@ export function registerValidateConfig(server: McpServer): void {
         // --no-global is passed — without it, repo-forbidden options like
         // `token` validate clean. Kept after the file: fake validators in the
         // tests read argv[2] as the path.
-        args.push(target, "--no-global");
+        args.push(target);
+        if (configType === "repo") args.push("--no-global");
         const result = await run(tool.cmd, [...tool.prefixArgs, ...args], {
           timeoutMs: validatorTimeoutMs(),
         });
