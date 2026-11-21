@@ -43,7 +43,7 @@ interface Body {
     packageFile: string;
     depName: string;
     skipReason?: string;
-    updates?: Array<{ newVersion?: string }>;
+    updates?: Array<{ newVersion?: string; branchResult?: string; prBlockedBy?: string }>;
     matchedRules?: Array<{ index: number; matchedBy: string[] }>;
   }>;
   relatedProblems: unknown[];
@@ -148,6 +148,26 @@ describe("explain_dependency", () => {
     const body = JSON.parse(result.content[0]!.text) as Body;
     expect(body.reportSource).toBe("logPath");
     expect(body.hits[0]).toMatchObject({ repository: "example/repo", manager: "npm", depName: "lodash" });
+    // The branch the update belongs to was held back; Renovate's verdict and a remedy come with it.
+    expect(body.hits[0]!.updates![0]).toMatchObject({ branchResult: "pending", prBlockedBy: "AwaitingTests" });
+    expect(body.verdict).toBe("1 update available; held: pending");
+    expect(body.hints.join("\n")).toMatch(/minimumReleaseAge/);
+  });
+
+  it("a log whose branch was created is not reported held", async () => {
+    const logPath = path.join(scratch, "bot.log");
+    await writeFile(logPath, syntheticLog());
+    session = await startServer({});
+    const body = JSON.parse((await call({ logPath, depName: "chalk" })).content[0]!.text) as Body;
+    expect(body.verdict).toBe("1 update available");
+    expect(body.hits[0]!.updates![0]).toMatchObject({ branchResult: "pr-created" });
+  });
+
+  it("a report without branch data emits no held text and points at logPath", async () => {
+    session = await startServer({});
+    const body = JSON.parse((await call({ report: reportWith(LODASH), depName: "lodash" })).content[0]!.text) as Body;
+    expect(body.verdict).toBe("1 update available");
+    expect(body.hints.join("\n")).toMatch(/real bot run.*logPath/);
   });
 
   it("rejects logPath together with reportPath, and a log without the debug lines", async () => {

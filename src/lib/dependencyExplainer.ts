@@ -14,6 +14,10 @@ export interface DependencyUpdate {
   newValue?: string;
   updateType?: string;
   branchName?: string;
+  /** Renovate's own `BranchResult` for `branchName`, from `branches[]`; absent when the report has no branch data. */
+  branchResult?: string;
+  /** `PrBlockedBy` of that branch (`NeedsApproval`, `AwaitingTests`, `RateLimited`, …), when Renovate recorded one. */
+  prBlockedBy?: string;
 }
 
 export interface DependencyWarning {
@@ -90,6 +94,36 @@ export const SKIP_HINTS: Record<string, string> = {
     "`malicious-update-proposed`: the only newer version is flagged malicious; Renovate deliberately keeps the current version.",
 };
 
+// The BranchResult values that hold a branch or its PR back (set in processBranch /
+// prBlockedByToResult); the keys double as the "held" set. Option names are checked
+// against src/data/options.generated.ts. Drift guard: test/unit/allowListDrift.test.ts
+// checks every key against Renovate's `BranchResult` union and pins the unhinted rest.
+export const BRANCH_RESULT_HINTS: Record<string, string> = {
+  pending:
+    "`pending`: the branch or PR is waiting on internal checks — `minimumReleaseAge` (and `minimumReleaseAgeBehaviour`, default `timestamp-required`) or `internalChecksFilter` not yet satisfied, or `prCreation` set to `not-pending` / `status-success`.",
+  "needs-approval":
+    "`needs-approval`: `dependencyDashboardApproval` is on (or the run is `mode: \"silent\"`) and the update was not ticked on the Dependency Dashboard — approve it there, or turn the option off for this dependency in a packageRule.",
+  "needs-pr-approval":
+    "`needs-pr-approval`: `prCreation: \"approval\"` — the branch exists but the PR waits for approval on the Dependency Dashboard.",
+  "not-scheduled":
+    "`not-scheduled`: the current time is outside the `schedule` — run explain_schedule with the schedule to see the next window.",
+  "update-not-scheduled":
+    "`update-not-scheduled`: the branch exists but updating it is outside the `schedule` — run explain_schedule to see the next window.",
+  "pr-limit-reached":
+    "`pr-limit-reached`: `prHourlyLimit` or `prConcurrentLimit` is used up — run explain_config to see which preset set them.",
+  "branch-limit-reached":
+    "`branch-limit-reached`: `branchConcurrentLimit` (inherits `prConcurrentLimit` when unset) is used up — run explain_config to see which preset set it.",
+  "commit-hourly-limit-reached":
+    "`commit-hourly-limit-reached`: `commitHourlyLimit` is used up — run explain_config to see which preset set it.",
+  "commit-per-run-limit-reached":
+    "`commit-per-run-limit-reached`: the bot operator's global `prCommitsPerRunLimit` was reached; it is not a repository setting.",
+  "minimum-group-size-not-met":
+    "`minimum-group-size-not-met`: fewer updates than `minimumGroupSize` landed in this group branch.",
+};
+
+const NO_BRANCH_DATA_HINT =
+  "No branch result in this report, so a held branch cannot be told apart from a created PR. Branch verdicts (`result`, `prBlockedBy`) are only recorded on a real bot run — a `--platform=local` run never records branches. Pass the debug log of the production bot as `logPath` (`LOG_LEVEL=debug LOG_FORMAT=json`).";
+
 const NOT_FOUND_HINTS = [
   "Check `enabledManagers`: the manager that owns this dependency's file may not be enabled.",
   "Check the manager's `fileMatch` / `managerFilePatterns`: the file holding this dependency may not match the pattern.",
@@ -104,13 +138,30 @@ function optString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-function pickUpdate(raw: unknown): DependencyUpdate {
+type BranchVerdicts = Map<string, { result?: string; prBlockedBy?: string }>;
+
+/** `repositories[repo].branches[]` keyed by branchName (the join key onto an update). */
+function branchVerdicts(repo: unknown): BranchVerdicts {
+  const out: BranchVerdicts = new Map();
+  for (const b of readArray(repo, "branches") ?? []) {
+    if (isRecord(b) && typeof b.branchName === "string") {
+      out.set(b.branchName, { result: optString(b.result), prBlockedBy: optString(b.prBlockedBy) });
+    }
+  }
+  return out;
+}
+
+function pickUpdate(raw: unknown, branches: BranchVerdicts): DependencyUpdate {
   const u = (raw ?? {}) as Record<string, unknown>;
+  const branchName = optString(u.branchName);
+  const branch = branchName === undefined ? undefined : branches.get(branchName);
   return {
     newVersion: optString(u.newVersion),
     newValue: optString(u.newValue),
     updateType: optString(u.updateType),
-    branchName: optString(u.branchName),
+    branchName,
+    ...(branch?.result ? { branchResult: branch.result } : {}),
+    ...(branch?.prBlockedBy ? { prBlockedBy: branch.prBlockedBy } : {}),
   };
 }
 
@@ -134,6 +185,7 @@ function collectHits(report: unknown, needle: string, partial: boolean, manager?
   for (const [repository, repo] of Object.entries(repositories)) {
     const packageFiles = readRecord(repo, "packageFiles");
     if (!packageFiles) continue;
+    const branches = branchVerdicts(repo);
     for (const [managerName, files] of Object.entries(packageFiles)) {
       if (manager && managerName !== manager) continue;
       if (!Array.isArray(files)) continue;
@@ -159,7 +211,7 @@ function collectHits(report: unknown, needle: string, partial: boolean, manager?
             depType: optString(d.depType),
             skipReason: optString(d.skipReason),
             skipStage: optString(d.skipStage),
-            updates: Array.isArray(d.updates) ? d.updates.map(pickUpdate) : undefined,
+            updates: Array.isArray(d.updates) ? d.updates.map((u) => pickUpdate(u, branches)) : undefined,
             warnings: Array.isArray(d.warnings) ? d.warnings.map(pickWarning) : [],
           });
         }
@@ -179,7 +231,18 @@ function verdictFor(hits: DependencyHit[]): string {
   const updateCount = live.reduce((n, h) => n + (h.updates?.length ?? 0), 0);
   if (updateCount > 0) parts.push(`${updateCount} update${updateCount === 1 ? "" : "s"} available`);
   else if (live.length > 0) parts.push("up to date");
+  for (const result of heldResults(hits)) parts.push(`held: ${result}`);
   return parts.join("; ");
+}
+
+/** Distinct held branch results across the updates of the hits that were not skipped. */
+function heldResults(hits: DependencyHit[]): string[] {
+  const results = hits
+    .filter((h) => !h.skipReason)
+    .flatMap((h) => h.updates ?? [])
+    .map((u) => u.branchResult)
+    .filter((r): r is string => r !== undefined && Object.hasOwn(BRANCH_RESULT_HINTS, r));
+  return [...new Set(results)];
 }
 
 function hintsFor(hits: DependencyHit[]): string[] {
@@ -192,6 +255,9 @@ function hintsFor(hits: DependencyHit[]): string[] {
     );
   }
   if (hits.some((h) => !h.skipReason && h.updates === undefined)) hints.push(NO_LOOKUP_HINT);
+  for (const result of heldResults(hits)) hints.push(BRANCH_RESULT_HINTS[result]!);
+  const updates = hits.filter((h) => !h.skipReason).flatMap((h) => h.updates ?? []);
+  if (updates.length > 0 && updates.every((u) => u.branchResult === undefined)) hints.push(NO_BRANCH_DATA_HINT);
   return hints;
 }
 

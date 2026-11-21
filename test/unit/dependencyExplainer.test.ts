@@ -179,6 +179,78 @@ describe("explainDependency — verdicts", () => {
   });
 });
 
+// Branch verdicts. Branch entries follow filterDependencyDashboardData in Renovate's
+// repository-statistics.js (synthetic, not captured from a real run).
+describe("explainDependency — branch results", () => {
+  const dep = (name: string, branchName: string) => ({
+    ...LODASH_UP_TO_DATE,
+    depName: name,
+    packageName: name,
+    updates: [{ newVersion: "9.9.9", updateType: "minor", branchName }],
+  });
+  const withBranches = (deps: Array<Record<string, unknown>>, branches: Array<Record<string, unknown>>) => {
+    const rep = report(deps) as { repositories: Record<string, { branches: unknown[] }> };
+    rep.repositories["owner/repo"]!.branches = branches;
+    return rep;
+  };
+
+  it("joins branchResult and prBlockedBy onto each update by branchName", () => {
+    const rep = withBranches(
+      [dep("lodash", "renovate/lodash-4.x")],
+      [
+        { branchName: "renovate/other", result: "done", upgrades: [] },
+        { branchName: "renovate/lodash-4.x", result: "pending", prBlockedBy: "AwaitingTests", upgrades: [] },
+      ],
+    );
+    const out = explainDependency(rep, { depName: "lodash" });
+    expect(out.hits[0]!.updates![0]).toMatchObject({ branchResult: "pending", prBlockedBy: "AwaitingTests" });
+    expect(out.verdict).toBe("1 update available; held: pending");
+    expect(out.hints.join("\n")).toMatch(/minimumReleaseAge/);
+    expect(out.hints.join("\n")).not.toMatch(/real bot run/);
+  });
+
+  it("joins within the hit's own repository only", () => {
+    const rep = withBranches([dep("lodash", "b")], []);
+    (rep.repositories as Record<string, unknown>)["other/repo"] = {
+      branches: [{ branchName: "b", result: "not-scheduled" }],
+    };
+    const out = explainDependency(rep, { depName: "lodash" });
+    expect(out.hits[0]!.updates![0]!.branchResult).toBeUndefined();
+  });
+
+  it("does not call a created or done branch held", () => {
+    const rep = withBranches([dep("lodash", "b")], [{ branchName: "b", result: "pr-created", prNo: 3 }]);
+    const out = explainDependency(rep, { depName: "lodash" });
+    expect(out.verdict).toBe("1 update available");
+    expect(out.hits[0]!.updates![0]!.branchResult).toBe("pr-created");
+  });
+
+  it("lists each distinct held result once", () => {
+    const rep = withBranches(
+      [dep("lodash", "a"), { ...dep("lodash", "b"), packageFile: "x" }, dep("lodash", "c")],
+      [
+        { branchName: "a", result: "not-scheduled" },
+        { branchName: "b", result: "pr-limit-reached" },
+        { branchName: "c", result: "not-scheduled" },
+      ],
+    );
+    const out = explainDependency(rep, { depName: "lodash" });
+    expect(out.verdict).toBe("3 updates available; held: not-scheduled; held: pr-limit-reached");
+    expect(out.hints.filter((h) => h.startsWith("`not-scheduled`"))).toHaveLength(1);
+  });
+
+  it("without branch data emits no held text and says verdicts need a real bot run", () => {
+    const out = explainDependency(report([dep("lodash", "b")]), { depName: "lodash" });
+    expect(out.verdict).toBe("1 update available");
+    expect(out.hints.join("\n")).toMatch(/real bot run.*logPath/);
+  });
+
+  it("stays quiet about branch data when nothing is available to update", () => {
+    const out = explainDependency(report([LODASH_UP_TO_DATE]), { depName: "lodash" });
+    expect(out.hints.join("\n")).not.toMatch(/bot run/);
+  });
+});
+
 describe("explainDependency — relatedProblems", () => {
   it("collects report-level and repo-level problems that mention the dependency", () => {
     const rep = report([LODASH_UP_TO_DATE], {

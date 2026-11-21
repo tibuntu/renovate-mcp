@@ -13,7 +13,8 @@ import {
 import { CONFIG_FILE_NAMES } from "../../src/lib/configLocations.js";
 import { parsePreset } from "../../src/lib/presetResolver.js";
 import { PRESETS, REMOVED_PRESETS } from "../../src/data/presets.generated.js";
-import { SKIP_HINTS } from "../../src/lib/dependencyExplainer.js";
+import { OPTIONS } from "../../src/data/options.generated.js";
+import { BRANCH_RESULT_HINTS, SKIP_HINTS } from "../../src/lib/dependencyExplainer.js";
 
 // Drift guards for the hand-maintained allow-lists in src/lib that mirror Renovate
 // (or one of its dependencies) without importing it at runtime — the same role the
@@ -92,6 +93,49 @@ describe("LATER_TEXT_ANCHOR_TOKENS vs @breejs/later's text grammar", () => {
 
   it("does not recognise an arbitrary word (control)", () => {
     expect(recognised("purple")).toBe(false);
+  });
+});
+
+describe("BRANCH_RESULT_HINTS vs Renovate's BranchResult union", () => {
+  const dts = readFileSync(path.join(path.dirname(renovatePkg), "dist/workers/types.d.ts"), "utf8");
+  const union =
+    dts.replace(/\/\*[\s\S]*?\*\//g, "").match(/export type BranchResult =([^;]*);/)?.[1] ?? "";
+  const results = [...union.matchAll(/'([^']+)'/g)].map((m) => m[1]!);
+
+  // If this fails after a bump, the declaration's shape changed: fix the extraction.
+  it("extracted the union from the declaration file (sanity)", () => {
+    expect(results).toContain("pending");
+    expect(results.length).toBeGreaterThan(10);
+  });
+
+  it("every hint key is a real BranchResult", () => {
+    for (const key of Object.keys(BRANCH_RESULT_HINTS)) {
+      expect(results, key).toContain(key);
+    }
+  });
+
+  it("every camelCase option a hint names is a real Renovate option", () => {
+    const named = Object.values(BRANCH_RESULT_HINTS).flatMap((h) =>
+      [...h.matchAll(/`([a-z]+[A-Z][A-Za-z]*)`|`([a-z]+[A-Z][A-Za-z]*):/g)].map((m) => (m[1] ?? m[2])!),
+    );
+    expect(named).toContain("minimumReleaseAge");
+    for (const name of new Set(named)) expect(Object.hasOwn(OPTIONS, name), name).toBe(true);
+  });
+
+  it("the results without a hint are exactly the ones that do not hold a PR back", () => {
+    // A new result after a bump lands here: hint it in src/lib/dependencyExplainer.ts if it
+    // holds a branch or PR back, otherwise add it to this list.
+    const unhinted = results.filter((r) => !Object.hasOwn(BRANCH_RESULT_HINTS, r)).sort();
+    expect(unhinted).toEqual([
+      "already-existed",
+      "automerged",
+      "done",
+      "error",
+      "no-work",
+      "pr-created",
+      "pr-edited",
+      "rebase",
+    ]);
   });
 });
 
