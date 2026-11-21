@@ -6,7 +6,17 @@
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
         "src/lib/version.ts",
-        "install.sh"
+        "install.sh",
+        {
+          "type": "json",
+          "path": "server.json",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "json",
+          "path": "server.json",
+          "jsonpath": "$.packages[0].version"
+        }
       ],
       "changelog-sections": [
         {
