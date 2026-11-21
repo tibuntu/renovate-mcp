@@ -31,6 +31,8 @@ export interface StartServerOptions {
   requestTimeoutMs?: number;
   /** Override the script to spawn. Default: dist/index.js of this repo. */
   serverEntry?: string;
+  /** Working directory of the server process. Default: inherited. */
+  cwd?: string;
 }
 
 export interface ServerNotification {
@@ -97,6 +99,7 @@ export async function startServer(
   const inherited = { ...process.env };
   for (const name of ISOLATED_ENV) delete inherited[name];
   const child = spawn("node", [serverEntry], {
+    cwd: options.cwd,
     stdio: ["pipe", "pipe", "pipe"],
     env: { ...inherited, ...env },
   });

@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import path from "node:path";
 import fs from "node:fs";
+import { tmpdir } from "node:os";
 import { detectRuntimeWarnings, type RuntimeWarning } from "./runtimeWarnings.js";
 
 const requireFromHere = createRequire(import.meta.url);
@@ -132,11 +133,21 @@ export interface RunOptions {
  */
 export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise<RunResult> {
   return new Promise((resolve, reject) => {
+    // Renovate and its validator load `config.js` (or whatever
+    // RENOVATE_CONFIG_FILE names) from their working directory as global
+    // config, executing it. A caller that names no `cwd` gets a fresh,
+    // private, empty one instead of the server's own (often a project root).
+    // A relative binary override still resolves against the server's cwd.
+    const scratchCwd = opts.cwd ? undefined : fs.mkdtempSync(path.join(tmpdir(), "renovate-mcp-cwd-"));
+    const removeScratch = () => {
+      if (scratchCwd) fs.rmSync(scratchCwd, { recursive: true, force: true });
+    };
+    if (scratchCwd && !path.isAbsolute(cmd) && /[\\/]/.test(cmd)) cmd = path.resolve(cmd);
     // `detached` makes the child a process-group leader so a timeout can kill
     // the whole group — Renovate spawns git and package-manager children that
     // would otherwise outlive it.
     const child = spawn(cmd, args, {
-      cwd: opts.cwd,
+      cwd: opts.cwd ?? scratchCwd,
       env: { ...process.env, ...opts.env },
       stdio: ["pipe", "pipe", "pipe"],
       detached: true,
@@ -198,11 +209,13 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
     child.on("error", (err) => {
       if (timer) clearTimeout(timer);
       if (pid !== undefined) liveChildren.delete(pid);
+      removeScratch();
       reject(err);
     });
     child.on("close", (code) => {
       if (timer) clearTimeout(timer);
       if (pid !== undefined) liveChildren.delete(pid);
+      removeScratch();
       // Flush trailing partial lines (output that didn't end with a newline).
       if (stdoutLineBuf && opts.onStdoutLine) {
         try {

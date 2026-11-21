@@ -24,6 +24,7 @@ In scope:
 - The `renovate-mcp` server itself (code under `src/`, the published npm package, the resources and tools it exposes over MCP).
 - Handling of auth tokens read from the environment (`GITHUB_TOKEN`, `GITLAB_TOKEN`, `RENOVATE_TOKEN`, `GITHUB_COM_TOKEN`).
 - File writes performed by `write_config` against user-supplied paths.
+- The config the spawned Renovate CLI and `renovate-config-validator` load: only what the operator or the caller named, and only as data (see [`docs/security.md`](docs/security.md#working-directory-config)).
 - HTTPS fetches performed by `resolve_config` when `externalPresets: true` (github.com / gitlab.com / custom endpoints).
 
 Out of scope:
