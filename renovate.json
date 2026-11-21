@@ -8,7 +8,6 @@
     "github>tibuntu/renovate-presets:semanticCommitType(*, fix)",
     "github>tibuntu/renovate-presets:devDependenciesCommitType",
     "github>tibuntu/renovate-presets:githubActionsCommitType",
-    "helpers:pinGitHubActionDigests",
     "customManagers:githubActionsVersions"
   ],
   "lockFileMaintenance": {
