@@ -74,6 +74,20 @@ describe.skipIf(!hasValidator)("validate_config against the real bundled validat
     expect(isError).toBeFalsy();
     expect(payload.valid).toBe(true);
   }, 60_000);
+
+  it("accepts a global-only option set as a global config and rejects it as repo config", async () => {
+    const globalConfig = { platform: "gitlab", autodiscover: true };
+    const asGlobal = await call("validate_config", {
+      configType: "global",
+      configContent: globalConfig,
+    });
+    expect(asGlobal.isError).toBeFalsy();
+    expect(asGlobal.payload.valid).toBe(true);
+
+    const asRepo = await call("validate_config", { configContent: globalConfig });
+    expect(asRepo.isError).toBe(true);
+    expect(asRepo.payload.valid).toBe(false);
+  }, 60_000);
 });
 
 describe.skipIf(!hasValidator)("write_config against the real bundled validator", () => {

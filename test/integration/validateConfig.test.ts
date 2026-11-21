@@ -175,4 +175,58 @@ process.exit(0);
     expect(text).toContain("renovate-config-validator");
     expect(text).toContain("check_setup");
   });
+
+  describe("configType", () => {
+    async function recordArgv(): Promise<{ validator: string; argvFile: string }> {
+      const argvFile = path.join(repo, "argv.json");
+      const validator = path.join(repo, "fake-argv.mjs");
+      await writeFile(
+        validator,
+        `#!/usr/bin/env node
+import { writeFileSync } from "node:fs";
+writeFileSync(${JSON.stringify(argvFile)}, JSON.stringify(process.argv.slice(2)));
+process.exit(0);
+`,
+      );
+      await chmod(validator, 0o755);
+      return { validator, argvFile };
+    }
+
+    it("passes --no-global by default (repo config)", async () => {
+      const { validator, argvFile } = await recordArgv();
+      session = await startServer(
+        { RENOVATE_CONFIG_VALIDATOR_BIN: validator },
+        { requestTimeoutMs: 30_000 },
+      );
+
+      await session.request("tools/call", {
+        name: "validate_config",
+        arguments: { configContent: { extends: ["config:recommended"] } },
+      });
+
+      const argv = JSON.parse(await readFile(argvFile, "utf8")) as string[];
+      expect(argv).toContain("--no-global");
+    });
+
+    it("omits --no-global when configType is global", async () => {
+      const { validator, argvFile } = await recordArgv();
+      session = await startServer(
+        { RENOVATE_CONFIG_VALIDATOR_BIN: validator },
+        { requestTimeoutMs: 30_000 },
+      );
+
+      const res = await session.request<{ isError?: boolean }>("tools/call", {
+        name: "validate_config",
+        arguments: {
+          configType: "global",
+          configContent: { platform: "gitlab", autodiscover: true },
+        },
+      });
+
+      expect(res.result?.isError).toBeFalsy();
+      const argv = JSON.parse(await readFile(argvFile, "utf8")) as string[];
+      expect(argv).not.toContain("--no-global");
+      expect(argv[0]).toMatch(/\.json$/);
+    });
+  });
 });
