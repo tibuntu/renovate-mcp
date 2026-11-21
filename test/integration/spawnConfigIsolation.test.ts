@@ -77,3 +77,12 @@ describe.skipIf(!validatorBin)("check_setup's version probe ignores the server's
     expect(existsSync(path.join(repo, MARKER))).toBe(false);
   }, 60_000);
 });
+
+describe.skipIf(!renovateBin)("dry_run ignores a config.js in the repo", () => {
+  it("does not load <repoPath>/config.js on a local extract run", async () => {
+    session = await startServer({ RENOVATE_BIN: undefined }, { requestTimeoutMs: 120_000 });
+    const { isError, text } = await call("dry_run", { repoPath: repo, dryRunMode: "extract" });
+    expect(isError, text).toBeFalsy();
+    expect(existsSync(path.join(repo, MARKER))).toBe(false);
+  }, 120_000);
+});

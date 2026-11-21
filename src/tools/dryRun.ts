@@ -601,7 +601,11 @@ export function registerDryRun(server: McpServer): void {
         // `git ls-files` list the enclosing repo, which tracks nothing in the
         // copy; stop git at the copy's parent so Renovate falls back to its walk.
         if (copy) childEnv.GIT_CEILING_DIRECTORIES = path.dirname(copy.dir);
-        if (hostRulesSlot && fileRules.length > 0) {
+        // RENOVATE_CONFIG_FILE is occupied on every run, even with no rules:
+        // left unset, Renovate loads (and executes) `config.js` from its cwd,
+        // which is the repo under `platform=local`. An operator-set
+        // RENOVATE_CONFIG_FILE is trusted and already fills the slot.
+        if (hostRulesSlot === "RENOVATE_CONFIG_FILE" || (hostRulesSlot && fileRules.length > 0)) {
           hostRulesConfigPath = await writeHostRulesConfig(fileRules);
           // Renovate reads config files via env vars, not CLI flags —
           // `--config-file` is not a real Renovate flag and passing it crashes

@@ -97,7 +97,7 @@ describe("dry_run hostRules", () => {
     await expect(access(dumped.configFileEnv!)).rejects.toBeDefined();
   });
 
-  it("omits RENOVATE_CONFIG_FILE when no hostRules are passed", async () => {
+  it("still fills RENOVATE_CONFIG_FILE, with no rules, when no hostRules are passed", async () => {
     const argvDump = path.join(repo, "argv.json");
     const fakeBin = await makeFakeRenovate(repo);
     session = await startServer({
@@ -118,9 +118,12 @@ describe("dry_run hostRules", () => {
     const dumped = JSON.parse(await readFile(argvDump, "utf8")) as {
       args: string[];
       configFileEnv: string | undefined;
+      configContent: string | null;
     };
     expect(dumped.args.some((a) => a.startsWith("--config-file="))).toBe(false);
-    expect(dumped.configFileEnv).toBeFalsy();
+    // Left unset, Renovate would load config.js from its cwd (the repo).
+    expect(JSON.parse(dumped.configContent!)).toEqual({ hostRules: [] });
+    await expect(access(dumped.configFileEnv!)).rejects.toBeDefined();
   });
 
   it("emits MCP progress notifications when the caller supplies a progressToken", async () => {
@@ -1025,7 +1028,7 @@ process.exit(0);
     expect(dumped.renovateToken).toBe("glpat-self-hosted");
     expect(dumped.args).toContain("--endpoint=https://gitlab.example.com/api/v4/");
     // The platform rule covers the endpoint host, so no GITLAB_TOKEN rule is written.
-    expect(dumped.renovateConfig).toBeNull();
+    expect(dumped.renovateConfig).toEqual({ hostRules: [] });
   });
 
   it("ignores RENOVATE_ENDPOINT when the platform input differs from RENOVATE_PLATFORM, and keeps it from the child", async () => {
@@ -1313,7 +1316,7 @@ process.exit(1);
       const dumped = await dump();
       expect(dumped.renovateToken).toBe("ghe-token");
       // The only github rule is on ghe.example.com, which the platform rule covers.
-      expect(dumped.renovateConfig).toBeNull();
+      expect(dumped.renovateConfig).toEqual({ hostRules: [] });
     });
 
     it("binds RENOVATE_TOKEN to the env home host in a local run, never to the origin", async () => {
@@ -1357,7 +1360,7 @@ process.exit(1);
     it("does not write GITHUB_COM_TOKEN: Renovate reads it from env itself", async () => {
       const res = await run({ GITHUB_COM_TOKEN: "ghp-com" }, {});
       expect(res.result?.isError).toBeFalsy();
-      expect((await dump()).renovateConfigFile).toBeNull();
+      expect((await dump()).renovateConfig).toEqual({ hostRules: [] });
     });
 
     it("skips a host-token entry whose variable is unset, with a warning naming the variable", async () => {
@@ -1370,7 +1373,7 @@ process.exit(1);
         {},
       );
       expect(res.result?.isError).toBeFalsy();
-      expect((await dump()).renovateConfigFile).toBeNull();
+      expect((await dump()).renovateConfig).toEqual({ hostRules: [] });
       expect(warnings(res).some((w) => w.includes("ACME_UNSET"))).toBe(true);
     });
 
