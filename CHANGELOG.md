@@ -2,24 +2,33 @@
 
 ## [2.2.0](https://github.com/tibuntu/renovate-mcp/compare/v2.1.2...v2.2.0) (2026-11-21)
 
+This release lets **`dry_run` test a draft config before it is written**, teaches **`explain_dependency` to say why an available update has no PR** using a real bot's debug log, and **stops spawned Renovate processes from running a stray `config.js`**. That fix changes what `validate_config` accepts as `configPath`; see the upgrade note.
 
-### Features
+### New features
 
-* **dry_run:** run a draft config via configContent without writing it ([ffcb3ea](https://github.com/tibuntu/renovate-mcp/commit/ffcb3ea36cc892c43ddddf98a41276b29f757d53))
-* **dry_run:** stop Renovate and clean up when the call is cancelled ([9a482f6](https://github.com/tibuntu/renovate-mcp/commit/9a482f66c4aeed0260bb78ed6602616ba76b9d52))
-* **explain_dependency:** report held branch results ([69226b1](https://github.com/tibuntu/renovate-mcp/commit/69226b13c567630a013042b3f3991215b34c4717))
-* **lint:** flag minimumReleaseAge on datasources without release timestamps ([510cfc1](https://github.com/tibuntu/renovate-mcp/commit/510cfc11a2b8ab4272bcb44443aba832838dd359))
-* **registry:** add server.json and mcpName, sync its version on release ([3c481e6](https://github.com/tibuntu/renovate-mcp/commit/3c481e62cb69983208d48699b50729eea94b0b8c))
-* **report:** accept a Renovate debug log as a report ([b623ffe](https://github.com/tibuntu/renovate-mcp/commit/b623ffe58271925ece335e1986eddbfeea2d150d))
-* **validate_config:** validate self-hosted global config ([d72b576](https://github.com/tibuntu/renovate-mcp/commit/d72b576217dd763c1fc9b18150d1fc00d7b06c90))
+**`dry_run` runs a draft config.** Pass the draft as `configContent` and `dry_run` writes it into a temporary copy of the repository, runs Renovate there and removes the copy, so `repoPath` stays untouched. With no config in the repo the draft becomes a new `renovate.json`; under `package.json#renovate` the other keys stay. Local presets in the draft are resolved as usual, and the result's `configSource` says which config ran. Remote runs read their config from the platform, so `configContent` is refused there. The `design-renovate-config`, `onboard-repo` and `author-custom-manager` prompts now dry-run the draft before `write_config` instead of after it.
 
+**A Renovate debug log works as a report.** `explain_dependency`, `annotate_dry_run` and `dry_run_diff` take `logPath`, a JSON-lines debug log (`LOG_LEVEL=debug`, `LOG_FORMAT=json`) from a real bot run. The tools read only the two log messages that carry the extracted dependencies and the branch summary, and they stream the file, so logs of hundreds of MB are fine.
 
-### Bug Fixes
+**`explain_dependency` reports held updates.** When a bot run recorded a branch as held, the verdict says so (`held: pending`, `held: needs-approval`, `held: not-scheduled`, …) and a hint names the setting behind it, such as `minimumReleaseAge`, `dependencyDashboardApproval`, `schedule` or a PR limit. A local `dry_run` never records branch results, so this needs a report or `logPath` from a real bot run; without one the tool says so. `annotate_dry_run` carries the same `branchResult` and `prBlockedBy` fields.
 
-* **deps:** migrate to the MCP TypeScript SDK v2 ([f9ec03f](https://github.com/tibuntu/renovate-mcp/commit/f9ec03f8c32368ef47156a2cf5f2843d5abcb360))
-* **dry_run:** always occupy the RENOVATE_CONFIG_FILE slot ([eb72bdd](https://github.com/tibuntu/renovate-mcp/commit/eb72bddb6edd1f9b0e452cc21683c360c93bd432))
-* **renovate-cli:** isolate validator working directory ([e4352f5](https://github.com/tibuntu/renovate-mcp/commit/e4352f58121de1693394fbc89c7f6ae22a010d9c))
-* **validate_config:** only accept data config formats for configPath ([9369571](https://github.com/tibuntu/renovate-mcp/commit/93695717a6802e29c6a45f0a9c9f416b384865c6))
+**`validate_config` checks self-hosted global config.** Set `configType: "global"` to validate a global config with options like `platform`, `autodiscover` or `token`, which repo validation rejects. The default stays `repo`, and `write_config` still validates as repo config.
+
+**Cancelling a `dry_run` stops Renovate.** When the client cancels the call, Renovate's process group and any preset-resolving worker are killed right away instead of running until the timeout, and the temporary files are removed.
+
+**renovate-mcp is listed in the MCP Registry** as `io.github.tibuntu/renovate-mcp`. Every release now updates the listing.
+
+### Fixes & improvements
+
+* Spawned Renovate processes load only the config they were given. Renovate reads a `config.js` in its working directory as global config and executes it. The validator used to run in the server's working directory, and `dry_run` ran in the repository without a config file of its own, so a `config.js` in either place could run code or silently change results. Validator calls now run in an empty temporary directory, and `dry_run` always points `RENOVATE_CONFIG_FILE` at its own file.
+* `lint_config` gains a `release-age-without-timestamp` rule. It warns when a `packageRules` entry sets `minimumReleaseAge` for a datasource that never reports release timestamps. Since Renovate 42 those updates stay pending for good unless `minimumReleaseAgeBehaviour` is `timestamp-optional`.
+* Dependency updates: MCP TypeScript SDK v2 (`@modelcontextprotocol/server` 2.4).
+
+> **Upgrading:**
+>
+> * `validate_config` refuses a `configPath` that Renovate would execute (`.js`, `.cjs`, `.mjs`, `.ts`, …). Data formats (`.json`, `.json5`, `.jsonc`, `.yaml`, `.yml`, `.renovaterc`) work as before. For a JavaScript config, export the object to JSON and pass it as `configContent`.
+> * `dry_run` no longer loads a `config.js` from the repository. If you relied on that, set `RENOVATE_CONFIG_FILE` on the server.
+> * `validate_config` and `write_config` now run the validator in an empty directory, so a relative `RENOVATE_CONFIG_FILE` on the server no longer resolves for them. Use an absolute path.
 
 ## [2.1.2](https://github.com/tibuntu/renovate-mcp/compare/v2.1.1...v2.1.2) (2026-11-18)
 
