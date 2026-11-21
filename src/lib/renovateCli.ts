@@ -124,6 +124,16 @@ export interface RunOptions {
    */
   onStdoutLine?: (line: string) => void;
   onStderrLine?: (line: string) => void;
+  /** Aborting kills the child's process group, like a timeout, and rejects with `CommandAbortedError`. */
+  signal?: AbortSignal;
+}
+
+/** Thrown by `run()` when `RunOptions.signal` aborted and the child was killed. */
+export class CommandAbortedError extends Error {
+  constructor(cmd: string, args: string[]) {
+    super(`Command aborted: ${cmd} ${args.join(" ")}`);
+    this.name = "CommandAbortedError";
+  }
 }
 
 /**
@@ -164,17 +174,29 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
     let stderrLineBuf = "";
     let timer: NodeJS.Timeout | undefined;
     let killed = false;
+    let aborted = false;
+
+    const killGroup = () => {
+      try {
+        process.kill(-child.pid!, "SIGKILL");
+      } catch {
+        child.kill("SIGKILL");
+      }
+    };
 
     if (opts.timeoutMs) {
       timer = setTimeout(() => {
         killed = true;
-        try {
-          process.kill(-child.pid!, "SIGKILL");
-        } catch {
-          child.kill("SIGKILL");
-        }
+        killGroup();
       }, opts.timeoutMs);
     }
+
+    const onAbort = () => {
+      aborted = true;
+      killGroup();
+    };
+    if (opts.signal?.aborted) onAbort();
+    else opts.signal?.addEventListener("abort", onAbort, { once: true });
 
     const emitLines = (
       chunk: string,
@@ -230,6 +252,11 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
         } catch {
           // ignore
         }
+      }
+      opts.signal?.removeEventListener("abort", onAbort);
+      if (aborted) {
+        reject(new CommandAbortedError(cmd, args));
+        return;
       }
       if (killed) {
         reject(new CommandTimeoutError(opts.timeoutMs!, cmd, args));

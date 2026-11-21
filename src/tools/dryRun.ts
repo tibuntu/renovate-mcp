@@ -566,6 +566,7 @@ export function registerDryRun(server: McpServer): void {
               ? [...fileRules, { hostType: "github", matchHost: "github.com", token: githubCom }]
               : fileRules,
             timeoutMs,
+            signal: ctx?.mcpReq.signal,
           });
           if (!result.ok) return { isError: true, content: [{ type: "text", text: clean(result.reason) }] };
           const written = await writeFlattenedConfig(copy.dir, copy.relPath, result.config);
@@ -659,6 +660,7 @@ export function registerDryRun(server: McpServer): void {
           cwd: copy?.dir ?? repoPath,
           env: childEnv,
           timeoutMs,
+          signal: ctx?.mcpReq.signal,
           onStdoutLine: progressEnabled
             ? (line) => {
                 const msg = extractRenovateLogMsg(line);
