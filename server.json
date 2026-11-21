@@ -1,0 +1,85 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.tibuntu/renovate-mcp",
+  "description": "MCP server for designing Renovate configurations interactively.",
+  "repository": {
+    "url": "https://github.com/tibuntu/renovate-mcp",
+    "source": "github"
+  },
+  "version": "2.1.2",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "renovate-mcp",
+      "version": "2.1.2",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "RENOVATE_TOKEN",
+          "description": "Renovate platform token for the home platform (see docs/security.md).",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "GITHUB_COM_TOKEN",
+          "description": "Read-only GitHub token for github.com dependency lookups and presets.",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "GITHUB_TOKEN",
+          "description": "GitHub token, used only for the github.com host or the configured GitHub home.",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "GITLAB_TOKEN",
+          "description": "GitLab token, used only for the gitlab.com host or the configured GitLab home.",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "GITEA_TOKEN",
+          "description": "Gitea token, used only for the gitea.com host or the configured Gitea home.",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "FORGEJO_TOKEN",
+          "description": "Forgejo token, used only for the code.forgejo.org host or the configured Forgejo home.",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "BITBUCKET_TOKEN",
+          "description": "Bitbucket token, used only for the bitbucket.org host or the configured Bitbucket home.",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "RENOVATE_PLATFORM",
+          "description": "Home platform (github, gitlab, gitea, forgejo, bitbucket) that binds the platform token.",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "RENOVATE_ENDPOINT",
+          "description": "API endpoint of a self-hosted home platform, used with RENOVATE_PLATFORM.",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}
