@@ -86,3 +86,25 @@ describe.skipIf(!renovateBin)("dry_run ignores a config.js in the repo", () => {
     expect(existsSync(path.join(repo, MARKER))).toBe(false);
   }, 120_000);
 });
+
+describe.skipIf(!validatorBin)("validate_config configPath is parsed as data only", () => {
+  beforeEach(async () => {
+    session = await startServer({ RENOVATE_CONFIG_VALIDATOR_BIN: undefined }, { requestTimeoutMs: 60_000 });
+  });
+
+  it("refuses a .cjs configPath without running it", async () => {
+    const probe = path.join(repo, "probe.cjs");
+    await writeFile(probe, markerScript("probe-loaded"));
+    const { isError, text } = await call("validate_config", { configPath: probe });
+    expect(existsSync(path.join(repo, "probe-loaded"))).toBe(false);
+    expect(isError).toBe(true);
+    expect(text).toContain(".cjs");
+  }, 60_000);
+
+  it.each(["renovate.json", "renovate.json5", ".renovaterc"])("still validates a %s configPath", async (name) => {
+    const file = path.join(repo, name);
+    await writeFile(file, '{ "extends": ["config:recommended"] }\n');
+    const { isError, text } = await call("validate_config", { configPath: file });
+    expect(isError, text).toBeFalsy();
+  }, 60_000);
+});

@@ -70,6 +70,18 @@ export function hostTokensError(fetchExternal: boolean | undefined): string | nu
   return parsed.ok ? null : parsed.error;
 }
 
+// The file types Renovate's config loader parses as data. Every other type it
+// accepts (.js, .cjs, .mjs, .ts, .cts, .mts) it `import()`s, executing it.
+const DATA_CONFIG_EXTENSIONS = [".json", ".json5", ".jsonc", ".yaml", ".yml"];
+
+/** Null when Renovate would parse `configPath` as data (never execute it), else the error text. */
+export function configPathFormatError(configPath: string): string | null {
+  if (path.basename(configPath) === ".renovaterc") return null;
+  const ext = path.extname(configPath);
+  if (DATA_CONFIG_EXTENSIONS.includes(ext)) return null;
+  return `configPath must be a data config file (${DATA_CONFIG_EXTENSIONS.join(", ")} or .renovaterc); got ${ext ? `\`${ext}\`` : "no extension"} (${configPath}). Script configs are never loaded; pass the config as configContent instead.`;
+}
+
 // `disclaimer` texts. The preview ones are shared by every tool on the same
 // worker (merge worker: resolve_config / explain_config; matcher worker:
 // test_package_rules / annotate_dry_run); the faithful ones are per tool.

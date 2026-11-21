@@ -110,6 +110,7 @@ Renovate and `renovate-config-validator` read global self-hosted config from the
 
 - **Validator spawns** (`validate_config`, `write_config`, and `check_setup`'s `--version` probe when a binary override makes it spawn) run in a fresh, private, empty temp directory that is removed afterwards — never the server's own working directory, which is often a project root. Every path they get is absolute.
 - **`dry_run`** needs the repository as Renovate's working directory under `platform=local`, so it always fills `RENOVATE_CONFIG_FILE` with its temp host-rules file (see below), with no rules when there are none. An operator-set `RENOVATE_CONFIG_FILE` is trusted and used as before.
+- **`validate_config`'s `configPath`** must be a data format Renovate parses without running it: `.json`, `.json5`, `.jsonc`, `.yaml`, `.yml`, or a file named `.renovaterc`. Anything else is refused with an `isError` naming the extension. `lint_config` and `migrate_config` parse `configPath` in-process with JSON5 and never run it.
 
 The worker threads (merge, packageRules, schedule, migration, preset flattening) import only Renovate modules that never reach the global config loader.
 
