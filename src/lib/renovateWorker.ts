@@ -32,6 +32,8 @@ export interface RunWorkerOptions {
   timeoutMs: number;
   /** Human-readable name used in error messages, e.g. `config merge`. */
   label: string;
+  /** Aborting rejects with an Error and terminates the worker (dry_run cancellation). */
+  signal?: AbortSignal;
 }
 
 type WorkerReply<T> = ({ ok: true } & T) | { ok: false; error: string };
@@ -44,7 +46,7 @@ type WorkerReply<T> = ({ ok: true } & T) | { ok: false; error: string };
 export async function runRenovateWorker<T extends object>(
   entry: string | URL,
   workerData: unknown,
-  { timeoutMs, label }: RunWorkerOptions,
+  { timeoutMs, label, signal }: RunWorkerOptions,
 ): Promise<T> {
   const worker = new Worker(entry, { workerData, stdout: true, stderr: true });
   let timer: NodeJS.Timeout | undefined;
@@ -64,6 +66,9 @@ export async function runRenovateWorker<T extends object>(
         () => settle(() => reject(new WorkerTimeoutError(label, timeoutMs))),
         timeoutMs,
       );
+      const onAbort = () => settle(() => reject(new Error(`Renovate ${label} worker aborted`)));
+      if (signal?.aborted) onAbort();
+      else signal?.addEventListener("abort", onAbort, { once: true });
       worker.once("message", (msg: WorkerReply<T>) => settle(() => resolve(msg)));
       worker.once("error", (err) => settle(() => reject(err)));
       worker.once("exit", (code) =>

@@ -55,6 +55,7 @@ export interface FlattenOptions {
   /** Host rules the resolver's requests use, in Renovate's order. */
   hostRules: Array<Record<string, unknown>>;
   timeoutMs?: number;
+  signal?: AbortSignal;
 }
 
 export type FlattenResult =
@@ -103,7 +104,7 @@ export async function flattenLocalPresets(
     reply = await runRenovateWorker<WorkerReply>(
       workerEntry(),
       { config, platform: options.platform, endpoint: options.endpoint, hostRules: options.hostRules },
-      { timeoutMs: options.timeoutMs ?? DEFAULT_WORKER_TIMEOUT_MS, label: "preset flattening" },
+      { timeoutMs: options.timeoutMs ?? DEFAULT_WORKER_TIMEOUT_MS, label: "preset flattening", signal: options.signal },
     );
   } catch (err) {
     // "Renovate preset flattening failed: <Renovate's validationError>", or the

@@ -46,6 +46,8 @@ export interface McpSession {
     params?: unknown,
   ): Promise<JsonRpcResponse & { result?: T }>;
   notify(method: string, params?: unknown): void;
+  /** JSON-RPC id the next `request()` will use (for `notifications/cancelled`). */
+  readonly nextRequestId: number;
   close(): Promise<void>;
   readonly child: ChildProcess;
   readonly instructions: string;
@@ -250,6 +252,9 @@ export async function startServer(
   return {
     request,
     notify,
+    get nextRequestId() {
+      return nextId;
+    },
     child,
     instructions: init.result?.instructions ?? "",
     capabilities: init.result?.capabilities ?? {},
