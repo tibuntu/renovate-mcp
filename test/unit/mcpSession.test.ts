@@ -34,10 +34,11 @@ async function writeFakeServer(body: string): Promise<string> {
 }
 
 /**
- * A fake server that answers `initialize`, then takes an action before any
- * follow-up request can be answered. `action` is inlined into the script.
+ * A fake server that answers `initialize` (after `initDelayMs`, to mimic a slow
+ * start), then takes an action before any follow-up request can be answered.
+ * `action` is inlined into the script.
  */
-async function makeFakeServerAfterInit(action: string): Promise<string> {
+async function makeFakeServerAfterInit(action: string, initDelayMs = 0): Promise<string> {
   return writeFakeServer(`
 let buf = "";
 process.stdin.setEncoding("utf8");
@@ -51,11 +52,12 @@ process.stdin.on("data", (chunk) => {
     let msg;
     try { msg = JSON.parse(line); } catch { continue; }
     if (msg.method === "initialize") {
-      process.stdout.write(JSON.stringify({
+      const id = msg.id;
+      setTimeout(() => process.stdout.write(JSON.stringify({
         jsonrpc: "2.0",
-        id: msg.id,
+        id,
         result: { protocolVersion: "2025-06-18", capabilities: {}, serverInfo: { name: "fake", version: "0" } },
-      }) + "\\n");
+      }) + "\\n"), ${initDelayMs});
     } else if (msg.method === "notifications/initialized") {
       ${action}
     }
@@ -92,6 +94,15 @@ describe("mcpSession request() failure modes", () => {
     const serverEntry = await makeFakeServerAfterInit(`
       /* keep the process alive but silent */
     `);
+    session = await startServer({}, { serverEntry, requestTimeoutMs: 200 });
+
+    await expect(session.request("tools/list")).rejects.toThrow(/timed out after 200ms/);
+  });
+
+  it("does not apply a short request timeout to a slow initialize", async () => {
+    // Startup slower than requestTimeoutMs, as on a loaded CI runner: the
+    // handshake must still complete, and only the follow-up request times out.
+    const serverEntry = await makeFakeServerAfterInit(`/* silent */`, 600);
     session = await startServer({}, { serverEntry, requestTimeoutMs: 200 });
 
     await expect(session.request("tools/list")).rejects.toThrow(/timed out after 200ms/);
