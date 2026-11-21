@@ -100,6 +100,8 @@ Install before you register the server. The package bundles Renovate (about 670 
 
 Upgrade with `npm install -g renovate-mcp@latest` and restart your client. With nvm or fnm, global packages belong to one Node version — reinstall after switching.
 
+Once the first registry publish is done, the server is listed in the official MCP Registry as `io.github.tibuntu/renovate-mcp`, so registry-browsing clients can find it. The listing is metadata only; the package still comes from npm.
+
 ### 2. Register it with your client
 
 **Claude Code:**
