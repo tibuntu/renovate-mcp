@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.1](https://github.com/tibuntu/renovate-mcp/compare/v2.2.0...v2.2.1) (2026-11-22)
+
+
+### Bug Fixes
+
+* **deps:** update dependency renovate to v44.252.7 ([1d49225](https://github.com/tibuntu/renovate-mcp/commit/1d492257e134c8fd39b3db6e059164cce78a10f6))
+
 ## [2.2.0](https://github.com/tibuntu/renovate-mcp/compare/v2.1.2...v2.2.0) (2026-11-21)
 
 This release lets **`dry_run` test a draft config before it is written**, teaches **`explain_dependency` to say why an available update has no PR** using a real bot's debug log, and **stops spawned Renovate processes from running a stray `config.js`**. That fix changes what `validate_config` accepts as `configPath`; see the upgrade note.
