@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.2](https://github.com/tibuntu/renovate-mcp/compare/v2.2.1...v2.2.2) (2026-11-25)
+
+
+### Bug Fixes
+
+* **deps:** update dependency renovate to v44.252.8 ([ecfa384](https://github.com/tibuntu/renovate-mcp/commit/ecfa384be2635eaf2db59732ebe9a4387a9e1ba0))
+
 ## [2.2.1](https://github.com/tibuntu/renovate-mcp/compare/v2.2.0...v2.2.1) (2026-11-22)
 
 
