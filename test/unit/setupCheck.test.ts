@@ -627,6 +627,14 @@ describe("versionSatisfiesRange", () => {
     expect(versionSatisfiesRange("v26.0.0", "^24.11.0")).toBe(false);
   });
 
+  it("matches any alternative of an `||` range (Renovate's own engines shape)", () => {
+    const range = "^24.11.0 || ^26.13.0";
+    expect(versionSatisfiesRange("v24.12.0", range)).toBe(true);
+    expect(versionSatisfiesRange("v26.13.1", range)).toBe(true);
+    expect(versionSatisfiesRange("v25.0.0", range)).toBe(false);
+    expect(versionSatisfiesRange("v26.12.0", range)).toBe(false);
+  });
+
   it("handles tilde ranges (locked minor)", () => {
     expect(versionSatisfiesRange("v24.11.5", "~24.11.0")).toBe(true);
     expect(versionSatisfiesRange("v24.12.0", "~24.11.0")).toBe(false);
