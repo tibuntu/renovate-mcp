@@ -44,7 +44,7 @@ export const OWN_SOURCE = "<own>";
  * `RENOVATE_MCP_HOST_TOKENS`). Nothing is fetched while it stands; tools turn
  * it into an `isError`.
  */
-export const AUTH_SOURCE = "<auth>";
+const AUTH_SOURCE = "<auth>";
 
 export interface MergeStep {
   /** Preset entry exactly as written in `extends`, or OWN_SOURCE for own keys. */
@@ -101,7 +101,7 @@ export type ExternalSource =
   | "local"
   | "npm";
 
-export type SourceClassification =
+type SourceClassification =
   | { fetchable: true }
   | { fetchable: false; reason: string };
 
@@ -168,7 +168,7 @@ export interface ParsedPreset {
 }
 
 /** One expansion's fetch settings plus the accumulators every step appends to. */
-export interface ExpandContext extends CollectResult {
+interface ExpandContext extends CollectResult {
   fetchExternal: boolean;
   timeoutMs: number | undefined;
   endpoint: string | undefined;
@@ -449,7 +449,7 @@ export function recordTemplateWarnings(
   }
 }
 
-export async function loadPresetBody(
+async function loadPresetBody(
   parsed: ParsedPreset,
   ctx: ExpandContext,
 ): Promise<Record<string, unknown> | null> {
@@ -701,7 +701,7 @@ function parseExternal(
   return { key, original, args, source, repoPath, presetName, subpath, ref };
 }
 
-export interface ApplyArgsResult {
+interface ApplyArgsResult {
   value: unknown;
   /** Indices referenced by `{{argN}}` where N ≥ args.length. */
   missingArgs: Set<number>;
@@ -709,7 +709,7 @@ export interface ApplyArgsResult {
   unknownTemplates: Set<string>;
 }
 
-export function applyArgs(value: unknown, args: string[]): ApplyArgsResult {
+function applyArgs(value: unknown, args: string[]): ApplyArgsResult {
   const missingArgs = new Set<number>();
   const unknownTemplates = new Set<string>();
   const out = applyArgsInner(value, args, missingArgs, unknownTemplates);

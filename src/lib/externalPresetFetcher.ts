@@ -1,7 +1,6 @@
 import JSON5 from "json5";
-import type { Credential } from "./credentialResolver.js";
 import { validateEndpoint } from "./endpointValidator.js";
-import { selectToken } from "./hostTokens.js";
+import { selectToken, type Credential } from "./hostTokens.js";
 import {
   classifyExternalSource,
   type FetchPlatform,
