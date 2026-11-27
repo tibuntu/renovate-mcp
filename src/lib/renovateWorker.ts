@@ -50,6 +50,7 @@ export async function runRenovateWorker<T extends object>(
 ): Promise<T> {
   const worker = new Worker(entry, { workerData, stdout: true, stderr: true });
   let timer: NodeJS.Timeout | undefined;
+  let onAbort: (() => void) | undefined;
   try {
     const reply = await new Promise<WorkerReply<T>>((resolve, reject) => {
       // First event wins. `exit` must reject when it fires before a
@@ -66,7 +67,7 @@ export async function runRenovateWorker<T extends object>(
         () => settle(() => reject(new WorkerTimeoutError(label, timeoutMs))),
         timeoutMs,
       );
-      const onAbort = () => settle(() => reject(new Error(`Renovate ${label} worker aborted`)));
+      onAbort = () => settle(() => reject(new Error(`Renovate ${label} worker aborted`)));
       if (signal?.aborted) onAbort();
       else signal?.addEventListener("abort", onAbort, { once: true });
       worker.once("message", (msg: WorkerReply<T>) => settle(() => resolve(msg)));
@@ -83,6 +84,7 @@ export async function runRenovateWorker<T extends object>(
     return reply;
   } finally {
     clearTimeout(timer);
+    if (onAbort) signal?.removeEventListener("abort", onAbort);
     await worker.terminate().catch(() => undefined);
   }
 }
