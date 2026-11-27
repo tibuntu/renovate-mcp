@@ -392,7 +392,8 @@ export function registerDryRun(server: McpServer): void {
       const envCredential = apiUrl
         ? selectToken(apiUrl, effectivePlatform as "github" | "gitlab", process.env, { githubComToken: false })
         : undefined;
-      const resolvedToken = isRemotePlatform ? (token ?? envCredential!.token) : undefined;
+      // `||`: an empty `token` input must not block the env fallback.
+      const resolvedToken = isRemotePlatform ? (token || envCredential!.token) : undefined;
 
       // Env rules a later rule replaces or must not outrank: the platform rule
       // Renovate appends last, and per-call rules carrying a credential (see
