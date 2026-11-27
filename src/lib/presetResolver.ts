@@ -287,7 +287,8 @@ async function collectSteps(
       : Array.isArray(input.ignorePresets)
         ? (input.ignorePresets as string[])
         : [];
-  const rawExtends = input.extends;
+  // Renovate declares `extends` with `allowString`: a bare string is one preset.
+  const rawExtends = typeof input.extends === "string" ? [input.extends] : input.extends;
   if (Array.isArray(rawExtends) && rawExtends.length > 0) {
     // Children of `input` are reached by going through `ownerName` (if any).
     // The user's root has no name; for it `viaChain` and `childVia` are equal.
