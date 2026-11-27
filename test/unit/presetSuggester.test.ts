@@ -234,6 +234,14 @@ describe("detectFacets", () => {
 });
 
 describe("assembleDraft", () => {
+  it("picks the automerge preset by whole words, honoring a negated major", () => {
+    // "automatically" contains "all"; it must not select :automergeAll.
+    expect(assembleDraft("automatically automerge patch updates").config.extends).toEqual([":automergePatch"]);
+    expect(assembleDraft("automerge all updates").config.extends).toEqual([":automergeAll"]);
+    expect(assembleDraft("automerge minor and patch but not major").config.extends).toEqual([":automergeMinor"]);
+    expect(assembleDraft("automerge major updates").config.extends).toEqual([":automergeMajor"]);
+  });
+
   it("marks the draft unvalidated with a validate/lint hint", () => {
     const draft = assembleDraft("automerge minor updates");
     expect(draft.unvalidated).toBe(true);
