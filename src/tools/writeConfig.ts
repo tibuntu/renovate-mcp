@@ -101,7 +101,8 @@ export function registerWriteConfig(server: McpServer): void {
       const repoReal = await fs.realpath(repoAbs);
       const target = await resolveWithExistingAncestor(requested);
       const checkRel = path.relative(repoReal, path.dirname(target));
-      if (checkRel.startsWith("..") || path.isAbsolute(checkRel)) {
+      // Not a bare `startsWith("..")`: a directory may be named `..cfg`.
+      if (checkRel === ".." || checkRel.startsWith(`..${path.sep}`) || path.isAbsolute(checkRel)) {
         return {
           isError: true,
           content: [{ type: "text", text: "filename escapes repoPath" }],
@@ -262,7 +263,7 @@ export function registerWriteConfig(server: McpServer): void {
           wrote: true,
           path: rel,
           mode: writeResult.mode,
-          bytes: payload.length,
+          bytes: Buffer.byteLength(payload),
           valid,
           validationOutput: valid ? undefined : validationOutput,
         };
