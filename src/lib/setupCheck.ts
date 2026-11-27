@@ -2,6 +2,7 @@ import { createRequire } from "node:module";
 import fs from "node:fs";
 import { locateConfig } from "./configLocations.js";
 import { probeEndpoint, type EndpointProbeResult } from "./endpointProbe.js";
+import { redactUserinfo } from "./endpointValidator.js";
 import {
   HOST_TOKENS_ENV,
   PLATFORM_TOKEN_ENV,
@@ -25,6 +26,15 @@ import { run, resolveRenovateTool } from "./renovateCli.js";
 import { dedupeRuntimeWarnings, type RuntimeWarning } from "./runtimeWarnings.js";
 
 const requireFromHere = createRequire(import.meta.url);
+
+/**
+ * check_setup echoes the origin URL and the configured endpoints back to the
+ * client; an `https://user:token@host/…` form must not carry its credentials
+ * there. SSH remotes (`git@host:…`) hold no secret and are left as they are.
+ */
+function redactHttpCredentials(url: string): string {
+  return /^https?:\/\//i.test(url) ? redactUserinfo(url) : url;
+}
 
 export type RenovateBinary = "renovate" | "renovate-config-validator";
 
@@ -55,7 +65,7 @@ const DRY_RUN_PLATFORMS: readonly DryRunPlatform[] = ["local", "github", "gitlab
 export interface PlatformContext {
   /** Raw `RENOVATE_PLATFORM` value from the MCP server's env, or null. */
   renovatePlatform: string | null;
-  /** Raw `RENOVATE_ENDPOINT` value from the MCP server's env, or null. */
+  /** `RENOVATE_ENDPOINT` from the MCP server's env (embedded http credentials redacted), or null. */
   renovateEndpoint: string | null;
   /** Presence-only — never echo the value, since these are secrets. */
   tokensPresent: {
@@ -359,7 +369,7 @@ async function gatherRepoContext(
     const parsed = parseRemoteUrl(remoteUrl);
     if (parsed) {
       const classification = classifyRemoteHost(parsed.host);
-      remote = { url: remoteUrl, ...parsed, ...classification };
+      remote = { url: redactHttpCredentials(remoteUrl), ...parsed, ...classification };
     }
   }
 
@@ -372,7 +382,7 @@ async function gatherRepoContext(
       configFile = { path: located.relPath, format: located.format };
       const cfgEndpoint = located.config.endpoint;
       if (typeof cfgEndpoint === "string" && cfgEndpoint.length > 0) {
-        configEndpoint = cfgEndpoint;
+        configEndpoint = redactHttpCredentials(cfgEndpoint);
       }
       const cfgPlatform = located.config.platform;
       if (cfgPlatform === "local" || isHostedPlatform(cfgPlatform)) {
@@ -608,7 +618,7 @@ function appendRepoHints(
  */
 export function inspectPlatformContext(env: NodeJS.ProcessEnv): PlatformContext {
   const renovatePlatformRaw = env.RENOVATE_PLATFORM ?? null;
-  const renovateEndpoint = env.RENOVATE_ENDPOINT ?? null;
+  const renovateEndpoint = env.RENOVATE_ENDPOINT ? redactHttpCredentials(env.RENOVATE_ENDPOINT) : null;
   const tokensPresent = {
     RENOVATE_TOKEN: Boolean(env.RENOVATE_TOKEN),
     GITHUB_TOKEN: Boolean(env.GITHUB_TOKEN),
