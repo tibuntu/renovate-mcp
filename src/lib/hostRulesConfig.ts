@@ -64,6 +64,15 @@ const MIN_SECRET_LENGTH = 4;
  * `secrets` is empty.
  */
 export function scrubSecrets(text: string, secrets: string[]): string {
+  return createScrubber(secrets)(text);
+}
+
+/**
+ * `scrubSecrets` with the pattern compiled once, for callers that scrub many
+ * strings against the same list (dry_run revives every string of a report).
+ * The list is read at creation time; later changes to it are not seen.
+ */
+export function createScrubber(secrets: string[]): (text: string) => string {
   // Sort by length descending so that when one secret is a substring of
   // another, the longer one wins the greedy regex alternation instead of
   // being partially chewed up by the shorter one. Each secret is also matched
@@ -80,7 +89,7 @@ export function scrubSecrets(text: string, secrets: string[]): string {
   ]
     .sort((a, b) => b.length - a.length)
     .map((s) => RegExp.escape(s));
-  if (!alternatives.length) return text;
+  if (!alternatives.length) return (text) => text;
   const pattern = new RegExp(alternatives.join("|"), "g");
-  return text.replace(pattern, "[REDACTED]");
+  return (text) => text.replace(pattern, "[REDACTED]");
 }
