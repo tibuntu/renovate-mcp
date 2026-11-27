@@ -72,9 +72,6 @@
     "yaml": "^2.9.0",
     "zod": "^4.2.0"
   },
-  "overrides": {
-    "fast-uri": "^4.2.3"
-  },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@vitest/coverage-v8": "^5.0.0",
