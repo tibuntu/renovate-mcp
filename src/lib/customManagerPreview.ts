@@ -88,8 +88,14 @@ export async function parseStructured(
       return { ok: true, value: JSON.parse(content) };
     }
     if (fileFormat === "yaml") {
-      const { parse } = await import("yaml");
-      return { ok: true, value: parse(content) };
+      // Renovate's `parseYaml` hands JSONata the array of ALL documents, even
+      // for a single-document file, and throws on the first document error.
+      const { parseAllDocuments } = await import("yaml");
+      const value = parseAllDocuments(content).map((doc) => {
+        if (doc.errors.length) throw doc.errors[0];
+        return doc.toJS({ maxAliasCount: 10_000 }) as unknown;
+      });
+      return { ok: true, value };
     }
     if (fileFormat === "toml") {
       const { parse } = await import("smol-toml");
@@ -572,7 +578,7 @@ async function applyAny(
   for (let i = 0; i < manager.matchStrings.length; i++) {
     const source = manager.matchStrings[i]!;
     const res = await callWorker(
-      { mode: "matchAll", pattern: source, flags: "gm", content },
+      { mode: "matchAll", pattern: source, flags: "g", content },
       matchTimeoutMs,
     );
     if (res.timedOut) {
@@ -626,7 +632,7 @@ async function applyCombination(
   for (let i = 0; i < manager.matchStrings.length; i++) {
     const source = manager.matchStrings[i]!;
     const res = await callWorker(
-      { mode: "matchAll", pattern: source, flags: "gm", content },
+      { mode: "matchAll", pattern: source, flags: "g", content },
       matchTimeoutMs,
     );
     if (res.timedOut) {
@@ -736,7 +742,7 @@ async function recurse(
   }
   const source = manager.matchStrings[index]!;
   const res = await callWorker(
-    { mode: "matchAll", pattern: source, flags: "gm", content },
+    { mode: "matchAll", pattern: source, flags: "g", content },
     state.matchTimeoutMs,
   );
   if (res.timedOut) {
