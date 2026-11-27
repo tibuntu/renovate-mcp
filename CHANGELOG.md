@@ -1,5 +1,28 @@
 # Changelog
 
+## [2.2.3](https://github.com/tibuntu/renovate-mcp/compare/v2.2.2...v2.2.3) (2026-11-27)
+
+
+### Bug Fixes
+
+* **check_setup:** honor `||` in the engines.node range ([45af0e7](https://github.com/tibuntu/renovate-mcp/commit/45af0e7d94e61764507e46e6e192ecda84a896c3))
+* **check_setup:** redact URL credentials and stop following probe redirects ([5f154d2](https://github.com/tibuntu/renovate-mcp/commit/5f154d21de31e390f46fcc5664f0c7f647513421))
+* **deps:** update dependency ignore to v7.0.17 ([42c86a8](https://github.com/tibuntu/renovate-mcp/commit/42c86a8caa57827285a24d3231692a63d77a7dc7))
+* **dry_run:** fall back to the env token when `token` is empty ([969101b](https://github.com/tibuntu/renovate-mcp/commit/969101b83b3a113e0980ddc39947cdcba6d7743e))
+* **dry_run:** recognize and scrub RENOVATE_GITHUB_COM_TOKEN ([d65b8a2](https://github.com/tibuntu/renovate-mcp/commit/d65b8a2f18c44039e74689f87d8a1cf8e4ec3fe2))
+* **install:** make --help work under a pipe, pin the registered version, check the Node minor ([da35a51](https://github.com/tibuntu/renovate-mcp/commit/da35a5164106af758c567bebcf3ee97a99f20428))
+* **lint:** accept a case-insensitive `/…/i` regex ([6f07f71](https://github.com/tibuntu/renovate-mcp/commit/6f07f71f3e52f4fb06e0933c11a8b98aced14353))
+* **preview_custom_manager:** match Renovate on regex flags and YAML documents ([da64d26](https://github.com/tibuntu/renovate-mcp/commit/da64d269b2f074128a1f26f6b2f4208b4f3f3d49))
+* **preview_custom_manager:** warn when the hit cap skips later matchStrings ([4d58e56](https://github.com/tibuntu/renovate-mcp/commit/4d58e56ca8eb163b23e3cc4651463397a94e84fc))
+* **renovate-cli:** decode child output per stream, not per chunk ([d3a0035](https://github.com/tibuntu/renovate-mcp/commit/d3a0035cf9ae7292a10911b35720c3c6148bc1a9))
+* **renovate-cli:** read the RE2 warning from stdout ([802302e](https://github.com/tibuntu/renovate-mcp/commit/802302e693f9c6c8b2da0f3775b4b57d8cdd1f13))
+* **report:** follow a saved-report pointer in annotate_dry_run and explain_dependency ([3de3806](https://github.com/tibuntu/renovate-mcp/commit/3de38060cfd5a9976af1001cce250c0f4ea10c8c))
+* **resolve_config:** expand a string `extends` ([dfcd96b](https://github.com/tibuntu/renovate-mcp/commit/dfcd96baeda66e7f726a200789425286f676b37d))
+* **resources:** ignore Object.prototype keys in preset and option lookups ([ebbb50c](https://github.com/tibuntu/renovate-mcp/commit/ebbb50cd50939b54c5731fd5741d29a1b89a996e))
+* **suggest_presets:** choose the automerge preset by whole words ([4adca3c](https://github.com/tibuntu/renovate-mcp/commit/4adca3ce663c47d7c560c15a34175402b8bd124f))
+* **worker:** remove the abort listener when a worker finishes ([f895f4b](https://github.com/tibuntu/renovate-mcp/commit/f895f4ba17cb47aca08eff0b48577f3994c98b86))
+* **write_config:** accept `..`-prefixed directory names and report real byte counts ([6d230a9](https://github.com/tibuntu/renovate-mcp/commit/6d230a9fce750618601b0309076f972d7884551e))
+
 ## [2.2.2](https://github.com/tibuntu/renovate-mcp/compare/v2.2.1...v2.2.2) (2026-11-25)
 
 
