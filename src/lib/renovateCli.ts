@@ -268,7 +268,9 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
         stdout,
         stderr,
         exitCode: code ?? -1,
-        runtimeWarnings: detectRuntimeWarnings(stderr),
+        // Renovate's logger writes to stdout (its bunyan stream), so the
+        // warning lives there on a real run; stderr is kept for wrappers.
+        runtimeWarnings: detectRuntimeWarnings(`${stderr}\n${stdout}`),
         truncated: stdoutBuf.truncated || stderrBuf.truncated,
       });
     });

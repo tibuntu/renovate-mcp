@@ -186,6 +186,14 @@ describe("run() streaming observers", () => {
     expect(result.runtimeWarnings[0]?.kind).toBe("re2-unusable");
   });
 
+  it("detects the RE2 WARN on stdout, where Renovate's logger writes it", async () => {
+    const script = await makeScript(`
+      process.stdout.write("WARN: RE2 not usable, falling back to RegExp\\n");
+    `);
+    const result = await run(process.execPath, [script]);
+    expect(result.runtimeWarnings.map((w) => w.kind)).toEqual(["re2-unusable"]);
+  });
+
   it("returns an empty runtimeWarnings array when stderr is clean", async () => {
     const script = await makeScript(`process.stdout.write("ok\\n");`);
     const result = await run(process.execPath, [script]);

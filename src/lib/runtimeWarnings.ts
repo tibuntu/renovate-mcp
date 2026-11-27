@@ -1,5 +1,5 @@
 /**
- * Detect Renovate runtime warnings emitted to stderr that callers benefit from
+ * Detect Renovate runtime warnings in its captured output that callers benefit from
  * knowing about even though Renovate itself keeps running. Currently the only
  * detected condition is the RE2 native-module dlopen failure: when the bundled
  * `re2.node` was compiled against a different Node ABI than the one currently
@@ -44,8 +44,8 @@ function isRe2DlopenFailure(err: unknown): { detail?: string } | null {
   return { detail: truncate(message, MAX_DETAIL_LENGTH) };
 }
 
-export function detectRuntimeWarnings(stderr: string): RuntimeWarning[] {
-  if (!stderr) return [];
+export function detectRuntimeWarnings(output: string): RuntimeWarning[] {
+  if (!output.trim()) return [];
 
   const warnings: RuntimeWarning[] = [];
   const seen = new Set<RuntimeWarningKind>();
@@ -59,7 +59,7 @@ export function detectRuntimeWarnings(stderr: string): RuntimeWarning[] {
     warnings.push(w);
   };
 
-  for (const rawLine of stderr.split(/\r?\n/)) {
+  for (const rawLine of output.split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line) continue;
     if (warnings.length >= MAX_WARNINGS) break;
