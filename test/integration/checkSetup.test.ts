@@ -2,8 +2,8 @@ import { describe, it, expect, afterEach } from "vitest";
 import { startServer, type McpSession } from "../helpers/mcpSession.js";
 
 /**
- * check_setup never shells out to the real Renovate CLI in tests — CI doesn't
- * install it. We stub both binaries with `/bin/echo` (exits 0 on --version) for
+ * check_setup never shells out to the real Renovate CLI in tests, so the
+ * result doesn't depend on the installed version. We stub both binaries with `/bin/echo` (exits 0 on --version) for
  * the happy path, or point them at nonexistent paths for the failure path, and
  * verify the MCP response shape end-to-end.
  */

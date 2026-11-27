@@ -3,8 +3,8 @@
  * Snapshot Renovate's manager registry into src/data/managers.generated.ts.
  *
  * The resulting file is committed to git. Runtime code in src/ never imports
- * the renovate package; this script is the one exception (it's a build-time
- * step). Regenerate after bumping the `renovate` devDependency.
+ * the renovate package from the main process; the build-time scripts under
+ * scripts/ may. Regenerate after bumping the `renovate` dependency.
  *
  * Source of truth: renovate/dist/modules/manager/index.js, which exports
  * `allManagersList` (regular + custom managers). `matchManagers` accepts both

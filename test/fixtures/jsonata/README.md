@@ -53,11 +53,11 @@ Renovate's library API).
 
 ## Update protocol
 
-When bumping the `renovate` devDep:
+When bumping the `renovate` dependency:
 
-1. The pin-drift test (plan 05-01) catches `jsonata`-version drift between
+1. The pin-drift test catches `jsonata`-version drift between
    our `dependencies.jsonata` and Renovate's `dependencies.jsonata`.
-2. The parity tests in this plan catch behavioral drift in Renovate's
+2. The parity tests catch behavioral drift in Renovate's
    extractor itself.
 
 If a parity test fails after a Renovate bump, read the bumped

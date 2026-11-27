@@ -204,7 +204,7 @@ Run `renovate-config-validator` against a file or inline object. Pair with [`lin
 
 **Working directory.** The validator runs in a fresh, empty temp directory, so a `config.js` in the server's working directory is never picked up as global config (`write_config` validates the same way). See [Security — working-directory config](security.md#working-directory-config).
 
-**Timeout.** The validator has a fixed 30 s budget. Overrunning it returns an `isError` that says `timed out after` — distinct from the missing-binary error, which points at `check_setup`.
+**Timeout.** The validator has a 30 s budget (see [Operations](operations.md) for the test-only override). Overrunning it returns an `isError` that says `timed out after` — distinct from the missing-binary error, which points at `check_setup`.
 
 ## `lint_config`
 
@@ -496,11 +496,11 @@ Validate, then atomically write a config to disk. A failed validation must never
 - `reason: "json5-not-jsonc-compatible"` — `.json5` files that lean on JSON5-only syntax (unquoted keys, single-quoted strings, hex literals, etc.) cannot round-trip safely.
 - `reason: "existing-file-unparseable"` — the file on disk doesn't parse as JSON / JSONC.
 - `reason: "package-json-missing"` — `filename` is `package.json` but no such file exists; write `renovate.json` instead.
-- `reason: "validator-timeout"` — the validator ran but overran its fixed 30 s budget, so the config was **not** validated. `validationOutput` says `timed out after`; the hint is to retry or check machine load, not to reach for `force: true`.
+- `reason: "validator-timeout"` — the validator ran but overran its 30 s budget, so the config was **not** validated. `validationOutput` says `timed out after`; the hint is to retry or check machine load, not to reach for `force: true`.
 
 The first two hint at `force: true` as the escape hatch (except for an unparseable `package.json`, which `force` never rewrites — fix it by hand). `package-json-missing` and `validator-timeout` suggest no `force` escape hatch.
 
-A validator that cannot be spawned yields `reason: "validator-unavailable"` (fix `RENOVATE_CONFIG_VALIDATOR_BIN` or reinstall); a timeout is never reported as unavailable, and `validation-failed` is reserved for a config the validator actually rejected.
+`force: true` without the `confirmForce` sentinel is refused with `reason: "force-confirmation-missing"` before anything is read or written. A validator that cannot be spawned yields `reason: "validator-unavailable"` (fix `RENOVATE_CONFIG_VALIDATOR_BIN` or reinstall); a timeout is never reported as unavailable, and `validation-failed` is reserved for a config the validator actually rejected.
 
 **`force: true` is destructive.** Pair it with `confirmForce: "YES_OVERRIDE_VALIDATION"` (the literal sentinel makes accidental overrides under prompt-injected tool calls harder). `force: true` skips both validation AND the round-trip path and rewrites the file with a clean `JSON.stringify` rendering — the user has accepted a clean rewrite. **Exception: `package.json`.** There `force: true` skips validation only; the nested round-trip at the `renovate` key still runs, because a whole-file rewrite would destroy the rest of the manifest.
 
@@ -540,7 +540,7 @@ MCP prompts package the documented multi-tool workflows into ready-to-run starti
 
 **Arguments:** `repoPath` (required) — absolute path to the repository root. `intent` (optional) — free-text description of what Renovate should do.
 
-Drives `check_setup` → `read_config` → `suggest_presets` (with `intent`) → `resolve_config` + `explain_config` on the resulting draft → `validate_config` + `lint_config` → `dry_run` with the draft as `configContent` (it runs in a temporary copy, nothing is written) → `write_config` on confirmation.
+Drives `check_setup` → `read_config` → `suggest_presets` (with `intent`) → `resolve_config` + `explain_config` on the resulting draft → `validate_config` + `lint_config` + `explain_paths` → `dry_run` with the draft as `configContent` (it runs in a temporary copy, nothing is written) → `write_config` on confirmation.
 
 ### `debug-package-rule`
 
@@ -558,7 +558,7 @@ Drives drafting a `customManagers` entry (regex or jsonata) → `preview_custom_
 
 **Arguments:** `repoPath` (required) — absolute path to the repository root. `intent` (optional) — free-text description of what Renovate should do.
 
-For a repo with no Renovate config yet (if `read_config` finds one, it redirects to `design-renovate-config`). Drives `check_setup` → `read_config` (expecting no config) → `dry_run` with `dryRunMode: "extract"` to detect managers and package files → `suggest_presets` with a query built from the detected ecosystems plus `intent` → `lint_config` + `validate_config` on the draft → a full `dry_run` with the draft as `configContent` (it runs in a temporary copy, nothing is written) → `write_config` on confirmation.
+For a repo with no Renovate config yet (if `read_config` finds one, it redirects to `design-renovate-config`). Drives `check_setup` → `read_config` (expecting no config) → `dry_run` with `dryRunMode: "extract"` to detect managers and package files → `suggest_presets` with a query built from the detected ecosystems plus `intent` → `lint_config` + `validate_config` + `explain_paths` on the draft → a full `dry_run` with the draft as `configContent` (it runs in a temporary copy, nothing is written) → `write_config` on confirmation.
 
 ### `check-config-after-upgrade`
 

@@ -65,10 +65,10 @@ Nineteen tools, seven resources, and five workflow prompts. Each tool name below
 
 | Prompt | Drives |
 | --- | --- |
-| [`design-renovate-config`](docs/tools.md#design-renovate-config) | `check_setup` → `read_config` → `suggest_presets` → `resolve_config`/`explain_config` → `validate_config`/`lint_config` → `dry_run` of the draft (`configContent`) → `write_config` on confirmation. |
+| [`design-renovate-config`](docs/tools.md#design-renovate-config) | `check_setup` → `read_config` → `suggest_presets` → `resolve_config`/`explain_config` → `validate_config`/`lint_config`/`explain_paths` → `dry_run` of the draft (`configContent`) → `write_config` on confirmation. |
 | [`debug-package-rule`](docs/tools.md#debug-package-rule) | `check_setup` → `read_config` → `test_package_rules` (matches + rendered names) → `dry_run` (with `reportOutputPath`) → `annotate_dry_run` → `explain_dependency` → a verdict naming rule indices and matchers. |
 | [`author-custom-manager`](docs/tools.md#author-custom-manager) | Draft a `customManagers` entry → `preview_custom_manager` iteratively → `validate_config`/`lint_config` → `dry_run` of the draft (`configContent`) → `write_config` on confirmation. |
-| [`onboard-repo`](docs/tools.md#onboard-repo) | For repos without a config: `check_setup` → `read_config` (expect none) → `dry_run` (extract mode) → `suggest_presets` → `lint_config`/`validate_config` → full `dry_run` of the draft (`configContent`) → `write_config` on confirmation. |
+| [`onboard-repo`](docs/tools.md#onboard-repo) | For repos without a config: `check_setup` → `read_config` (expect none) → `dry_run` (extract mode) → `suggest_presets` → `lint_config`/`validate_config`/`explain_paths` → full `dry_run` of the draft (`configContent`) → `write_config` on confirmation. |
 | [`check-config-after-upgrade`](docs/tools.md#check-config-after-upgrade) | After a Renovate bot upgrade: `check_setup` (version comparison) → `read_config` → `migrate_config`/`lint_config`/`validate_config` → `dry_run` (extract mode) → new features from release notes or `renovate://options` → `write_config` on confirmation. |
 
 ## Requirements
