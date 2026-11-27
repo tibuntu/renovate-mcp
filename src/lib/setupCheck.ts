@@ -169,12 +169,16 @@ function cmp(a: ParsedVersion, b: ParsedVersion): number {
 
 /**
  * Tiny semver-range matcher tuned for the shapes Renovate's `engines.node`
- * actually uses (currently `^24.11.0`). Recognized: `^X.Y.Z`, `~X.Y.Z`,
- * `>=X.Y.Z`, and bare `X.Y.Z`. Anything else is treated as a non-match so we
- * stay conservative — a stale parser must not falsely claim a match. Exported
- * for unit tests.
+ * actually uses (currently `^24.11.0 || ^26.13.0`). Recognized: `^X.Y.Z`,
+ * `~X.Y.Z`, `>=X.Y.Z`, and bare `X.Y.Z`, joined by `||`. Anything else is
+ * treated as a non-match so we stay conservative — a stale parser must not
+ * falsely claim a match. Exported for unit tests.
  */
 export function versionSatisfiesRange(version: string, range: string): boolean {
+  return range.split("||").some((alternative) => satisfiesComparator(version, alternative));
+}
+
+function satisfiesComparator(version: string, range: string): boolean {
   const v = parseVersion(version);
   if (!v) return false;
   const trimmed = range.trim();
