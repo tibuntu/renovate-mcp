@@ -6,7 +6,7 @@ type Loaded = { ok: true; value: unknown } | { ok: false; error: string };
 
 /**
  * Read + JSON-parse a dry_run report from disk (the `reportPath` input shared
- * by annotate_dry_run and explain_dependency). Pair with `dry_run`'s
+ * by annotate_dry_run, explain_dependency and dry_run_diff). Pair with `dry_run`'s
  * `reportOutputPath` to round-trip large reports without hitting MCP
  * response-content caps.
  */
@@ -114,11 +114,24 @@ export async function readLogPath(logPath: string): Promise<Loaded> {
   return { ok: true, value: { repositories } };
 }
 
-export type ReportSource = "inline" | "reportPath" | "logPath";
+type ReportSource = "inline" | "reportPath" | "logPath";
+
+/**
+ * The on-disk pointer carried by an inline report input, if any: `{ reportPath }`
+ * itself (also the collapsed `{ reportPath, repoCount, updateCount }` that
+ * `dry_run` returns under `report` with `reportOutputPath`), or a full
+ * `dry_run` summary whose `report` collapsed to one.
+ */
+export function reportPointer(input: Record<string, unknown>): string | undefined {
+  if (typeof input.reportPath === "string") return input.reportPath;
+  const nested = input.report;
+  return isRecord(nested) && typeof nested.reportPath === "string" ? nested.reportPath : undefined;
+}
 
 /**
  * The report input shared by annotate_dry_run and explain_dependency: exactly
- * one of an inline `report`, a `reportPath` or a `logPath`.
+ * one of an inline `report`, a `reportPath` or a `logPath`. An inline `report`
+ * that is only a pointer to a saved report is followed, as in dry_run_diff.
  */
 export async function resolveReportInput(input: {
   report?: unknown;
@@ -135,12 +148,13 @@ export async function resolveReportInput(input: {
   }
   if (given.length === 2) return { ok: false, error: `Pass either ${given[0]} or ${given[1]}, not both.` };
   if (given.length > 2) return { ok: false, error: "Pass only one of report, reportPath or logPath." };
+  const reportPath =
+    input.reportPath || (isRecord(input.report) ? reportPointer(input.report) : undefined);
   const loaded = input.logPath
     ? await readLogPath(input.logPath)
-    : input.reportPath
-      ? await readReportPath(input.reportPath)
+    : reportPath
+      ? await readReportPath(reportPath)
       : { ok: true as const, value: input.report };
   if (!loaded.ok) return loaded;
-  return { ok: true, value: loaded.value, source: input.logPath ? "logPath" : input.reportPath ? "reportPath" : "inline" };
-  return { ok: true, value: input.report, source: "inline" };
+  return { ok: true, value: loaded.value, source: input.logPath ? "logPath" : reportPath ? "reportPath" : "inline" };
 }

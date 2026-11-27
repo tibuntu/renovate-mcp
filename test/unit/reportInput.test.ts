@@ -127,6 +127,15 @@ describe("resolveReportInput", () => {
     const none = await resolveReportInput({});
     expect(none).toMatchObject({ ok: false });
   });
+
+  it("follows an inline report that is only dry_run's reportOutputPath pointer", async () => {
+    const saved = path.join(scratch, "report.json");
+    await writeFile(saved, JSON.stringify({ repositories: { r: {} } }));
+    const expected = { ok: true, value: { repositories: { r: {} } }, source: "reportPath" };
+    // The collapsed pointer itself, and a full dry_run summary carrying it.
+    expect(await resolveReportInput({ report: { reportPath: saved, repoCount: 1, updateCount: 0 } })).toEqual(expected);
+    expect(await resolveReportInput({ report: { ok: true, report: { reportPath: saved } } })).toEqual(expected);
+  });
 });
 
 describe("readLogPath: memory", () => {
