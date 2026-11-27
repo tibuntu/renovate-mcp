@@ -357,8 +357,10 @@ export const FACETS: Facet[] = [
     id: "automerge",
     test: (q) => has(q, "automerge", "auto-merge", "auto merge"),
     build: (q) => {
-      if (has(q, "all", "everything")) return { extends: [":automergeAll"] };
-      if (has(q, "major"))
+      // Whole words: "automatically" and "small" contain "all".
+      if (/\b(?:all|everything)\b/.test(q)) return { extends: [":automergeAll"] };
+      // "…but not major" must not select the major preset.
+      if (has(q, "major") && !/\b(?:not|no|without|except|excluding)\s+(?:\w+\s+)?major/.test(q))
         return {
           extends: [":automergeMajor"],
           note: "Automerging major updates is risky — confirm with dry_run first.",
