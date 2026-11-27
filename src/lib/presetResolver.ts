@@ -34,8 +34,7 @@ export interface ResolveResult {
  * Sentinel used as the `label`/`source` of contributions that come from the
  * user's own input config (the keys that are siblings of `extends`, not from
  * any preset). Angle brackets cannot appear in a real preset reference, so this
- * never collides with one. Re-exported from `configExplainer.ts` for callers
- * that historically imported it from there.
+ * never collides with one.
  */
 export const OWN_SOURCE = "<own>";
 

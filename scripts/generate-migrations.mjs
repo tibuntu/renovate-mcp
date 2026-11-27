@@ -4,8 +4,8 @@
  * src/data/migrations.generated.ts.
  *
  * The resulting file is committed to git. Runtime code in src/ never imports
- * the renovate package; this script is the one exception (it's a build-time
- * step). Regenerate after bumping the `renovate` devDependency.
+ * the renovate package from the main process; the build-time scripts under
+ * scripts/ may. Regenerate after bumping the `renovate` dependency.
  *
  * Sources of truth, both static members of `MigrationsService`:
  *   - `renamedProperties` — `Map<oldKey, newKey>` of plain renames; emitted

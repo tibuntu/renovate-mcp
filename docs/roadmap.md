@@ -14,5 +14,5 @@ Smaller items surfaced during recent work that haven't been scheduled yet:
 
 - **Per-rule lint suppression** for `lint_config` findings.
 - **npm-hosted presets in `resolve_config`.** They would need a registry fetch plus tarball extraction, and `dry_run` already resolves them through the Renovate CLI. Every git-hosted source is covered: `github>` / `gitlab>` / `gitea>` / `forgejo>` directly, Bitbucket Cloud through `local>` + `platform: "bitbucket"` — see [#419](https://github.com/tibuntu/renovate-mcp/issues/419).
-- **Full Handlebars templating** (helpers, conditionals) in `preview_custom_manager` — it implements positional `{{argN}}` / `{{groupName}}` substitution only, by design; see [`docs/tools.md`](tools.md#preview_custom_manager).
+- **Full Handlebars templating** (helpers, conditionals) in `preview_custom_manager` — it implements `{{groupName}}` substitution only, by design; see [`docs/tools.md`](tools.md#preview_custom_manager).
 - **A `preset-order-shadowing` lint rule.** Flagging a later `extends` entry that silently overrides an earlier one's fields is a real footgun, but detecting it needs preset expansion inside the linter, which would break `lint_config`'s pure/offline design. `explain_config` already exposes this provenance today.

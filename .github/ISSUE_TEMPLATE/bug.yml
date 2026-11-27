@@ -52,8 +52,8 @@ body:
     id: node-version
     attributes:
       label: Node version
-      description: Output of `node --version` (must be ≥ 24).
-      placeholder: v24.0.0
+      description: Output of `node --version` (must be ≥ 24.11).
+      placeholder: v24.11.0
     validations:
       required: true
   - type: textarea

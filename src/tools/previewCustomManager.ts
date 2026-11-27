@@ -44,7 +44,7 @@ export function registerPreviewCustomManager(server: McpServer): void {
         "  - Supports `customType: \"regex\"` and `customType: \"jsonata\"` (the latter requires `fileFormat` to be \"json\", \"yaml\", or \"toml\").",
         "  - For `customType: \"jsonata\"`: each `matchStrings` entry is a JSONata expression that may return EITHER an array of objects OR a single object (the single object is auto-wrapped to a one-element array, mirroring Renovate's own schema). Object keys map to dep fields (`depName`, `currentValue`, `datasource`, etc.).",
         "  - Template substitution stringifies non-string primitive values (e.g. numeric `currentValue: 1.2` becomes the string \"1.2\"); null/undefined and nested objects/arrays are dropped from the substitution bag. Same `{{groupName}}` template gap as regex — full Handlebars helpers are not implemented.",
-        "  - `matchStringsStrategy` other than `any` (the default) is not implemented; a warning is emitted.",
+        "  - `matchStringsStrategy` supports `any` (the default), `combination` and `recursive` for regex managers; any other value warns and falls back to `any`.",
         "  - `.gitignore` (and `.git/info/exclude`, plus nested `.gitignore`s) is honored like `git` does. `node_modules/` and `.git/` are always skipped as a safety net, even without a `.gitignore`.",
         "",
         "Run the `dry_run` tool afterwards for full-fidelity confirmation.",

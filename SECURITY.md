@@ -22,10 +22,10 @@ A maintainer will acknowledge the report within a few business days. If the issu
 In scope:
 
 - The `renovate-mcp` server itself (code under `src/`, the published npm package, the resources and tools it exposes over MCP).
-- Handling of auth tokens read from the environment (`GITHUB_TOKEN`, `GITLAB_TOKEN`, `RENOVATE_TOKEN`, `GITHUB_COM_TOKEN`).
+- Handling of auth tokens read from the environment (`RENOVATE_TOKEN`, `GITHUB_COM_TOKEN`, `GITHUB_TOKEN`, `GITLAB_TOKEN`, `GITEA_TOKEN`, `FORGEJO_TOKEN`, `BITBUCKET_TOKEN`, and `RENOVATE_MCP_HOST_TOKENS`; see [`docs/security.md`](docs/security.md)).
 - File writes performed by `write_config` against user-supplied paths.
 - The config the spawned Renovate CLI and `renovate-config-validator` load: only what the operator or the caller named, and only as data (see [`docs/security.md`](docs/security.md#working-directory-config)).
-- HTTPS fetches performed by `resolve_config` when `externalPresets: true` (github.com / gitlab.com / custom endpoints).
+- HTTPS fetches performed by `resolve_config` and the other preset-expanding tools when `externalPresets: true` (the GitHub, GitLab, Gitea, Forgejo and Bitbucket hosts, plus custom endpoints; see [`docs/security.md`](docs/security.md)).
 
 Out of scope:
 

@@ -3,7 +3,7 @@ import { parentPort, workerData } from "node:worker_threads";
 /**
  * Worker entry point for `migrate_config`. Imports Renovate's migration
  * library inside the worker thread — see ADR
- * `docs/adr/0001-worker-isolated-renovate-migration.md`. Kept deliberately
+ * `docs/adrs/0001-worker-isolated-renovate-migration.md`. Kept deliberately
  * narrow: no logger, no shared state, single request/response.
  *
  * `migrationWorker.ts` is the only caller; do not import this from anywhere

@@ -6,8 +6,9 @@
  * `packageFiles with updates`; `filterDependencyDashboardData` in
  * finalize/repository-statistics.js for `branches info extended`, whose
  * upgrades carry no `manager`; `BranchResult` / `PrBlockedBy` in
- * workers/types.d.ts for `result` / `prBlockedBy`). Replace with a trimmed,
- * scrubbed real log once one is available.
+ * workers/types.d.ts for `result` / `prBlockedBy`). The captured counterpart
+ * is `test/fixtures/bot-log-real.jsonl`; this one stays for cases that need to
+ * vary the payloads.
  */
 
 export const REPO = "example/repo";

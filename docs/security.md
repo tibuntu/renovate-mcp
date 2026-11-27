@@ -58,6 +58,8 @@ Gitea / Forgejo tokens go out as `Authorization: Bearer …`; Bitbucket tokens a
 
 `RENOVATE_MCP_MIGRATION_WORKER_ENTRY`, `RENOVATE_MCP_MERGE_WORKER_ENTRY`, `RENOVATE_MCP_PACKAGE_RULES_WORKER_ENTRY`, `RENOVATE_MCP_SCHEDULE_WORKER_ENTRY`, and `RENOVATE_MCP_PRESET_FLATTEN_WORKER_ENTRY` redirect which compiled worker file `migrate_config`, `resolve_config`/`explain_config`, `test_package_rules`/`annotate_dry_run`/`explain_dependency`, `explain_schedule`, and `dry_run`'s local-preset flattening spawn, respectively. The flattening worker receives the env tokens as host rules, so redirecting it hands them to whatever file it names. The test suite points them at the compiled `dist/lib/*WorkerImpl.js` files so vitest's TS-source worker entry (which has no sibling `.js` until after a build) still resolves. Because they redirect which code actually executes, treat them like any other code-injection vector — never set them outside the test suite.
 
+`RENOVATE_MCP_VALIDATOR_TIMEOUT_MS` overrides the 30 s `renovate-config-validator` budget of `validate_config` / `write_config` (a positive integer; anything else is ignored). It is a test seam as well, not a tuning knob.
+
 ### `GITHUB_COM_TOKEN` — a separate role
 
 `GITHUB_COM_TOKEN` authenticates Renovate's **github.com datasource** lookups (release notes, `github-tags` / `github-releases` / `github-actions`) — distinct from the **platform** token above, which authenticates "where Renovate runs" (reading the repo, opening PRs). It is **never auto-derived** from `GITHUB_TOKEN` / `RENOVATE_TOKEN`: the platform token may be a GitHub Enterprise, GitLab, or otherwise-scoped credential, and silently forwarding it to an external host (github.com) is a credential-leak path we refuse to take.

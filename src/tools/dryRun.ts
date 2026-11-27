@@ -819,8 +819,8 @@ export function registerDryRun(server: McpServer): void {
           );
         }
 
-        // Merge MCP-side advisory warnings (currently just the inline-secret
-        // notice) ahead of Renovate's own runtime warnings so they surface at
+        // Merge MCP-side advisory warnings ahead of Renovate's own runtime
+        // warnings so they surface at
         // the top of the array — easier for clients to render prominently.
         const combinedWarnings = [
           ...mcpWarnings,
