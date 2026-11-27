@@ -22,6 +22,13 @@ describe("lintConfig", () => {
   describe("dead-regex-missing-slash", () => {
     const RULE = "dead-regex-missing-slash";
 
+    it("accepts a case-insensitive '/…/i' regex", () => {
+      const findings = lintConfig({
+        packageRules: [{ matchPackageNames: ["/^@Angular\\//i"], groupName: "angular" }],
+      });
+      expect(findings).toEqual([]);
+    });
+
     it("flags leading '/' with no trailing '/'", () => {
       const findings = lintConfig({
         packageRules: [
