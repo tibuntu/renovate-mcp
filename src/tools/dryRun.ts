@@ -26,8 +26,8 @@ import { assertRepoDir, NETWORK_READ_ONLY_ANNOTATIONS } from "../lib/toolInputs.
 import { detectLookupProblems } from "../lib/lookupProblems.js";
 import {
   collectSecrets,
+  createScrubber,
   removeHostRulesConfig,
-  scrubSecrets,
   writeHostRulesConfig,
   type HostRule,
 } from "../lib/hostRulesConfig.js";
@@ -482,6 +482,8 @@ export function registerDryRun(server: McpServer): void {
       if (resolvedToken) secrets.push(resolvedToken);
       // Renovate reads it from env, and the flattening worker gets it too.
       if (process.env.GITHUB_COM_TOKEN) secrets.push(process.env.GITHUB_COM_TOKEN);
+      // Compiled once: the report reviver below calls it for every string.
+      const scrub = createScrubber(secrets);
 
       // Inline-secret detection: fires when the *original* `token` parameter
       // (not the env-resolved fallback) is a non-empty string, or when any
@@ -566,7 +568,7 @@ export function registerDryRun(server: McpServer): void {
       // Renovate runs in the copy, so its output names the copy: show the
       // caller's repoPath instead, everywhere, and scrub secrets on top.
       const unCopy = (text: string): string => (copy ? text.split(copy.dir).join(repoPath) : text);
-      const clean = (text: string): string => scrubSecrets(unCopy(text), secrets);
+      const clean = (text: string): string => scrub(unCopy(text));
 
       const emit = (message: string): void => {
         if (!progressEnabled) return;
@@ -725,7 +727,7 @@ export function registerDryRun(server: McpServer): void {
           // Every string is scrubbed, so the inline report, reportErrors and a
           // saved reportOutputPath never carry a token Renovate echoed.
           report = JSON.parse(copy ? raw.split(inJson(copy.dir)).join(inJson(repoPath)) : raw, (_key, value: unknown) =>
-            typeof value === "string" ? scrubSecrets(value, secrets) : value,
+            typeof value === "string" ? scrub(value) : value,
           );
         } catch {
           // no report produced (e.g., renovate errored before writing)
