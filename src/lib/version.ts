@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 
-export const SERVER_VERSION = "2.2.2"; // x-release-please-version
+export const SERVER_VERSION = "2.2.3"; // x-release-please-version
 
 export type BuildMode = "local" | "released";
 
