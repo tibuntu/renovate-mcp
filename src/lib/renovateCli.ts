@@ -218,13 +218,15 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
       return trailing.length > MAX_LINE_BYTES ? trailing.slice(-MAX_LINE_BYTES) : trailing;
     };
 
-    child.stdout.on("data", (d) => {
-      const chunk = d.toString();
+    // Decode per stream, not per chunk: a multi-byte character split across
+    // two pipe chunks would otherwise come out as U+FFFD.
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
       stdoutBuf.push(chunk);
       stdoutLineBuf = emitLines(chunk, stdoutLineBuf, opts.onStdoutLine);
     });
-    child.stderr.on("data", (d) => {
-      const chunk = d.toString();
+    child.stderr.on("data", (chunk: string) => {
       stderrBuf.push(chunk);
       stderrLineBuf = emitLines(chunk, stderrLineBuf, opts.onStderrLine);
     });
