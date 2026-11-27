@@ -129,7 +129,8 @@ export function registerOptionResources(server: McpServer): void {
 export function getOptionEntry(
   name: string,
 ): (GeneratedOption & { name: string }) | undefined {
-  const opt = OPTIONS[name];
+  // `hasOwn`: `constructor` / `toString` are not options.
+  const opt = Object.hasOwn(OPTIONS, name) ? OPTIONS[name] : undefined;
   if (!opt) return undefined;
   return { name, ...opt };
 }
