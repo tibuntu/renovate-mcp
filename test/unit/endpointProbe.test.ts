@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { probeEndpoint } from "../../src/lib/endpointProbe.js";
 
 const REAL_FETCH = globalThis.fetch;
@@ -32,6 +32,14 @@ describe("probeEndpoint", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: "HEAD" });
     expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: "GET" });
+  });
+
+  it("does not follow redirects; a 3xx counts as reachable", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 302 }));
+    globalThis.fetch = fetchMock as never;
+    const result = await probeEndpoint("https://git.example.com/api/v4/");
+    expect(result).toMatchObject({ reachable: true, status: 302 });
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ redirect: "manual" });
   });
 
   it("returns reachable=false on 5xx", async () => {

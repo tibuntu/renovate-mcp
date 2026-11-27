@@ -32,13 +32,15 @@ export async function probeEndpoint(
   // One budget covers the HEAD and its optional GET fallback.
   const signal = AbortSignal.timeout(timeoutMs);
   try {
-    let response = await fetch(url, { method: "HEAD", signal });
+    // `redirect: "manual"`: a validated URL must not be followed to a host the
+    // allowlist never saw. A 3xx still proves the endpoint answers.
+    let response = await fetch(url, { method: "HEAD", signal, redirect: "manual" });
     if (response.status === 405) {
-      response = await fetch(url, { method: "GET", signal });
+      response = await fetch(url, { method: "GET", signal, redirect: "manual" });
     }
     // Only the status matters; release the body so the connection is freed.
     await response.body?.cancel().catch(() => undefined);
-    return { url, reachable: response.ok || response.status < 500, status: response.status };
+    return { url, reachable: response.status < 500, status: response.status };
   } catch (err) {
     const message =
       err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError")

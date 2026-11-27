@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { checkSetup } from "../../src/lib/setupCheck.js";
+import { checkSetup, describeSetup } from "../../src/lib/setupCheck.js";
 import type { EndpointProbeResult } from "../../src/lib/endpointProbe.js";
 
 const ENV_KEYS = [
@@ -66,6 +66,21 @@ describe("checkSetup repoContext", () => {
   it("omits repoContext when repoPath is not provided", async () => {
     const status = await checkSetup();
     expect(status.repoContext).toBeUndefined();
+  });
+
+  it("never echoes credentials embedded in the origin URL or an endpoint", async () => {
+    const dir = makeRepo({
+      originUrl: "https://oauth2:glpat-origin-secret@gitlab.com/group/repo.git",
+      renovateConfig: { endpoint: "https://user:cfg-secret@gitlab.example.com/api/v4/" },
+    });
+    process.env.RENOVATE_ENDPOINT = "https://user:env-secret@gitlab.example.com/api/v4/";
+    const status = await checkSetup({ repoPath: dir, probe: fakeProbe() });
+    expect(status.repoContext?.remote?.url).toBe("https://<redacted>@gitlab.com/group/repo.git");
+    expect(status.repoContext?.remote?.classified).toBe("gitlab");
+    const everything = JSON.stringify(status) + describeSetup(status);
+    for (const secret of ["glpat-origin-secret", "cfg-secret", "env-secret"]) {
+      expect(everything).not.toContain(secret);
+    }
   });
 
   it("classifies github.com origin and hints missing GITHUB_TOKEN", async () => {

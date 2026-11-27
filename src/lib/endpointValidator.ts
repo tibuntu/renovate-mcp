@@ -21,7 +21,7 @@ import { BlockList, isIP } from "node:net";
  * input that `new URL()` rejects. Over-redacts on exotic non-URL input, which
  * is the safe direction — these messages land in logs and tool output.
  */
-function redactUserinfo(endpoint: string): string {
+export function redactUserinfo(endpoint: string): string {
   return endpoint.replace(/^((?:[a-z][a-z0-9+.-]*:\/\/)?)[^/?#]*@/i, "$1<redacted>@");
 }
 
