@@ -7,6 +7,7 @@ import {
   HOST_TOKENS_ENV,
   PLATFORM_TOKEN_ENV,
   PUBLIC_HOST,
+  githubComTokenVar,
   homeScope,
   parseHostTokens,
   selectToken,
@@ -626,7 +627,8 @@ export function inspectPlatformContext(env: NodeJS.ProcessEnv): PlatformContext 
     RENOVATE_TOKEN: Boolean(env.RENOVATE_TOKEN),
     GITHUB_TOKEN: Boolean(env.GITHUB_TOKEN),
     GITLAB_TOKEN: Boolean(env.GITLAB_TOKEN),
-    GITHUB_COM_TOKEN: Boolean(env.GITHUB_COM_TOKEN),
+    // Also true for Renovate's `RENOVATE_GITHUB_COM_TOKEN` spelling.
+    GITHUB_COM_TOKEN: Boolean(env[githubComTokenVar(env)]),
     GITEA_TOKEN: Boolean(env.GITEA_TOKEN),
     FORGEJO_TOKEN: Boolean(env.FORGEJO_TOKEN),
     BITBUCKET_TOKEN: Boolean(env.BITBUCKET_TOKEN),

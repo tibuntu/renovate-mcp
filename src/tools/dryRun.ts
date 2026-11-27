@@ -11,7 +11,7 @@ import {
   formatTimeoutError,
   CommandTimeoutError,
 } from "../lib/renovateCli.js";
-import { buildHostTokenRules, homeScope, matchesHost, selectToken, tokenHost, type TokenScope } from "../lib/hostTokens.js";
+import { buildHostTokenRules, githubComTokenVar, homeScope, matchesHost, selectToken, tokenHost, type TokenScope } from "../lib/hostTokens.js";
 import { HOSTED_PLATFORMS } from "../lib/gitRemote.js";
 import {
   findLocalPresets,
@@ -481,7 +481,10 @@ export function registerDryRun(server: McpServer): void {
       const secrets = [...new Set([...collectSecrets(ruleList), ...autoRules.secrets])];
       if (resolvedToken) secrets.push(resolvedToken);
       // Renovate reads it from env, and the flattening worker gets it too.
-      if (process.env.GITHUB_COM_TOKEN) secrets.push(process.env.GITHUB_COM_TOKEN);
+      // Both spellings are scrubbed, whichever one Renovate ends up using.
+      for (const name of ["GITHUB_COM_TOKEN", "RENOVATE_GITHUB_COM_TOKEN"]) {
+        if (process.env[name]) secrets.push(process.env[name]);
+      }
       // Compiled once: the report reviver below calls it for every string.
       const scrub = createScrubber(secrets);
 
@@ -599,7 +602,7 @@ export function registerDryRun(server: McpServer): void {
           // The resolver authenticates like the spawned Renovate will: env
           // token rules, per-call rules, then GITHUB_COM_TOKEN as Renovate
           // appends it from env.
-          const githubCom = process.env.GITHUB_COM_TOKEN;
+          const githubCom = process.env[githubComTokenVar()];
           const result = await flattenLocalPresets(copy.config, {
             platform: route.platform!,
             endpoint: route.endpoint,

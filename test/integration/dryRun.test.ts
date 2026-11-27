@@ -1426,6 +1426,26 @@ process.exit(1);
       expect(text).toContain("[REDACTED]");
     });
 
+    it("scrubs RENOVATE_GITHUB_COM_TOKEN, the spelling Renovate also reads", async () => {
+      const leakyBin = path.join(repo, "leaky-com-prefixed.mjs");
+      await writeFile(
+        leakyBin,
+        `#!/usr/bin/env node
+process.stderr.write("401 for api.github.com with ghp-prefixed-leak-888\\n");
+process.exit(1);
+`,
+      );
+      await chmod(leakyBin, 0o755);
+      session = await startServer({ RENOVATE_BIN: leakyBin, RENOVATE_GITHUB_COM_TOKEN: "ghp-prefixed-leak-888" });
+      const res = await session.request<{ content: Array<{ text: string }>; isError?: boolean }>("tools/call", {
+        name: "dry_run",
+        arguments: { repoPath: repo },
+      });
+      const text = res.result!.content[0]!.text;
+      expect(text).not.toContain("ghp-prefixed-leak-888");
+      expect(text).toContain("[REDACTED]");
+    });
+
     it("scrubs tokens from the inline report, reportErrors and a saved reportOutputPath", async () => {
       const leakyBin = path.join(repo, "leaky-report.mjs");
       await writeFile(
