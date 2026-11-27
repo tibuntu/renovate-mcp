@@ -5,6 +5,13 @@ import {
   getOptionEntry,
 } from "../../src/resources/options.js";
 
+describe("getOptionEntry", () => {
+  it("does not resolve Object.prototype keys as options", () => {
+    expect(getOptionEntry("constructor")).toBeUndefined();
+    expect(getOptionEntry("toString")).toBeUndefined();
+  });
+});
+
 describe("renderOptionsIndex", () => {
   const text = renderOptionsIndex();
 

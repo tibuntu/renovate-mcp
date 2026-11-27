@@ -93,7 +93,8 @@ export function registerPresetResources(server: McpServer): void {
     },
     async (uri, variables) => {
       const name = decodeUriVariable(variables.name);
-      const preset = PRESETS[name];
+      // `hasOwn`: `constructor` / `toString` are not presets.
+      const preset = Object.hasOwn(PRESETS, name) ? PRESETS[name] : undefined;
       if (!preset) {
         throw new Error(
           `Unknown preset: ${name}. Fetch renovate://presets for the full list.`,
