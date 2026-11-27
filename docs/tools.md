@@ -181,8 +181,8 @@ Preview a `customManagers` entry against a local repo. For `customType: "regex"`
 
 **Supported `customType` matrix:**
 
-- `regex` — `matchStringsStrategy` of `any`, `combination`, or `recursive`. Others warn and fall back to `any`.
-- `jsonata` — `fileFormat` is required and must be one of `json`, `yaml`, or `toml`. The file is parsed structurally up front (via `JSON.parse`, the `yaml` package, or `smol-toml`), then each `matchStrings` entry is evaluated as a JSONata expression against the parsed value.
+- `regex` — `matchStringsStrategy` of `any`, `combination`, or `recursive`. Others warn and fall back to `any`. As in Renovate, each `matchStrings` entry runs with the global flag only, so `^` / `$` anchor to the start / end of the file, not of each line.
+- `jsonata` — `fileFormat` is required and must be one of `json`, `yaml`, or `toml`. The file is parsed structurally up front (via `JSON.parse`, the `yaml` package, or `smol-toml`), then each `matchStrings` entry is evaluated as a JSONata expression against the parsed value. For `yaml` that value is the array of **all** documents in the file, even when there is only one — the same input Renovate's own YAML parser hands to JSONata, so multi-document files (e.g. Kubernetes manifests) work.
 
 **JSONata return shape:** each expression must return either an array of objects whose keys map to dep fields (`depName`, `currentValue`, `datasource`, `versioning`, …) OR a single bare object that is auto-wrapped to a one-element array — mirroring Renovate's own `QueryResultZod` schema. Non-string primitive values are stringified for `{{groupName}}` template substitution (e.g. `currentValue: 1.2` → `"1.2"`); `null` / `undefined` and nested objects/arrays are dropped from the substitution bag.
 

@@ -47,6 +47,17 @@ describe("previewCustomManager", () => {
     });
   });
 
+  it("runs matchStrings without the multiline flag, like Renovate (`^` is start of file)", async () => {
+    await writeFile(path.join(repo, "Dockerfile"), "FROM alpine:3.19\nFROM nginx:1.25\n");
+    const result = await previewCustomManager(repo, {
+      customType: "regex",
+      fileMatch: ["(^|/)Dockerfile$"],
+      matchStrings: ["^FROM (?<depName>[^:\\s]+):(?<currentValue>\\S+)"],
+      datasourceTemplate: "docker",
+    });
+    expect(result.hits.map((h) => h.line)).toEqual([1]);
+  });
+
   it("surfaces a clear error when fileMatch looks like a glob instead of a regex", async () => {
     // `**/*.yaml` is the glob most users reach for. It is not a valid regex —
     // the leading `**` is a "nothing to repeat" error. We want that to throw

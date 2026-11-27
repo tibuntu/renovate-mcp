@@ -20,7 +20,13 @@ describe("parseStructured", () => {
 
   it("parses YAML content (lazy-imports yaml)", async () => {
     const res = await parseStructured("a: 1\n", "yaml");
-    expect(res).toEqual({ ok: true, value: { a: 1 } });
+    // An array of documents, like Renovate's parseYaml — even for one document.
+    expect(res).toEqual({ ok: true, value: [{ a: 1 }] });
+  });
+
+  it("parses every document of a multi-document YAML file", async () => {
+    const res = await parseStructured("a: 1\n---\na: 2\n", "yaml");
+    expect(res).toEqual({ ok: true, value: [{ a: 1 }, { a: 2 }] });
   });
 
   it("parses TOML content (lazy-imports smol-toml)", async () => {
