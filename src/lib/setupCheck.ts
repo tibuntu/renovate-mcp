@@ -18,7 +18,6 @@ import {
   readOriginRemote,
   type ClassifiedRemote,
   type ParsedRemote,
-  type RemoteClassification,
   HOSTED_PLATFORMS,
   type HostedPlatform,
 } from "./gitRemote.js";

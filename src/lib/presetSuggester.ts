@@ -312,7 +312,7 @@ export async function indexLocalPresets(
 let builtInCorpus: Corpus | null = null;
 
 /** The committed built-in preset catalogue, built into a searchable corpus once. */
-export function getBuiltInCorpus(): Corpus {
+function getBuiltInCorpus(): Corpus {
   if (!builtInCorpus) {
     const presets: CorpusPreset[] = PRESET_NAMES.map((name) => {
       const p = PRESETS[name]!;
@@ -334,7 +334,7 @@ export function getBuiltInCorpus(): Corpus {
 // unvalidated and compose into validate_config / lint_config.
 // ---------------------------------------------------------------------------
 
-export interface DraftContribution {
+interface DraftContribution {
   extends?: string[];
   packageRules?: Record<string, unknown>[];
   topLevel?: Record<string, unknown>;

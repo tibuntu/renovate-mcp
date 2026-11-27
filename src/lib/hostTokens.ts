@@ -1,6 +1,12 @@
-import type { Credential } from "./credentialResolver.js";
 import { HOSTED_PLATFORMS, type HostedPlatform } from "./gitRemote.js";
 import { HOST_RULES_MAX_ITEMS } from "./inputLimits.js";
+
+/** What `selectToken` found for a URL: the token, the env var it came from, and the vars it tried. */
+export interface Credential {
+  envVar: string | null;
+  token: string | undefined;
+  triedVars: string[];
+}
 
 /**
  * Host-scoped credential selection (ADR-0008). Every token is bound to the

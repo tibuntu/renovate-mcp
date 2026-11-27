@@ -167,7 +167,7 @@ function emptyResult(): PreviewResult {
   return { filesWalked: 0, filesMatched: [], hits: [], extractedDeps: [], warnings: [] };
 }
 
-export const FILE_MATCH_DEPRECATION_WARNING =
+const FILE_MATCH_DEPRECATION_WARNING =
   "fileMatch is deprecated in Renovate 44; use managerFilePatterns (each entry became /…/). Run migrate_config to convert the config.";
 
 /**

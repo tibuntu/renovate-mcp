@@ -740,7 +740,6 @@ export function registerDryRun(server: McpServer): void {
         // to disk and collapse the inline payload to a small descriptor so
         // the MCP response stays under client truncation caps.
         let reportSummary: unknown = report;
-        let savedReportPath: string | undefined;
         if (reportOutputPath && report) {
           try {
             // `wx`: never follow or overwrite something that appeared at the
@@ -750,7 +749,6 @@ export function registerDryRun(server: McpServer): void {
               flag: "wx",
               mode: 0o600,
             });
-            savedReportPath = reportOutputPath;
             const repoCount = countRepositories(report);
             const updateCount = countUpdates(report);
             reportSummary = {

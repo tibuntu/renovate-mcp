@@ -186,7 +186,7 @@ export function renderManagersIndex(): string {
   return lines.join("\n");
 }
 
-export function renderDatasourcesIndex(): string {
+function renderDatasourcesIndex(): string {
   const lines: string[] = [
     "# Renovate datasources",
     "",

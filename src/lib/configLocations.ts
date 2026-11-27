@@ -3,7 +3,7 @@ import path from "node:path";
 import JSON5 from "json5";
 import { isRecord } from "./util.js";
 
-export type ConfigFormat = "json" | "json5" | "package.json";
+type ConfigFormat = "json" | "json5" | "package.json";
 
 export interface LocatedConfig {
   absPath: string;

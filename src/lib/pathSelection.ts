@@ -294,7 +294,7 @@ export async function explainPaths(
         file,
         pattern,
         suggestedGlob,
-        suggestedGlobMatches: new Minimatch(suggestedGlob, { dot: true }).match(file),
+        suggestedGlobMatches: glob(suggestedGlob).match(file),
       });
     }
   }
