@@ -9,18 +9,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/tibuntu/renovate-mcp/main/install.sh | bash -s -- --no-mcp-add
 #   curl -fsSL https://raw.githubusercontent.com/tibuntu/renovate-mcp/main/install.sh | bash -s -- --version=2.2.2 # x-release-please-version
 #
-# Flags:
-#   --global              Install globally via `npm install -g`.
-#   --npx                 Use npx (warm the cache only; no global install).
-#   --no-mcp-add          Skip auto-registration with Claude Code.
-#   --mcp-scope=<scope>   Claude Code scope: user (default), project, local.
-#   --version=<X.Y.Z>     Specific renovate-mcp version (default: latest).
-#   -h, --help            Show this help.
-#
-# Env overrides:
-#   RENOVATE_MCP_VERSION       Same as --version=
-#   RENOVATE_MCP_GLOBAL=1      Same as --global
-#   RENOVATE_MCP_NO_MCP_ADD=1  Same as --no-mcp-add
+# Flags and env overrides: see usage() below (`--help`).
 
 set -euo pipefail
 
@@ -46,8 +35,29 @@ warn()    { printf '%s⚠%s %s\n' "$YELLOW" "$NC" "$1"; }
 err()     { printf '%s✗%s %s\n' "$RED" "$NC" "$1" >&2; }
 info()    { printf '%sℹ%s %s\n' "$BLUE" "$NC" "$1"; }
 
+# A literal, not a `sed` over "$0": under `curl | bash`, $0 is `bash`.
 usage() {
-  sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'
+  cat <<'EOF'
+renovate-mcp installer
+https://github.com/tibuntu/renovate-mcp
+
+Usage:
+  curl -fsSL https://raw.githubusercontent.com/tibuntu/renovate-mcp/main/install.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/tibuntu/renovate-mcp/main/install.sh | bash -s -- [flags]
+
+Flags:
+  --global              Install globally via `npm install -g`.
+  --npx                 Use npx (warm the cache only; no global install).
+  --no-mcp-add          Skip auto-registration with Claude Code.
+  --mcp-scope=<scope>   Claude Code scope: user (default), project, local.
+  --version=<X.Y.Z>     Specific renovate-mcp version (default: latest).
+  -h, --help            Show this help.
+
+Env overrides:
+  RENOVATE_MCP_VERSION       Same as --version=
+  RENOVATE_MCP_GLOBAL=1      Same as --global
+  RENOVATE_MCP_NO_MCP_ADD=1  Same as --no-mcp-add
+EOF
 }
 
 while [ $# -gt 0 ]; do
@@ -76,17 +86,7 @@ case "$(uname -s)" in
   Darwin|Linux) ;;
   *)
     warn "renovate-mcp supports Linux and macOS only (package.json declares os: [darwin, linux])."
-    info "On Windows, use WSL2 or add this snippet to your client config manually:"
-    cat <<'JSON'
-{
-  "mcpServers": {
-    "renovate": {
-      "command": "npx",
-      "args": ["-y", "renovate-mcp"]
-    }
-  }
-}
-JSON
+    info "On Windows, run this installer inside WSL2."
     exit 0
     ;;
 esac
@@ -95,15 +95,15 @@ esac
 step "Checking requirements..."
 
 if ! command -v node >/dev/null 2>&1; then
-  err "Node.js not found. renovate-mcp requires Node.js >= 24."
+  err "Node.js not found. renovate-mcp requires Node.js >= 24.11."
   printf '  Install with fnm: %scurl -fsSL https://fnm.vercel.app/install | bash && fnm install 24%s\n' "$BOLD" "$NC"
   exit 1
 fi
 
 NODE_VERSION="$(node -v | sed 's/^v//')"
-NODE_MAJOR="${NODE_VERSION%%.*}"
-if [ "$NODE_MAJOR" -lt 24 ]; then
-  err "Node.js >= 24 required (found v${NODE_VERSION})."
+# Mirrors package.json's engines.node (>=24.11.0).
+if ! node -e 'const [a, b] = process.versions.node.split(".").map(Number); process.exit(a > 24 || (a === 24 && b >= 11) ? 0 : 1)'; then
+  err "Node.js >= 24.11 required (found v${NODE_VERSION})."
   printf '  Upgrade with fnm: %sfnm install 24 && fnm use 24%s\n' "$BOLD" "$NC"
   exit 1
 fi
@@ -210,33 +210,31 @@ fi
 echo
 
 # --- MCP registration --------------------------------------------------------
+# An explicit --version stays pinned in the registered command; the default
+# keeps following npm's `latest`.
+PKG_SPEC="renovate-mcp"
+if [ "$VERSION" != "latest" ]; then
+  PKG_SPEC="renovate-mcp@${VERSION}"
+fi
+
 if [ "$MODE" = "global" ]; then
-  CLIENT_CMD="renovate-mcp"
+  CLIENT_ARGV=("renovate-mcp")
   CLIENT_ARGS_JSON='[]'
 else
-  CLIENT_CMD="npx"
-  CLIENT_ARGS_JSON='["-y", "renovate-mcp"]'
+  CLIENT_ARGV=("npx" "-y" "$PKG_SPEC")
+  CLIENT_ARGS_JSON="[\"-y\", \"${PKG_SPEC}\"]"
 fi
+CLIENT_CMD="${CLIENT_ARGV[0]}"
 
 if [ "$HAS_CLAUDE" = "1" ] && [ -z "$NO_MCP_ADD" ]; then
   step "Registering with Claude Code (scope: ${MCP_SCOPE})..."
   MCP_ADD_ERR="$(mktemp)"
-  if [ "$MODE" = "global" ]; then
-    if claude mcp add renovate -s "$MCP_SCOPE" -- renovate-mcp 2>"$MCP_ADD_ERR"; then
-      ok "Registered as 'renovate' in Claude Code (${MCP_SCOPE} scope)"
-    else
-      warn "claude mcp add failed (entry may already exist)."
-      tail -n 5 "$MCP_ADD_ERR" >&2 || true
-      info "To replace it: claude mcp remove renovate -s ${MCP_SCOPE} && re-run this installer"
-    fi
+  if claude mcp add renovate -s "$MCP_SCOPE" -- "${CLIENT_ARGV[@]}" 2>"$MCP_ADD_ERR"; then
+    ok "Registered as 'renovate' in Claude Code (${MCP_SCOPE} scope)"
   else
-    if claude mcp add renovate -s "$MCP_SCOPE" -- npx -y renovate-mcp 2>"$MCP_ADD_ERR"; then
-      ok "Registered as 'renovate' in Claude Code (${MCP_SCOPE} scope)"
-    else
-      warn "claude mcp add failed (entry may already exist)."
-      tail -n 5 "$MCP_ADD_ERR" >&2 || true
-      info "To replace it: claude mcp remove renovate -s ${MCP_SCOPE} && re-run this installer"
-    fi
+    warn "claude mcp add failed (entry may already exist)."
+    tail -n 5 "$MCP_ADD_ERR" >&2 || true
+    info "To replace it: claude mcp remove renovate -s ${MCP_SCOPE} && re-run this installer"
   fi
   rm -f "$MCP_ADD_ERR"
   echo
