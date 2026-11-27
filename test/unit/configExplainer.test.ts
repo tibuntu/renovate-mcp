@@ -187,12 +187,9 @@ describe("explainConfig", () => {
     expect(strip(explanation)).toEqual(resolved);
   });
 
-  it("records cycles in presetsUnresolved without throwing", async () => {
-    // We don't need a real cycle in the catalogue — the unresolved list path
-    // is exercised whenever a preset key recurs in the stack. Easier: pass a
-    // bogus self-referential preset entry and verify it's flagged. Here
-    // resolveConfig already covers cycle detection with a real catalogue
-    // example; we just confirm explainConfig surfaces unresolved lists too.
+  it("surfaces an unknown preset in presetsUnresolved without throwing", async () => {
+    // Cycle detection itself is covered in presetResolver.test.ts; this only
+    // confirms explainConfig passes the unresolved list through.
     const { presetsUnresolved } = await explainConfig({
       extends: ["config:doesNotExist"],
     });
