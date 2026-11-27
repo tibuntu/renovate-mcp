@@ -769,7 +769,8 @@ function checkPattern(raw: string, path: string, findings: LintFinding[]): void 
   if (stripped.length < 2) return;
 
   const startsSlash = stripped.startsWith("/");
-  const endsSlash = stripped.endsWith("/");
+  // `/…/i` is a regex too (Renovate's `isRegexMatch` accepts the `i` flag).
+  const endsSlash = stripped.endsWith("/") || (startsSlash && stripped.endsWith("/i"));
 
   if (startsSlash !== endsSlash) {
     findings.push({
