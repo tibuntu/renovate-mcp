@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { diffDryRunReports } from "../lib/dryRunDiff.js";
 import { pathString, reportRecord } from "../lib/inputLimits.js";
-import { readLogPath, readReportPath } from "../lib/reportInput.js";
+import { readLogPath, readReportPath, reportPointer } from "../lib/reportInput.js";
 import { OFFLINE_READ_ONLY_ANNOTATIONS } from "../lib/toolInputs.js";
 
 const reportShape = reportRecord(
@@ -30,21 +30,6 @@ const logPathShape = z
 // Path shapes first: a bare record would also match `{ reportPath }` /
 // `{ logPath }` and the path branch would never be taken.
 const reportInputSchema = z.union([reportPathShape, logPathShape, reportShape]);
-
-/**
- * The on-disk pointer for this input, if any: `{ reportPath }` itself (also
- * the collapsed `{ reportPath, repoCount, updateCount }` that `dry_run`
- * returns under `report` with `reportOutputPath`), or a full `dry_run`
- * summary whose `report` collapsed to one.
- */
-function reportPointer(input: Record<string, unknown>): string | undefined {
-  if (typeof input.reportPath === "string") return input.reportPath;
-  const nested = input.report;
-  if (nested && typeof nested === "object" && typeof (nested as Record<string, unknown>).reportPath === "string") {
-    return (nested as Record<string, unknown>).reportPath as string;
-  }
-  return undefined;
-}
 
 async function resolveReport(
   side: "before" | "after",
