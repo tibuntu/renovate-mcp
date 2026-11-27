@@ -606,7 +606,12 @@ async function applyAny(
       deps.push(buildExtractedDep(rel, line, m.groups, manager));
       perFileHits++;
     }
-    if (perFileHits >= maxHitsPerFile) break;
+    if (perFileHits >= maxHitsPerFile) {
+      // Landing exactly on the cap skips the remaining matchStrings; say so.
+      const capNote = `${rel}: capped at ${maxHitsPerFile} hits. Increase maxHitsPerFile to see more.`;
+      if (i < manager.matchStrings.length - 1 && !warnings.includes(capNote)) warnings.push(capNote);
+      break;
+    }
   }
   return { hits, deps, warnings };
 }
