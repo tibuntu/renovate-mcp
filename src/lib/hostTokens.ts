@@ -162,8 +162,22 @@ interface CandidateRule {
   entry?: true;
 }
 
-/** Renovate turns `GITHUB_COM_TOKEN` into this rule itself, after the file config's rules. */
-const GITHUB_COM_RULE: CandidateRule = { hostType: "github", matchHost: "github.com", vars: ["GITHUB_COM_TOKEN"] };
+/**
+ * The variable Renovate takes its github.com token from. It reads
+ * `env.GITHUB_COM_TOKEN ?? env.RENOVATE_GITHUB_COM_TOKEN`, so the prefixed
+ * form counts only when the plain one is unset (a set-but-empty plain one
+ * wins and yields no token).
+ */
+export function githubComTokenVar(env: Env = process.env): "GITHUB_COM_TOKEN" | "RENOVATE_GITHUB_COM_TOKEN" {
+  return env.GITHUB_COM_TOKEN === undefined && env.RENOVATE_GITHUB_COM_TOKEN !== undefined
+    ? "RENOVATE_GITHUB_COM_TOKEN"
+    : "GITHUB_COM_TOKEN";
+}
+
+/** Renovate turns its github.com token into this rule itself, after the file config's rules. */
+function githubComRule(env: Env): CandidateRule {
+  return { hostType: "github", matchHost: "github.com", vars: [githubComTokenVar(env)] };
+}
 
 /**
  * The rule list in the order `buildHostTokenRules` writes it: one rule per
@@ -205,7 +219,7 @@ export function selectToken(
 ): Credential {
   const parsed = parseHostTokens(env);
   const rules = candidateRules(env, parsed.ok ? parsed.entries : []);
-  if (options.githubComToken !== false) rules.push(GITHUB_COM_RULE);
+  if (options.githubComToken !== false) rules.push(githubComRule(env));
   const ranked = rules
     .filter((r) => r.hostType === hostType && matchesHost(r.matchHost, url))
     // Renovate sorts ascending (stable) and the last match wins; reversed,

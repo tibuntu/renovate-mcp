@@ -191,6 +191,19 @@ describe("selectToken (Renovate's hostRules find() over the emitted rule list)",
     });
   });
 
+  it("reads RENOVATE_GITHUB_COM_TOKEN with Renovate's own precedence", () => {
+    // Renovate: env.GITHUB_COM_TOKEN ?? env.RENOVATE_GITHUB_COM_TOKEN.
+    expect(selectToken(gh, "github", { RENOVATE_GITHUB_COM_TOKEN: "pre" })).toMatchObject({
+      envVar: "RENOVATE_GITHUB_COM_TOKEN",
+      token: "pre",
+    });
+    expect(selectToken(gh, "github", { GITHUB_COM_TOKEN: "com", RENOVATE_GITHUB_COM_TOKEN: "pre" }).token).toBe("com");
+    // A set-but-empty plain variable wins the `??` and yields no token.
+    expect(selectToken(gh, "github", { GITHUB_COM_TOKEN: "", RENOVATE_GITHUB_COM_TOKEN: "pre" }).token).toBeUndefined();
+    // Still github.com only.
+    expect(selectToken("https://ghe.example.com/api/v3/x", "github", { RENOVATE_GITHUB_COM_TOKEN: "pre" }).token).toBeUndefined();
+  });
+
   it("GITHUB_COM_TOKEN loses to a longer host-token matchHost", () => {
     const env = {
       ...hostTokens([{ matchHost: "api.github.com", hostType: "github", tokenEnv: "API_GH" }]),
