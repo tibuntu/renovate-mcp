@@ -22,6 +22,14 @@ describe("resolveConfig", () => {
     expect(resolved).not.toHaveProperty("extends");
   });
 
+  it("expands a string `extends` like a one-entry array", async () => {
+    const { resolved, presetsResolved } = await resolveConfig({
+      extends: ":automergeAll" as unknown as string[],
+    });
+    expect(resolved).toEqual({ automerge: true });
+    expect(presetsResolved).toContain(":automergeAll");
+  });
+
   it("treats `:foo` as shorthand for `default:foo`", async () => {
     const { resolved, presetsResolved } = await resolveConfig({
       extends: [":automergeAll"],
