@@ -1018,12 +1018,20 @@ async function loadGitignore(
   return [...levels, { prefix: posixPrefix, ig: ignore().add(content) }];
 }
 
+/**
+ * Git precedence: the deepest `.gitignore` with an opinion on the path wins, so
+ * levels are checked deepest-first and the first `ignored` / `unignored` answer
+ * decides. A child `!` cannot re-include under an excluded parent directory;
+ * the walk never descends into an ignored directory, so that case never gets here.
+ */
 function isIgnored(
   relPath: string,
   isDir: boolean,
   levels: IgnoreLevel[],
 ): boolean {
-  for (const level of levels) {
+  for (let i = levels.length - 1; i >= 0; i--) {
+    const level = levels[i];
+    if (!level) continue;
     const sub =
       level.prefix === ""
         ? relPath
@@ -1033,7 +1041,9 @@ function isIgnored(
     if (sub === null || sub === "") continue;
     // `ignore` treats a trailing slash as "this is a directory", which is what
     // lets patterns like `dist/` match directory paths.
-    if (level.ig.ignores(isDir ? `${sub}/` : sub)) return true;
+    const { ignored, unignored } = level.ig.test(isDir ? `${sub}/` : sub);
+    if (ignored) return true;
+    if (unignored) return false;
   }
   return false;
 }

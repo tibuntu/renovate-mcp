@@ -356,6 +356,40 @@ describe("previewCustomManager", () => {
     expect(result.filesMatched).toEqual(["foo.txt"]);
   });
 
+  it("lets a deeper .gitignore negation re-include a file an ancestor ignores", async () => {
+    // Root ignores every log; `sub/` re-includes `keep.log`. Git's rule is the
+    // deepest .gitignore with an opinion wins, so only `sub/keep.log` survives.
+    await mkdir(path.join(repo, "sub"), { recursive: true });
+    await writeFile(path.join(repo, ".gitignore"), "*.log\n");
+    await writeFile(path.join(repo, "sub/.gitignore"), "!keep.log\n");
+    await writeFile(path.join(repo, "sub/keep.log"), "x");
+    await writeFile(path.join(repo, "sub/other.log"), "x");
+    await writeFile(path.join(repo, "top.log"), "x");
+
+    const result = await previewCustomManager(repo, {
+      customType: "regex",
+      fileMatch: ["\\.log$"],
+      matchStrings: ["(?<v>\\S+)"],
+    });
+    expect(result.filesMatched).toEqual(["sub/keep.log"]);
+  });
+
+  it("does not re-include a file under a directory the root .gitignore excludes", async () => {
+    // Git cannot re-include anything beneath an excluded directory, so the
+    // walk must never descend into `build/` even with a nested `!keep.txt`.
+    await mkdir(path.join(repo, "build"), { recursive: true });
+    await writeFile(path.join(repo, ".gitignore"), "build/\n");
+    await writeFile(path.join(repo, "build/.gitignore"), "!keep.txt\n");
+    await writeFile(path.join(repo, "build/keep.txt"), "x");
+
+    const result = await previewCustomManager(repo, {
+      customType: "regex",
+      fileMatch: ["keep\\.txt$"],
+      matchStrings: ["(?<v>\\S+)"],
+    });
+    expect(result.filesMatched).toEqual([]);
+  });
+
   it("respects negation in .gitignore", async () => {
     await writeFile(path.join(repo, ".gitignore"), "*.log\n!keep.log\n");
     await writeFile(path.join(repo, "drop.log"), "x");
