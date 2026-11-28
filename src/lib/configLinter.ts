@@ -9,23 +9,25 @@ import {
 } from "../data/migrations.generated.js";
 import { isRecord } from "./util.js";
 
-export type LintRuleId =
-  | "dead-regex-missing-slash"
-  | "unwrapped-regex"
-  | "matchManagers-unknown-name"
-  | "matchDatasources-unknown-name"
-  | "deprecated-key"
-  | "automerge-without-automerge-type"
-  | "empty-extends"
-  | "contradictory-disabled-with-package-rules"
-  | "package-rule-without-action"
-  | "invalid-schedule"
-  | "automerge-includes-major"
-  | "duplicate-package-rule-matchers"
-  | "host-rule-inline-secret"
-  | "schedule-without-timezone"
-  | "package-rule-labels-overrides"
-  | "release-age-without-timestamp";
+export const LINT_RULE_IDS = [
+  "dead-regex-missing-slash",
+  "unwrapped-regex",
+  "matchManagers-unknown-name",
+  "matchDatasources-unknown-name",
+  "deprecated-key",
+  "automerge-without-automerge-type",
+  "empty-extends",
+  "contradictory-disabled-with-package-rules",
+  "package-rule-without-action",
+  "invalid-schedule",
+  "automerge-includes-major",
+  "duplicate-package-rule-matchers",
+  "host-rule-inline-secret",
+  "schedule-without-timezone",
+  "package-rule-labels-overrides",
+  "release-age-without-timestamp",
+] as const;
+export type LintRuleId = (typeof LINT_RULE_IDS)[number];
 
 export interface LintFinding {
   ruleId: LintRuleId;
