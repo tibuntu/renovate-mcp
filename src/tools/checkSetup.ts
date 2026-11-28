@@ -19,7 +19,7 @@ export function registerCheckSetup(server: McpServer): void {
       }),
     },
     async ({ repoPath }) => {
-      const status = await checkSetup(repoPath ? { repoPath } : {});
+      const status = await checkSetup(repoPath !== undefined ? { repoPath } : {});
       const summary = describeSetup(status);
       const payload = JSON.stringify(status, null, 2);
       // Never isError: an incomplete setup is a successful diagnosis (see `ok`).

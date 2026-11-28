@@ -147,4 +147,30 @@ describe("check_setup", () => {
     ]);
     expect(status.platformContext.hostTokensError).toBeNull();
   });
+
+  it.each([["relative path", "some/relative/dir"], ["nonexistent path", "/nonexistent/renovate-mcp/repo"], ["empty string", ""]])(
+    "hints (never isError) on a bad repoPath: %s",
+    async (_label, repoPath) => {
+      session = await startServer(
+        { RENOVATE_BIN: "/bin/echo", RENOVATE_CONFIG_VALIDATOR_BIN: "/bin/echo" },
+        { requestTimeoutMs: 30_000 },
+      );
+      const res = await session.request<{
+        content: Array<{ type: string; text: string }>;
+        isError?: boolean;
+      }>("tools/call", { name: "check_setup", arguments: { repoPath } });
+
+      expect(res.result?.isError).toBeFalsy();
+      const status = JSON.parse(extractTrailingJson(res.result!.content[0]!.text)) as {
+        ok: boolean;
+        hints: string[];
+        repoContext?: unknown;
+      };
+      expect(status.hints).toContain(
+        `repoPath must be an absolute path to an existing directory (got: ${repoPath})`,
+      );
+      expect(status.repoContext).toBeUndefined();
+      expect(status.ok).toBe(true);
+    },
+  );
 });
