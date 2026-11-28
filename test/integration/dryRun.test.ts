@@ -571,22 +571,17 @@ process.exit(0);
     expect(res.result?.isError).toBe(true);
     expect(res.result!.content[0]!.text).toMatch(match);
     expect(res.result!.content[0]!.text).not.toMatch(/glpat-must-not-leak/);
-    // Validation must reject before the dry-run spawn. The startup
-    // checkSetup() probe overwrites argv.json with `--version` on its own, so
-    // we don't assert non-existence — instead, confirm the dump doesn't
-    // record a dry-run invocation (which would carry `--dry-run=` and the
-    // `--endpoint=` we passed).
-    let dumped: { args: string[]; renovateToken: string | null } | undefined;
-    try {
-      dumped = JSON.parse(await readFile(argvDump, "utf8"));
-    } catch {
-      // No dump file at all — also fine.
-    }
-    if (dumped) {
-      expect(dumped.args.some((a) => a.startsWith("--dry-run="))).toBe(false);
-      expect(dumped.args.some((a) => a.startsWith("--endpoint="))).toBe(false);
-      expect(dumped.renovateToken).toBeNull();
-    }
+    // Validation must reject before the dry-run spawn. The startup checkSetup()
+    // probe always writes argv.json with `--version`, so the dump exists:
+    // read it unconditionally, prove the fake ran, and confirm no dry-run
+    // invocation (`--dry-run=`, `--endpoint=`) was recorded.
+    const dumped: { args: string[]; renovateToken: string | null } = JSON.parse(
+      await readFile(argvDump, "utf8"),
+    );
+    expect(dumped.args).toContain("--version");
+    expect(dumped.args.some((a) => a.startsWith("--dry-run="))).toBe(false);
+    expect(dumped.args.some((a) => a.startsWith("--endpoint="))).toBe(false);
+    expect(dumped.renovateToken).toBeNull();
   });
 
   it("errors before spawning when config extends local> presets under platform=local and no route can be derived", async () => {
