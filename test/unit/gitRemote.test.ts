@@ -1,13 +1,23 @@
-import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import {
   classifyRemoteHost,
   parseGitConfigOriginUrl,
   parseRemoteUrl,
   readOriginRemote,
 } from "../../src/lib/gitRemote.js";
+
+const tempDirs: string[] = [];
+function mkTemp(prefix: string): string {
+  const dir = mkdtempSync(path.join(tmpdir(), prefix));
+  tempDirs.push(dir);
+  return dir;
+}
+afterAll(() => {
+  for (const d of tempDirs) rmSync(d, { recursive: true, force: true });
+});
 
 describe("parseRemoteUrl", () => {
   it.each([
@@ -137,7 +147,7 @@ describe("parseRemoteUrl / parseGitConfigOriginUrl edge cases", () => {
 
 describe("readOriginRemote", () => {
   it("returns the origin url for a valid repo", async () => {
-    const dir = mkdtempSync(path.join(tmpdir(), "git-remote-test-"));
+    const dir = mkTemp("git-remote-test-");
     mkdirSync(path.join(dir, ".git"), { recursive: true });
     writeFileSync(
       path.join(dir, ".git", "config"),
@@ -149,7 +159,7 @@ describe("readOriginRemote", () => {
   const originConfig = (url: string) => `[remote "origin"]\n\turl = ${url}\n`;
 
   it("follows a .git file into a worktree's common git dir", async () => {
-    const main = mkdtempSync(path.join(tmpdir(), "git-remote-test-"));
+    const main = mkTemp("git-remote-test-");
     mkdirSync(path.join(main, ".git", "worktrees", "wt"), { recursive: true });
     writeFileSync(path.join(main, ".git", "config"), originConfig("https://gitlab.example.com/acme/widgets.git"));
     writeFileSync(path.join(main, ".git", "worktrees", "wt", "commondir"), "../..\n");
@@ -163,7 +173,7 @@ describe("readOriginRemote", () => {
     ["an arbitrary directory", "../../../elsewhere\n"],
     ["a bare repository", "../../../repo.git\n"],
   ])("treats a worktree whose commondir points at %s as no origin", async (_name, commondir) => {
-    const main = mkdtempSync(path.join(tmpdir(), "git-remote-test-"));
+    const main = mkTemp("git-remote-test-");
     mkdirSync(path.join(main, ".git", "worktrees", "wt"), { recursive: true });
     writeFileSync(path.join(main, ".git", "worktrees", "wt", "commondir"), commondir);
     for (const target of ["elsewhere", "repo.git"]) {
@@ -177,7 +187,7 @@ describe("readOriginRemote", () => {
   });
 
   it("follows a .git file into a submodule's own git dir", async () => {
-    const parent = mkdtempSync(path.join(tmpdir(), "git-remote-test-"));
+    const parent = mkTemp("git-remote-test-");
     const moduleDir = path.join(parent, ".git", "modules", "sub");
     mkdirSync(moduleDir, { recursive: true });
     writeFileSync(path.join(moduleDir, "config"), originConfig("git@github.com:acme/sub.git"));
@@ -192,7 +202,7 @@ describe("readOriginRemote", () => {
     ["a directory merely named like a worktree", (root: string) => path.join(root, "worktrees", "wt")],
     ["a nested worktree path", (root: string) => path.join(root, ".git", "worktrees", "wt", "deeper")],
   ])("treats a gitdir that points at %s as no origin", async (_name, target) => {
-    const root = mkdtempSync(path.join(tmpdir(), "git-remote-test-"));
+    const root = mkTemp("git-remote-test-");
     const gitDir = target(root);
     mkdirSync(gitDir, { recursive: true });
     writeFileSync(path.join(gitDir, "config"), originConfig("https://github.com/attacker/x.git"));
@@ -203,7 +213,7 @@ describe("readOriginRemote", () => {
   });
 
   it("follows a gitdir that is another .git directory", async () => {
-    const root = mkdtempSync(path.join(tmpdir(), "git-remote-test-"));
+    const root = mkTemp("git-remote-test-");
     const gitDir = path.join(root, "real", ".git");
     mkdirSync(gitDir, { recursive: true });
     writeFileSync(path.join(gitDir, "config"), originConfig("https://gitlab.com/acme/w.git"));
@@ -214,13 +224,13 @@ describe("readOriginRemote", () => {
   });
 
   it("returns null for a .git file without a gitdir line", async () => {
-    const dir = mkdtempSync(path.join(tmpdir(), "git-remote-test-"));
+    const dir = mkTemp("git-remote-test-");
     writeFileSync(path.join(dir, ".git"), "not a pointer\n");
     expect(await readOriginRemote(dir)).toBeNull();
   });
 
   it("returns null for a non-git directory", async () => {
-    const dir = mkdtempSync(path.join(tmpdir(), "git-remote-test-"));
+    const dir = mkTemp("git-remote-test-");
     expect(await readOriginRemote(dir)).toBeNull();
   });
 });

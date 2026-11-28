@@ -1,5 +1,5 @@
-import { describe, it, expect, afterEach } from "vitest";
-import { readdirSync, readFileSync } from "node:fs";
+import { describe, it, expect, afterAll, afterEach } from "vitest";
+import { readdirSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -32,6 +32,11 @@ const PLATFORM_ENV_KEYS = [
 
 afterEach(() => {
   process.env = { ...originalEnv };
+});
+
+const tempDirs: string[] = [];
+afterAll(() => {
+  for (const d of tempDirs) rmSync(d, { recursive: true, force: true });
 });
 
 function emptyPlatformContext(): PlatformContext {
@@ -367,6 +372,7 @@ describe("checkSetup runtime warnings aggregation", () => {
     const { tmpdir } = await import("node:os");
     const path = await import("node:path");
     const dir = mkdtempSync(path.join(tmpdir(), "rmcp-setup-warn-"));
+    tempDirs.push(dir);
     const script = path.join(dir, "fake-renovate.mjs");
     writeFileSync(
       script,
