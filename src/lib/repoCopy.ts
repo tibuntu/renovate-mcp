@@ -82,7 +82,9 @@ export async function copyRepo(repoPath: string, limits: CopyLimits = {}): Promi
     }
     const st = await fs.lstat(abs).catch(() => null);
     if (st?.isSymbolicLink()) {
-      let target = await fs.readlink(abs);
+      const link = await fs.readlink(abs).catch(() => null);
+      if (link === null) return; // vanished since the lstat, like a failed lstat
+      let target: string = link;
       if (!path.isAbsolute(target) && !isInside(path.resolve(parent, target), realRepo)) {
         warnings.push(`Skipped \`${rel}\` in the temporary copy: it is a relative symlink pointing outside the repository.`);
         return;
