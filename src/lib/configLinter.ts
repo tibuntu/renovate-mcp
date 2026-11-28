@@ -60,100 +60,6 @@ const DEPRECATED_KEY_LOOKUP: ReadonlyMap<string, DeprecatedKeyEntry> = new Map(
   DEPRECATED_KEYS.map((e) => [e.oldKey, e]),
 );
 
-// Hand-maintained snapshot of keys that count as "actions" on a packageRules entry
-// (i.e. keys whose presence means the rule actually *does* something to the matched
-// deps). Source of truth: `node_modules/renovate/dist/config/options/index.js` —
-// entries whose `parents` array includes `"packageRules"`, plus the broader set of
-// inheritable config options Renovate allows inside a packageRules entry
-// (groupName, automerge, labels, schedule, …). We deliberately do NOT generate this
-// list at build time: per CLAUDE.md, the linter must stay independent of the runtime
-// `renovate` import, so this stays a curated snapshot — analogous to the other
-// allow-lists under `src/data/`. Drift guard: test/unit/allowListDrift.test.ts checks
-// every entry against the installed Renovate's option registry (real option, not
-// global-only, `scopes` allow packageRules) and that every packageRules-only option
-// is listed, so a `renovate` bump fails there instead of leaving this stale.
-//
-// Explicitly NOT in this set (kept here as documentation):
-//   - `description` (metadata)
-//   - every `match*` / `exclude*` key (selectors)
-//   - `paths` / `excludePaths` (path-scope selectors)
-//   - `matchJsonata`, `matchNewValue`, `matchCurrentAge` etc. (selectors)
-//   - `vulnerabilityAlerts`, `dependencyDashboardLabels` (Renovate's option `scopes`
-//     restrict them to the top level; its validator warns inside a packageRule)
-//   - `changelogUrl`, `sourceDirectory`, `sourceUrl` (metadata/locator overrides —
-//     treated as actions below since they actively override resolved fields)
-export const PACKAGE_RULE_ACTION_KEYS: ReadonlySet<string> = new Set([
-  "addLabels",
-  "additionalBranchPrefix",
-  "allowedVersions",
-  "assignees",
-  "assigneesFromCodeOwners",
-  "automerge",
-  "automergeSchedule",
-  "automergeStrategy",
-  "automergeType",
-  "branchPrefix",
-  "branchTopic",
-  "bumpVersion",
-  "changelogUrl",
-  "commitMessageAction",
-  "commitMessageExtra",
-  "commitMessagePrefix",
-  "commitMessageSuffix",
-  "commitMessageTopic",
-  "dependencyDashboardApproval",
-  "draftPR",
-  "enabled",
-  "extends",
-  "fetchChangeLogs",
-  "followTag",
-  "groupName",
-  "groupSlug",
-  "ignoreDeps",
-  "ignoreUnstable",
-  "keepUpdatedLabel",
-  "labels",
-  "lockFileMaintenance",
-  "milestone",
-  "minimumReleaseAge",
-  "overrideDatasource",
-  "overrideDepName",
-  "overridePackageName",
-  "pinDigests",
-  "platformAutomerge",
-  "postUpdateOptions",
-  "postUpgradeTasks",
-  "prBodyColumns",
-  "prBodyDefinitions",
-  "prBodyNotes",
-  "prBodyTemplate",
-  "prCreation",
-  "prPriority",
-  "prTitle",
-  "rangeStrategy",
-  "rebaseLabel",
-  "rebaseWhen",
-  "recreateWhen",
-  "registryUrls",
-  "replacementName",
-  "replacementNameTemplate",
-  "replacementVersion",
-  "replacementVersionTemplate",
-  "reviewers",
-  "reviewersFromCodeOwners",
-  "schedule",
-  "semanticCommitScope",
-  "semanticCommitType",
-  "separateMajorMinor",
-  "separateMinorPatch",
-  "separateMultipleMajor",
-  "separateMultipleMinor",
-  "sourceDirectory",
-  "sourceUrl",
-  "stopUpdatingLabel",
-  "versioning",
-]);
-
 const DEPRECATED_KEY_CONTAINERS = ["packageRules", "hostRules", "customManagers"] as const;
 
 // Schedule-validation heuristic. Behavioral source of truth:
@@ -165,8 +71,8 @@ const DEPRECATED_KEY_CONTAINERS = ["packageRules", "hostRules", "customManagers"
 // treats it as "at any time" and logs a warning, which is the silent footgun
 // this rule catches.
 //
-// This is a hand-maintained snapshot — same pattern as PACKAGE_RULE_ACTION_KEYS
-// above. We deliberately do NOT import `renovate` or `@breejs/later` at runtime
+// This is a hand-maintained snapshot of later's grammar.
+// We deliberately do NOT import `renovate` or `@breejs/later` at runtime
 // (CLAUDE.md invariant), so the anchor-token list is curated from later's
 // grammar (https://github.com/breejs/later/blob/master/src/parse/text.js) with
 // a deliberate bias toward false negatives over false positives: a non-later
@@ -295,7 +201,6 @@ export function lintConfig(config: unknown): LintFinding[] {
 }
 
 function isSelectorKey(key: string): boolean {
-  if (PACKAGE_RULE_ACTION_KEYS.has(key)) return false;
   return (
     key.startsWith("match") ||
     key.startsWith("exclude") ||
@@ -317,10 +222,12 @@ function checkPackageRuleWithoutAction(
     const selectors: string[] = [];
     let actionCount = 0;
     for (const key of keys) {
-      if (PACKAGE_RULE_ACTION_KEYS.has(key)) {
-        actionCount += 1;
-      } else if (isSelectorKey(key)) {
+      // Same rule as Renovate's own validator: anything that is neither a selector
+      // nor `description` (metadata) is an action.
+      if (isSelectorKey(key)) {
         selectors.push(key);
+      } else if (key !== "description") {
+        actionCount += 1;
       }
     }
     if (selectors.length >= 1 && actionCount === 0) {
@@ -793,7 +700,7 @@ function checkPattern(raw: string, path: string, findings: LintFinding[]): void 
       severity: "warn",
       path,
       value: raw,
-      message: `Value contains regex metacharacters but is not wrapped in '/…/'. Renovate will treat it as an exact-match string. Wrap it as '/${stripped}/' (or '!/${stripped}/' to negate) if a regex match was intended.`,
+      message: `Value contains regex metacharacters but is not wrapped in '/…/', so Renovate matches it as a glob (or exact string), not a regex. Wrap it as '/${stripped}/' (or '!/${stripped}/' to negate) if a regex match was intended.`,
     });
   }
 }
@@ -940,7 +847,6 @@ function hasStrongRegexSignal(s: string): boolean {
     /\\[dwsbDWSB]/.test(s) ||
     /\.[+*?]/.test(s) ||
     /\\\./.test(s) ||
-    /\(\?[:!=<]/.test(s) ||
-    /\[[^\]]+\]/.test(s)
+    /\(\?[:!=<]/.test(s)
   );
 }
