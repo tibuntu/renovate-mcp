@@ -46,7 +46,7 @@ Usage:
   curl -fsSL https://raw.githubusercontent.com/tibuntu/renovate-mcp/main/install.sh | bash -s -- [flags]
 
 Flags:
-  --global              Install globally via `npm install -g`.
+  --global              Install globally via `npm install -g`. (default)
   --npx                 Use npx (warm the cache only; no global install).
   --no-mcp-add          Skip auto-registration with Claude Code.
   --mcp-scope=<scope>   Claude Code scope: user (default), project, local.
@@ -56,6 +56,7 @@ Flags:
 Env overrides:
   RENOVATE_MCP_VERSION       Same as --version=
   RENOVATE_MCP_GLOBAL=1      Same as --global
+  RENOVATE_MCP_GLOBAL=0      Same as --npx (skips the mode prompt)
   RENOVATE_MCP_NO_MCP_ADD=1  Same as --no-mcp-add
 EOF
 }
@@ -126,23 +127,24 @@ echo
 
 # --- Mode selection ----------------------------------------------------------
 if [ -z "$GLOBAL" ] && [ "$NPX_EXPLICIT" = "0" ]; then
-  if [ -t 0 ]; then
-    step "Install mode"
-    printf '  %s1)%s npx (no global install — run on demand) %s[default]%s\n' "$BOLD" "$NC" "$DIM" "$NC"
-    printf '  %s2)%s global (npm install -g renovate-mcp)\n' "$BOLD" "$NC"
-    printf '  Choice [1/2]: '
+  # Probe /dev/tty (not stdin): under `curl | bash` stdin is the pipe but a terminal is still reachable.
+  if (: </dev/tty) 2>/dev/null; then
+    step "Install mode" >/dev/tty
+    printf '  %s1)%s global (npm install -g renovate-mcp) %s[default]%s\n' "$BOLD" "$NC" "$DIM" "$NC" >/dev/tty
+    printf '  %s2)%s npx (no global install — run on demand)\n' "$BOLD" "$NC" >/dev/tty
+    printf '  Choice [1/2]: ' >/dev/tty
     read -r MODE_CHOICE </dev/tty || MODE_CHOICE=""
     case "${MODE_CHOICE:-1}" in
-      2|g|global|G) GLOBAL=1 ;;
-      *)            GLOBAL=0 ;;
+      2|n|npx|N) GLOBAL=0 ;;
+      *)         GLOBAL=1 ;;
     esac
     echo
   else
-    GLOBAL=0
+    GLOBAL=1
   fi
 fi
 
-if [ "${GLOBAL:-0}" = "1" ]; then
+if [ "${GLOBAL:-1}" = "1" ]; then
   MODE="global"
 else
   MODE="npx"
@@ -156,6 +158,7 @@ if [ "$MODE" = "global" ]; then
   step "Installing renovate-mcp@${VERSION} globally..."
   if ! npm install -g "renovate-mcp@${VERSION}"; then
     err "npm install -g failed."
+    info "Retry with --npx (no global install), or fix your npm global prefix permissions."
     exit 1
   fi
   BIN_CMD=("renovate-mcp")

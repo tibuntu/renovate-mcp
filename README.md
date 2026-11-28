@@ -161,7 +161,7 @@ claude mcp add renovate -s user -e GITHUB_COM_TOKEN=ghp_xxx -- renovate-mcp
 ### Alternatives
 
 - **npx without a global install** — register `npx -y renovate-mcp` instead, after warming the npm cache once with `npm exec --yes --package=renovate-mcp -- node -e 0`.
-- **Installer script** — `curl -fsSL https://raw.githubusercontent.com/tibuntu/renovate-mcp/main/install.sh | bash` runs steps 1 and 2 interactively: it checks Node, asks for `npx` or global mode, verifies the server with an MCP `initialize` handshake, and registers it via `claude mcp add` when the Claude Code CLI is on PATH. Flags (after `bash -s --`): `--global`, `--npx`, `--no-mcp-add`, `--mcp-scope=user|project|local`, `--version=X.Y.Z`; also accepted as env vars (`RENOVATE_MCP_GLOBAL=1`, `RENOVATE_MCP_NO_MCP_ADD=1`, `RENOVATE_MCP_VERSION=…`).
+- **Installer script** — `curl -fsSL https://raw.githubusercontent.com/tibuntu/renovate-mcp/main/install.sh | bash` runs steps 1 and 2 interactively: it checks Node, asks for the mode when run in a terminal (global install by default; `--npx` or `RENOVATE_MCP_GLOBAL=0` picks npx without asking), verifies the server with an MCP `initialize` handshake, and registers it via `claude mcp add` when the Claude Code CLI is on PATH. Flags (after `bash -s --`): `--global`, `--npx`, `--no-mcp-add`, `--mcp-scope=user|project|local`, `--version=X.Y.Z`; also accepted as env vars (`RENOVATE_MCP_GLOBAL=1` or `0`, `RENOVATE_MCP_NO_MCP_ADD=1`, `RENOVATE_MCP_VERSION=…`).
 - **From source** — clone, run `npm install && npm run build`, and point your client at `node /absolute/path/to/renovate-mcp/dist/index.js`.
 
 ## Platform setup
