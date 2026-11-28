@@ -117,22 +117,21 @@ function collectReportProblems(report: unknown): CollectedReportProblems {
       for (const raw of problems) {
         if (!raw || typeof raw !== "object") continue;
         const p = raw as Record<string, unknown>;
-        const level = typeof p.level === "number" ? p.level : 0;
-        const isErrorLevel = level >= 50;
-        const isConfigValidation = p.message === "config-validation";
-        const hasValidationError =
-          typeof p.validationError === "string" && p.validationError.length > 0;
-        if (!(isErrorLevel || isConfigValidation || hasValidationError)) continue;
-        // The RE2-fallback WARN sometimes lands here at fatal level even
-        // though Renovate kept running on JS `RegExp`. The nodeEnv mismatch
-        // similarly does not invalidate the report. Route both away from the
-        // fatal bucket so `ok` reflects whether the run actually failed.
+        // Benign kinds are classified first, at any level: the RE2 fallback
+        // (dropped) and the nodeEnv notice (kept in `environment`) do not
+        // invalidate the run, so they bypass the failure gate below.
         const kind = classifyReportProblem(p);
         if (kind === "re2") continue;
         if (kind === "nodeEnv") {
           environment.push(p);
           continue;
         }
+        const level = typeof p.level === "number" ? p.level : 0;
+        const isErrorLevel = level >= 50;
+        const isConfigValidation = p.message === "config-validation";
+        const hasValidationError =
+          typeof p.validationError === "string" && p.validationError.length > 0;
+        if (!(isErrorLevel || isConfigValidation || hasValidationError)) continue;
         fatal.push(p);
       }
     }
