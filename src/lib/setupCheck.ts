@@ -460,7 +460,7 @@ function derivePlatform(
     }
   }
   if (configPlatform) return { platform: configPlatform, source: "config" };
-  if (envPlatform === "github" || envPlatform === "gitlab" || envPlatform === "local") {
+  if (envPlatform === "local" || isHostedPlatform(envPlatform)) {
     return { platform: envPlatform, source: "env" };
   }
   if (remote?.classified === "self-hosted") {
@@ -584,9 +584,9 @@ function appendRepoHints(
     hints.push(
       `Self-hosted host \`${ctx.remote.host}\` detected from origin, but no \`endpoint\` is configured. Set \`endpoint\` in renovate.json or \`RENOVATE_ENDPOINT\` in the MCP server's env — see docs/platform-setup.md.`,
     );
-    if (ctx.remote.flavor === "unknown") {
+    if (ctx.effectivePlatform === "unknown") {
       hints.push(
-        `Could not infer GitHub vs GitLab from hostname \`${ctx.remote.host}\`. Set \`RENOVATE_PLATFORM=github\` or \`RENOVATE_PLATFORM=gitlab\` explicitly.`,
+        `Could not infer the platform from hostname \`${ctx.remote.host}\`. Set \`RENOVATE_PLATFORM\` to one of ${HOSTED_PLATFORMS.map((p) => `\`${p}\``).join(", ")}.`,
       );
     }
   }

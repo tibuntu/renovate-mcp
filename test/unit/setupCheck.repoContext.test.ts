@@ -533,4 +533,39 @@ describe("checkSetup repoContext — edge inputs", () => {
     const status = await checkSetup({ repoPath: dir, probe: fakeProbe() });
     expect(status.repoContext?.inconsistencies).toEqual([]);
   });
+
+  it.each(["gitea", "forgejo", "bitbucket"] as const)(
+    "takes %s from RENOVATE_PLATFORM for an unclassifiable self-hosted origin",
+    async (platform) => {
+      process.env.RENOVATE_PLATFORM = platform;
+      const dir = makeRepo({ originUrl: "git@code.example.com:acme/widgets.git" });
+      const status = await checkSetup({ repoPath: dir, probe: fakeProbe() });
+      expect(status.repoContext?.effectivePlatform).toBe(platform);
+      expect(status.repoContext?.effectivePlatformSource).toBe("env");
+      expect(status.hints.some((h) => h.includes("Could not infer"))).toBe(false);
+      expect(status.hints.some((h) => h.includes(`${platform.toUpperCase()}_TOKEN`))).toBe(true);
+    },
+  );
+
+  it.each(["forgejo", "bitbucket"] as const)(
+    "reports RENOVATE_PLATFORM=%s as the env platform when there is no origin",
+    async (platform) => {
+      process.env.RENOVATE_PLATFORM = platform;
+      const dir = makeRepo({});
+      const status = await checkSetup({ repoPath: dir, probe: fakeProbe() });
+      expect(status.repoContext?.effectivePlatform).toBe(platform);
+      expect(status.repoContext?.effectivePlatformSource).toBe("env");
+    },
+  );
+
+  it("lists every hosted platform when the origin cannot be classified", async () => {
+    const dir = makeRepo({ originUrl: "git@code.example.com:acme/widgets.git" });
+    const status = await checkSetup({ repoPath: dir, probe: fakeProbe() });
+    expect(status.repoContext?.effectivePlatform).toBe("unknown");
+    const hint = status.hints.find((h) => h.includes("Could not infer"));
+    expect(hint).toBeDefined();
+    for (const p of ["github", "gitlab", "gitea", "forgejo", "bitbucket"]) {
+      expect(hint).toContain(`\`${p}\``);
+    }
+  });
 });
