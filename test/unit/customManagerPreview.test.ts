@@ -204,22 +204,50 @@ describe("previewCustomManager", () => {
     expect(result.extractedDeps[0]!.line).toBe(1);
   });
 
-  it("combination strategy yields no dep if any matchString has zero matches", async () => {
-    await writeFile(
-      path.join(repo, "Chart.yaml"),
-      "name: my-chart\n",
-    );
+  it("combination strategy yields a dep when an optional matchString has no match and templates fill the rest", async () => {
+    await writeFile(path.join(repo, "Chart.yaml"), "name: my-chart\nversion: 1.2.3\n");
     const result = await previewCustomManager(repo, {
       customType: "regex",
       fileMatch: ["Chart\\.yaml$"],
       matchStrings: [
         "name:\\s+(?<depName>\\S+)",
-        "version:\\s+(?<currentValue>\\S+)",
+        "never-matches:\\s+(?<currentValue>\\S+)",
       ],
+      currentValueTemplate: "1.2.3",
+      datasourceTemplate: "helm",
+      matchStringsStrategy: "combination",
+    });
+    expect(result.extractedDeps).toEqual([
+      expect.objectContaining({ depName: "my-chart", currentValue: "1.2.3", datasource: "helm" }),
+    ]);
+    expect(result.warnings.filter((w) => !/fileMatch/.test(w))).toEqual([]);
+  });
+
+  it("combination strategy yields no dep when no matchString matches", async () => {
+    await writeFile(path.join(repo, "Chart.yaml"), "other: x\n");
+    const result = await previewCustomManager(repo, {
+      customType: "regex",
+      fileMatch: ["Chart\\.yaml$"],
+      matchStrings: ["name:\\s+(?<depName>\\S+)", "version:\\s+(?<currentValue>\\S+)"],
       matchStringsStrategy: "combination",
     });
     expect(result.extractedDeps).toEqual([]);
     expect(result.hits).toEqual([]);
+    expect(result.warnings.filter((w) => !/fileMatch/.test(w))).toEqual([]);
+  });
+
+  it("combination strategy drops the merged dep when the matched groups leave it invalid", async () => {
+    await writeFile(path.join(repo, "Chart.yaml"), "name: my-chart\n");
+    const result = await previewCustomManager(repo, {
+      customType: "regex",
+      fileMatch: ["Chart\\.yaml$"],
+      matchStrings: ["name:\\s+(?<depName>\\S+)", "version:\\s+(?<currentValue>\\S+)"],
+      datasourceTemplate: "helm",
+      matchStringsStrategy: "combination",
+    });
+    expect(result.extractedDeps).toEqual([]);
+    expect(result.hits).toHaveLength(1);
+    expect(result.warnings.some((w) => /1 extracted dep\(s\) discarded.*currentValue\/currentDigest/.test(w))).toBe(true);
   });
 
   it("recursive strategy descends through matchStrings and produces one dep per leaf", async () => {

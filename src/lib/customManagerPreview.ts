@@ -654,8 +654,8 @@ async function applyAny(
 }
 
 /**
- * Mirrors Renovate's `handleCombination`: every matchString must hit at least
- * once for the file to produce a dep; all matches' named groups are merged
+ * Mirrors Renovate's `handleCombination`: a file produces a dep unless no
+ * matchString matched at all; all matches' named groups are merged
  * (later matches override earlier on key conflicts) into a single dep. We still
  * surface every match as a `hit` so the user can see which lines contributed,
  * but `extractedDeps` collapses to one entry per file.
@@ -684,10 +684,6 @@ async function applyCombination(
       return { hits: [], deps: [], warnings };
     }
     if (!res.ok) throw new Error(`Regex worker error: ${res.error}`);
-    if (res.matches.length === 0) {
-      // Combination requires every matchString to hit at least once.
-      return { hits: [], deps: [], warnings };
-    }
     perStringMatches.push(res.matches);
     for (const m of res.matches) {
       hits.push({
@@ -699,6 +695,10 @@ async function applyCombination(
       });
     }
   }
+
+  // Like Renovate, no match at all means no dep; a partial match still merges
+  // and the validity filter decides.
+  if (hits.length === 0) return { hits, deps: [], warnings };
 
   // Merge groups in match order across all matchStrings (later overrides earlier).
   const mergedGroups: Record<string, string> = {};
