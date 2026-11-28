@@ -197,19 +197,26 @@ type IdentityFields = { manager: string; packageFile: string; depName: string; u
 
 /**
  * Index both sides on a shared pairing key. The coarse `identityKey` is used
- * while neither side holds more than one entry for it (so a version bump
- * pairs as `changed`); otherwise every entry of that group is keyed on
- * `identityKey + updateType` so a dep's minor and major updates stay apart.
- * First entry wins on a repeat (a dep listed in two branches counts once).
+ * while neither side holds more than one distinct `updateType` for it (so a
+ * version bump pairs as `changed`, and a dep repeated with the same
+ * `updateType` across base branches still does); otherwise every entry of
+ * that group is keyed on `identityKey + updateType` so a dep's minor and
+ * major updates stay apart. First entry wins on a repeat (a dep listed in
+ * two branches counts once).
  */
 function indexForPairing<T extends IdentityFields>(
   before: T[],
   after: T[],
 ): [Map<string, T>, Map<string, T>] {
   const count = (list: T[]): Map<string, number> => {
-    const m = new Map<string, number>();
-    for (const u of list) m.set(identityKey(u), (m.get(identityKey(u)) ?? 0) + 1);
-    return m;
+    const types = new Map<string, Set<string>>();
+    for (const u of list) {
+      const k = identityKey(u);
+      const set = types.get(k) ?? new Set<string>();
+      set.add(u.updateType ?? "");
+      types.set(k, set);
+    }
+    return new Map([...types].map(([k, set]) => [k, set.size]));
   };
   const bc = count(before);
   const ac = count(after);
