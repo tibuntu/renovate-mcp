@@ -9,7 +9,8 @@
  *
  * Exit codes (from `main`):
  *   0 — all snapshots in sync with the live renovate version
- *   1 — drift detected (at least one snapshot stale)
+ *   1 — drift detected (at least one snapshot stale, or node_modules/renovate
+ *       differs from the exact pin in package.json)
  *   2 — internal error (renovate not installed, snapshot missing the constant, …)
  */
 import { readFile } from "node:fs/promises";
@@ -76,6 +77,19 @@ export function checkSnapshotVersions({ liveVersion, snapshots }) {
   return { ok: false, liveVersion, stale };
 }
 
+const EXACT_VERSION_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
+
+/**
+ * Pure: when package.json pins `renovate` to an exact version that differs
+ * from the installed one, return the error message; otherwise null. A range
+ * (`^45`, `latest`, …) has no single version to compare, so it is skipped.
+ */
+export function checkInstalledMatchesPin({ installed, pinned }) {
+  if (typeof pinned !== "string" || !EXACT_VERSION_RE.test(pinned)) return null;
+  if (installed === pinned) return null;
+  return `node_modules/renovate is ${installed} but package.json pins ${pinned}; run \`npm ci\`.`;
+}
+
 export async function loadSnapshots(repoRoot) {
   const out = [];
   for (const entry of SNAPSHOTS) {
@@ -120,6 +134,17 @@ export async function main({ repoRoot, stdout, stderr }) {
   let snapshots;
   try {
     liveVersion = await readLiveRenovateVersion(repoRoot);
+    const pkg = JSON.parse(
+      await readFile(path.join(repoRoot, "package.json"), "utf8"),
+    );
+    const stale = checkInstalledMatchesPin({
+      installed: liveVersion,
+      pinned: pkg.dependencies?.renovate,
+    });
+    if (stale) {
+      stderr.write(`${stale}\n`);
+      return 1;
+    }
     snapshots = await loadSnapshots(repoRoot);
   } catch (err) {
     stderr.write(`${err.message}\n`);

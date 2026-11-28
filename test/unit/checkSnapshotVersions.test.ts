@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   SNAPSHOTS,
+  checkInstalledMatchesPin,
   checkSnapshotVersions,
   extractRenovateVersion,
 } from "../../scripts/check-snapshot-versions.mjs";
@@ -118,5 +119,27 @@ describe("extractRenovateVersion", () => {
     expect(() => extractRenovateVersion(source)).toThrow(
       /RENOVATE_VERSION not found/,
     );
+  });
+});
+
+describe("checkInstalledMatchesPin", () => {
+  it("names both versions and points at npm ci when node_modules is stale", () => {
+    expect(
+      checkInstalledMatchesPin({ installed: "45.3.1", pinned: "45.3.2" }),
+    ).toBe(
+      "node_modules/renovate is 45.3.1 but package.json pins 45.3.2; run `npm ci`.",
+    );
+  });
+
+  it("passes when installed matches the pin and skips non-exact pins", () => {
+    expect(
+      checkInstalledMatchesPin({ installed: "45.3.2", pinned: "45.3.2" }),
+    ).toBeNull();
+    expect(
+      checkInstalledMatchesPin({ installed: "45.3.2", pinned: "^45.0.0" }),
+    ).toBeNull();
+    expect(
+      checkInstalledMatchesPin({ installed: "45.3.2", pinned: undefined }),
+    ).toBeNull();
   });
 });
