@@ -23,6 +23,7 @@ import {
   type HostedPlatform,
 } from "./gitRemote.js";
 import { run, resolveRenovateTool } from "./renovateCli.js";
+import { assertRepoDir } from "./toolInputs.js";
 import { dedupeRuntimeWarnings, type RuntimeWarning } from "./runtimeWarnings.js";
 
 const requireFromHere = createRequire(import.meta.url);
@@ -342,7 +343,11 @@ export async function checkSetup(options: CheckSetupOptions = {}): Promise<Setup
   const platformContext = inspectPlatformContext(process.env);
 
   let repoContext: RepoContext | undefined;
-  if (options.repoPath) {
+  // Presence, not truthiness, as in the other tools: `""` is a bad path.
+  const repoError = options.repoPath === undefined ? null : await assertRepoDir(options.repoPath);
+  if (repoError) {
+    hints.push(repoError);
+  } else if (options.repoPath !== undefined) {
     repoContext = await gatherRepoContext(options.repoPath, platformContext, options.probe);
     appendRepoHints(repoContext, hints, platformContext);
   }

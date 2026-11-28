@@ -66,7 +66,7 @@ Compares the running Node version against the bundled Renovate's declared `engin
 
 **Inputs:**
 
-- `repoPath` (optional, string, max 4096 bytes) — absolute path to a repository root. When set, adds the `repoContext` block described below.
+- `repoPath` (optional, string, max 4096 bytes) — absolute path to a repository root. When set, adds the `repoContext` block described below. A relative, missing or empty `repoPath` (or a file) adds the usual `repoPath must be an absolute path to an existing directory` message to `hints`, omits `repoContext`, and still runs the rest of the check.
 
 ### Optional `repoPath` — repo-aware diagnosis
 
