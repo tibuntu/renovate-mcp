@@ -437,7 +437,7 @@ function followRemovedPresets(entry: string): RemovedRedirect {
   }
 }
 
-export function recordTemplateWarnings(
+function recordTemplateWarnings(
   entry: string,
   suppliedArgs: number,
   missingArgs: Set<number>,

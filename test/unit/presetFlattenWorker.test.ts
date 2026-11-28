@@ -7,10 +7,10 @@ import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from "vitest
 import {
   findLocalPresets,
   flattenLocalPresets,
-  isLocalPreset,
   nestedLocalPresetHint,
   resolveLocalPresetRoute,
 } from "../../src/lib/presetFlattenWorker.js";
+import { isLocalPreset } from "../../src/lib/presetResolver.js";
 
 /**
  * The worker entry (dist/lib/presetFlattenWorkerImpl.js) is pointed at via
