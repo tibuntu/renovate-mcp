@@ -346,6 +346,22 @@ describe("collision-aware pairing", () => {
     expect(diffDryRunReports(r, r).summary).toEqual({ added: 0, removed: 0, changed: 0, unchanged: 1 });
   });
 
+  it("pairs a dep repeated with the same updateType across base branches as changed", () => {
+    const before = {
+      repositories: {
+        "o/r": {
+          branches: [
+            { branchName: "b0", baseBranch: "main", upgrades: [LODASH_MINOR] },
+            { branchName: "b1", baseBranch: "release", upgrades: [LODASH_MINOR] },
+          ],
+        },
+      },
+    };
+    const after = branchReport([{ ...LODASH_MINOR, updateType: "patch", newVersion: "4.18.1" }]);
+    const d = diffDryRunReports(before, after);
+    expect(d.summary).toEqual({ added: 0, removed: 0, changed: 1, unchanged: 0 });
+  });
+
   it("keeps minor and major apart in a local-shaped report", () => {
     const dep = (updates: Array<Record<string, unknown>>) => ({ depName: "lodash", updates });
     const minor = { updateType: "minor", newVersion: "4.18.0" };
