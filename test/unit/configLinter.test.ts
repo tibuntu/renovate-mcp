@@ -1,6 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { lintConfig } from "../../src/lib/configLinter.js";
+import { LINT_RULE_IDS, lintConfig } from "../../src/lib/configLinter.js";
+
+describe("lint_config description", () => {
+  it("states the real number of rules", () => {
+    const src = readFileSync(new URL("../../src/tools/lintConfig.ts", import.meta.url), "utf8");
+    const claimed = Number(/— (\d+) rules,/.exec(src)?.[1]);
+    expect(claimed).toBe(LINT_RULE_IDS.length);
+  });
+});
 
 describe("lintConfig", () => {
   it("returns no findings for a clean config", () => {

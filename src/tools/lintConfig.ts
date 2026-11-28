@@ -11,7 +11,7 @@ export function registerLintConfig(server: McpServer): void {
       title: "Lint Renovate config for semantic footguns",
       annotations: OFFLINE_READ_ONLY_ANNOTATIONS,
       description:
-        "Run a semantic lint pass over a Renovate config. Complements validate_config: schema validation catches structural bugs, this catches Renovate-specific footguns schema validation misses — malformed '/…/' regex patterns in fields like matchPackageNames, matchDepNames, matchSourceUrls, matchCurrentVersion, plus unknown manager names in matchManagers / excludeManagers (typos that Renovate silently ignores). Each finding includes a severity ('error' | 'warn'). Offline; does not shell out. Pass either configPath (file on disk, JSON, JSONC or JSON5) or configContent (inline object).",
+        "Run a semantic lint pass over a Renovate config. Complements validate_config: schema validation catches structural bugs, this catches Renovate-specific footguns schema validation misses — 16 rules, e.g. malformed `/…/` regexes, unknown managers and datasources, deprecated keys, invalid schedules, inline secrets; see docs/tools.md#lint_config. Each finding includes a severity ('error' | 'warn'). Offline; does not shell out. Pass either configPath (file on disk, JSON, JSONC or JSON5) or configContent (inline object).",
       inputSchema: z.object({
         configPath: pathString(
           "Absolute path to a config file to lint (JSON, JSONC or JSON5)",
