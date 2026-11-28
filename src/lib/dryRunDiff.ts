@@ -87,8 +87,8 @@ export type ReportUpgrade = { upgrade: Record<string, unknown>; branch?: Record<
 /**
  * Yield every upgrade in the report. A repository with branches is read from
  * `branches[*].upgrades[]` only (what would actually become a PR), each entry
- * paired with its `branch`. A repository without branches (a `--platform=local`
- * run never creates any) is read from `packageFiles[manager][].deps[].updates[]`
+ * paired with its `branch`. A repository with no branches (e.g. a `--platform=local`
+ * run, which never creates any) is read from `packageFiles[manager][].deps[].updates[]`
  * instead, flattened as `{ ...dep, manager, packageFile, ...update }` with no
  * `branch`; branch-only fields (`groupName`, `branchResult`) are absent there.
  */

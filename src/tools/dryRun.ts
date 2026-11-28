@@ -378,7 +378,8 @@ export function registerDryRun(server: McpServer): void {
       let route: TokenScope = homeScope({ platform: effectivePlatform, endpoint });
       const mcpWarnings: string[] = [];
       const apiUrl = isRemotePlatform ? (route.endpoint ?? DEFAULT_API_URL[effectivePlatform]) : undefined;
-      // The `endpoint` input was validated above, so this is the env endpoint.
+      // The `endpoint` input already passed validateEndpoint (https-only) above, so only
+      // `RENOVATE_ENDPOINT` can fail the two checks below.
       if (apiUrl && !URL.canParse(apiUrl)) {
         return {
           isError: true,
