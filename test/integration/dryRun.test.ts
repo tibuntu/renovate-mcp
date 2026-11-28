@@ -1988,6 +1988,45 @@ process.exit(0);
     expect(onDisk.repositories).toBeDefined();
   });
 
+  it("counts packageFiles updates for a local-shaped report with no branches", async () => {
+    const report = {
+      repositories: {
+        local: {
+          branches: [],
+          packageFiles: {
+            npm: [
+              {
+                packageFile: "package.json",
+                deps: [
+                  { depName: "lodash", updates: [{ newVersion: "4.18.0" }] },
+                  { depName: "axios", updates: [{ newVersion: "1.7.0" }, { newVersion: "2.0.0" }] },
+                  { depName: "uptodate", updates: [] },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    };
+    const fakeBin = await fakeWithReport(repo, "out-local-renovate.mjs", report);
+    const outPath = path.join(repo, "report-local.json");
+    session = await startServer({ RENOVATE_BIN: fakeBin });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: { repoPath: repo, reportOutputPath: outPath },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    const body = JSON.parse(res.result!.content[0]!.text) as {
+      report: { updateCount: number };
+    };
+    expect(body.report.updateCount).toBe(3);
+  });
+
   it("with no inputs, the inline report is unchanged", async () => {
     const report = { repositories: { "a/b": { branches: [] } } };
     const fakeBin = await fakeWithReport(repo, "out2-renovate.mjs", report);
