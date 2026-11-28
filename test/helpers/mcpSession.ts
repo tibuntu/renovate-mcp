@@ -10,6 +10,7 @@ const DEFAULT_SERVER_ENTRY = path.resolve(__dirname, "../../dist/index.js");
 // Kept below the 30 s vitest testTimeout so a hung request fails here, with the
 // server stderr attached, rather than at the bare vitest timeout.
 const DEFAULT_REQUEST_TIMEOUT_MS = 25_000;
+const CLOSE_GRACE_MS = 5_000;
 const STDERR_CAP_BYTES = 64 * 1024;
 
 export interface JsonRpcRequest {
@@ -244,18 +245,27 @@ export async function startServer(
     child.stdin!.write(JSON.stringify({ jsonrpc: "2.0", method, params }) + "\n");
   }
 
-  const init = await request<{
-    instructions?: string;
-    capabilities?: Record<string, unknown>;
-  }>(
-    "initialize",
-    {
-      protocolVersion: "2025-06-18",
-      capabilities: {},
-      clientInfo: { name: "vitest", version: "0" },
-    },
-    Math.max(requestTimeoutMs, DEFAULT_REQUEST_TIMEOUT_MS),
-  );
+  let init: JsonRpcResponse & {
+    result?: { instructions?: string; capabilities?: Record<string, unknown> };
+  };
+  try {
+    init = await request<{
+      instructions?: string;
+      capabilities?: Record<string, unknown>;
+    }>(
+      "initialize",
+      {
+        protocolVersion: "2025-06-18",
+        capabilities: {},
+        clientInfo: { name: "vitest", version: "0" },
+      },
+      Math.max(requestTimeoutMs, DEFAULT_REQUEST_TIMEOUT_MS),
+    );
+  } catch (err) {
+    // A server that fails (or hangs in) initialize would otherwise leak.
+    child.kill("SIGKILL");
+    throw err;
+  }
   notify("notifications/initialized");
 
   return {
@@ -284,10 +294,23 @@ export async function startServer(
       } catch {
         // stdin may already be closed — fine.
       }
-      await new Promise<void>((resolve) => {
+      const closedP = new Promise<void>((resolve) => {
         if (closed) return resolve();
         child.once("close", () => resolve());
       });
+      // A server that ignores the stdin EOF must not hang the suite.
+      let timer: NodeJS.Timeout | undefined;
+      const timedOut = await Promise.race([
+        closedP.then(() => false),
+        new Promise<boolean>((resolve) => {
+          timer = setTimeout(() => resolve(true), CLOSE_GRACE_MS);
+        }),
+      ]);
+      clearTimeout(timer);
+      if (timedOut) {
+        child.kill("SIGKILL");
+        await closedP;
+      }
     },
   };
 }
