@@ -58,6 +58,18 @@ describe("previewCustomManager", () => {
     expect(result.hits.map((h) => h.line)).toEqual([1]);
   });
 
+  it.each(["(?m)", "(?m:"])("accepts RE2's leading inline flags (%s) so `^` anchors per line", async (prefix) => {
+    await writeFile(path.join(repo, "Dockerfile"), "FROM alpine:3.19\nFROM nginx:1.25\n");
+    const body = "^FROM (?<depName>[^:\\s]+):(?<currentValue>\\S+)$";
+    const result = await previewCustomManager(repo, {
+      customType: "regex",
+      fileMatch: ["(^|/)Dockerfile$"],
+      matchStrings: [prefix === "(?m)" ? `(?m)${body}` : `(?m:${body})`],
+      datasourceTemplate: "docker",
+    });
+    expect(result.hits.map((h) => h.line)).toEqual([1, 2]);
+  });
+
   it("surfaces a clear error when fileMatch looks like a glob instead of a regex", async () => {
     // `**/*.yaml` is the glob most users reach for. It is not a valid regex —
     // the leading `**` is a "nothing to repeat" error. We want that to throw
