@@ -83,6 +83,35 @@ describe("annotate_dry_run", () => {
     expect(body.rulesNeverMatched).toEqual([]);
   });
 
+  it("reads updates from packageFiles when the report has no branches (local platform)", async () => {
+    session = await startServer({});
+    const result = await call({
+      report: {
+        repositories: {
+          "local/repo": {
+            branches: [],
+            packageFiles: {
+              npm: [
+                {
+                  packageFile: "package.json",
+                  deps: [
+                    { depName: "lodash", packageName: "lodash", currentValue: "4.17.0", updates: [{ updateType: "minor", newVersion: "4.18.0", newValue: "4.18.0" }] },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      },
+      configContent: { packageRules: [{ matchPackageNames: ["lodash"], matchUpdateTypes: ["minor"], automerge: true }] },
+    });
+    expect(result.isError).toBeFalsy();
+    const body = JSON.parse(result.content[0]!.text) as Body;
+    expect(body.updateCount).toBe(1);
+    expect(body.annotations[0]!.matchedRules[0]!.index).toBe(0);
+    expect(body.rulesNeverMatched).toEqual([]);
+  });
+
   it("accepts a full dry_run summary (outer { report: … } wrapper)", async () => {
     session = await startServer({});
     const result = await call({

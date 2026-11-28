@@ -1,7 +1,6 @@
 import { z } from "zod";
-import { isRecord } from "../lib/util.js";
 import type { McpServer } from "@modelcontextprotocol/server";
-import { extractReport, identityKey, readArray, readRecord } from "../lib/dryRunDiff.js";
+import { collectReportUpgrades, extractReport, identityKey } from "../lib/dryRunDiff.js";
 import { resolveReportInput } from "../lib/reportInput.js";
 import {
   analyzePackageRules,
@@ -42,46 +41,33 @@ interface UpdateEntry {
   context: Record<string, unknown>;
 }
 
-/** Walk repositories[*].branches[*].upgrades[] and lift matcher-relevant facts. */
+/** Walk the report's upgrades (see `collectReportUpgrades`) and lift matcher-relevant facts. */
 function collectUpdateEntries(report: unknown): UpdateEntry[] {
   const out: UpdateEntry[] = [];
-  const repositories = readRecord(report, "repositories");
-  if (!repositories) return out;
+  for (const { upgrade: u, branch } of collectReportUpgrades(report)) {
+    const manager = typeof u.manager === "string" ? u.manager : "";
+    const depName = typeof u.depName === "string" ? u.depName : "";
+    if (!manager || !depName) continue;
+    const packageFile = typeof u.packageFile === "string" ? u.packageFile : "";
 
-  for (const repo of Object.values(repositories)) {
-    const branches = readArray(repo, "branches");
-    if (!branches) continue;
-    for (const branch of branches) {
-      const upgrades = readArray(branch, "upgrades");
-      if (!upgrades) continue;
-      for (const upgrade of upgrades) {
-        if (!upgrade || typeof upgrade !== "object") continue;
-        const u = upgrade as Record<string, unknown>;
-        const manager = typeof u.manager === "string" ? u.manager : "";
-        const depName = typeof u.depName === "string" ? u.depName : "";
-        if (!manager || !depName) continue;
-        const packageFile = typeof u.packageFile === "string" ? u.packageFile : "";
-
-        const context: Record<string, unknown> = {};
-        for (const field of CONTEXT_FIELDS) {
-          if (u[field] !== undefined) context[field] = u[field];
-        }
-
-        out.push({
-          display: {
-            manager,
-            packageFile,
-            depName,
-            currentVersion: u.currentVersion ?? u.currentValue,
-            newVersion: u.newVersion ?? u.newValue,
-            updateType: u.updateType,
-            ...(isRecord(branch) && typeof branch.result === "string" ? { branchResult: branch.result } : {}),
-            ...(isRecord(branch) && typeof branch.prBlockedBy === "string" ? { prBlockedBy: branch.prBlockedBy } : {}),
-          },
-          context,
-        });
-      }
+    const context: Record<string, unknown> = {};
+    for (const field of CONTEXT_FIELDS) {
+      if (u[field] !== undefined) context[field] = u[field];
     }
+
+    out.push({
+      display: {
+        manager,
+        packageFile,
+        depName,
+        currentVersion: u.currentVersion ?? u.currentValue,
+        newVersion: u.newVersion ?? u.newValue,
+        updateType: u.updateType,
+        ...(branch && typeof branch.result === "string" ? { branchResult: branch.result } : {}),
+        ...(branch && typeof branch.prBlockedBy === "string" ? { prBlockedBy: branch.prBlockedBy } : {}),
+      },
+      context,
+    });
   }
   return out;
 }

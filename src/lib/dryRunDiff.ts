@@ -83,29 +83,61 @@ export function extractReport(input: unknown): unknown {
 }
 
 /**
- * Walk the report and collect every proposed update found under
- * `repositories[*].branches[*].upgrades[]`. Renovate emits the same dep info
- * in `packageFiles` too, but only `branches[].upgrades[]` reflects what
- * would actually become a PR — which is what the diff is about.
+ * Yield every upgrade in the report. A repository with branches is read from
+ * `branches[*].upgrades[]` only (what would actually become a PR), each entry
+ * paired with its `branch`. A repository without branches (a `--platform=local`
+ * run never creates any) is read from `packageFiles[manager][].deps[].updates[]`
+ * instead, flattened as `{ ...dep, manager, packageFile, ...update }` with no
+ * `branch`; branch-only fields (`groupName`, `branchResult`) are absent there.
  */
-export function collectProposedUpdates(report: unknown): ProposedUpdate[] {
-  const out: ProposedUpdate[] = [];
+export function collectReportUpgrades(
+  report: unknown,
+): Array<{ upgrade: Record<string, unknown>; branch?: Record<string, unknown> }> {
+  const out: Array<{ upgrade: Record<string, unknown>; branch?: Record<string, unknown> }> = [];
   const repositories = readRecord(report, "repositories");
   if (!repositories) return out;
 
   for (const repo of Object.values(repositories)) {
     const branches = readArray(repo, "branches");
-    if (!branches) continue;
-    for (const branch of branches) {
-      const upgrades = readArray(branch, "upgrades");
-      if (!upgrades) continue;
-      for (const upgrade of upgrades) {
-        const u = pickUpdate(upgrade);
-        if (u) out.push(u);
+    if (branches && branches.length > 0) {
+      for (const branch of branches) {
+        const upgrades = readArray(branch, "upgrades");
+        if (!upgrades) continue;
+        for (const upgrade of upgrades) {
+          if (!upgrade || typeof upgrade !== "object") continue;
+          out.push({ upgrade: upgrade as Record<string, unknown>, branch: branch as Record<string, unknown> });
+        }
+      }
+      continue;
+    }
+    const packageFiles = readRecord(repo, "packageFiles");
+    if (!packageFiles) continue;
+    for (const [manager, files] of Object.entries(packageFiles)) {
+      if (!Array.isArray(files)) continue;
+      for (const file of files) {
+        const deps = readArray(file, "deps");
+        if (!deps) continue;
+        const packageFile = (file as Record<string, unknown>).packageFile;
+        for (const dep of deps) {
+          const updates = readArray(dep, "updates");
+          if (!updates) continue;
+          const { updates: _omit, ...rest } = dep as Record<string, unknown>;
+          for (const update of updates) {
+            if (!update || typeof update !== "object") continue;
+            out.push({ upgrade: { ...rest, manager, packageFile, ...(update as Record<string, unknown>) } });
+          }
+        }
       }
     }
   }
   return out;
+}
+
+/** Every proposed update in the report, normalised; see `collectReportUpgrades` for where they are read from. */
+export function collectProposedUpdates(report: unknown): ProposedUpdate[] {
+  return collectReportUpgrades(report)
+    .map((e) => pickUpdate(e.upgrade))
+    .filter((u): u is ProposedUpdate => u !== null);
 }
 
 function pickUpdate(raw: unknown): ProposedUpdate | null {

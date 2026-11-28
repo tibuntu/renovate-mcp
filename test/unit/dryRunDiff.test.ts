@@ -288,3 +288,29 @@ describe("diffDryRunReports", () => {
     });
   });
 });
+
+function localReport(deps: Array<Record<string, unknown>>): unknown {
+  return {
+    repositories: {
+      "local/repo": {
+        branches: [],
+        packageFiles: { npm: [{ packageFile: "package.json", deps }] },
+      },
+    },
+  };
+}
+
+describe("local-platform reports (no branches)", () => {
+  it("reads updates from packageFiles when the report has no branches (local platform)", () => {
+    const before = localReport([{ depName: "lodash", currentValue: "4.17.0", updates: [{ updateType: "minor", newVersion: "4.18.0", newValue: "4.18.0" }] }]);
+    const after = localReport([{ depName: "lodash", currentValue: "4.17.0", updates: [{ updateType: "minor", newVersion: "4.19.0", newValue: "4.19.0" }] }]);
+    const d = diffDryRunReports(before, after);
+    expect(d.summary).toEqual({ added: 0, removed: 0, changed: 1, unchanged: 0 });
+    expect(d.changed[0]).toMatchObject({ manager: "npm", packageFile: "package.json", depName: "lodash" });
+  });
+
+  it("ignores skipped deps without updates in a local report", () => {
+    const r = localReport([{ depName: "foo", skipReason: "unsupported-version" }]);
+    expect(diffDryRunReports(r, r).summary).toEqual({ added: 0, removed: 0, changed: 0, unchanged: 0 });
+  });
+});
