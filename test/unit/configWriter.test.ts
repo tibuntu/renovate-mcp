@@ -582,6 +582,19 @@ describe("serializeConfig — nested objects", () => {
     expect(result.bytes).toContain('"after 5am"');
   });
 
+  it("removes a nested key named like an Object.prototype member", () => {
+    const existing = '{\n  "customDatasources": {\n    "toString": { "defaultRegistryUrlTemplate": "x" }\n  }\n}\n';
+
+    const result = serializeConfig({
+      targetPath: "renovate.json",
+      nextConfig: { customDatasources: {} },
+      existing,
+    });
+
+    if ("refuse" in result) throw new Error(`unexpected refusal: ${result.reason}`);
+    expect(result.bytes).not.toContain("toString");
+  });
+
   it("leaves package.json untouched when the renovate slice is unchanged", () => {
     const existing =
       '{\n  "name": "my-app",\n  "renovate": { "extends":   ["config:recommended"],   "schedule": ["before 5am"] }\n}\n';
