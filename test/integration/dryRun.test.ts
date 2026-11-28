@@ -1651,6 +1651,92 @@ process.exit(0);
     expect(body.reportErrors).toBeUndefined();
   });
 
+  it("a WARN-level (40) report problem does not fail the run when exit is 0", async () => {
+    const fakeBin = path.join(repo, "warn-problem-renovate.mjs");
+    await writeFile(
+      fakeBin,
+      `#!/usr/bin/env node
+import { writeFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+const reportArg = args.find(a => a.startsWith('--report-path='));
+const report = {
+  repositories: {
+    'local': {
+      problems: [
+        { level: 40, msg: 'Package lookup failures' },
+      ],
+      branches: [],
+      packageFiles: {},
+    },
+  },
+};
+if (reportArg) writeFileSync(reportArg.slice('--report-path='.length), JSON.stringify(report));
+process.exit(0);
+`,
+    );
+    await chmod(fakeBin, 0o755);
+    session = await startServer({ RENOVATE_BIN: fakeBin });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: { repoPath: repo },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    const body = JSON.parse(res.result!.content[0]!.text) as {
+      ok: boolean;
+      reportErrors?: unknown[];
+    };
+    expect(body.ok).toBe(true);
+    expect(body.reportErrors).toBeUndefined();
+  });
+
+  it("an ERROR-level (50) report problem still fails the run when exit is 0", async () => {
+    const fakeBin = path.join(repo, "error-problem-renovate.mjs");
+    await writeFile(
+      fakeBin,
+      `#!/usr/bin/env node
+import { writeFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+const reportArg = args.find(a => a.startsWith('--report-path='));
+const report = {
+  repositories: {
+    'local': {
+      problems: [
+        { level: 50, msg: 'Repository init failed' },
+      ],
+      branches: [],
+      packageFiles: {},
+    },
+  },
+};
+if (reportArg) writeFileSync(reportArg.slice('--report-path='.length), JSON.stringify(report));
+process.exit(0);
+`,
+    );
+    await chmod(fakeBin, 0o755);
+    session = await startServer({ RENOVATE_BIN: fakeBin });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: { repoPath: repo },
+    });
+
+    expect(res.result?.isError).toBe(true);
+    const body = JSON.parse(res.result!.content[0]!.text) as {
+      ok: boolean;
+      reportErrors?: unknown[];
+    };
+    expect(body.ok).toBe(false);
+    expect(body.reportErrors).toHaveLength(1);
+  });
+
   it("Unsupported node environment lands in environmentWarnings and ok stays true even with exitCode 1", async () => {
     const fakeBin = path.join(repo, "nodeenv-renovate.mjs");
     await writeFile(

@@ -85,7 +85,8 @@ const hostRuleSchema = hostRuleRecord(
 /**
  * Walk Renovate's JSON report looking for `problems` arrays and collect the
  * ones that represent failed runs — not informational notices. Criteria:
- *   - `level >= 40` (Renovate's bunyan-derived ERROR/FATAL bands), or
+ *   - `level >= 50` (bunyan ERROR/FATAL; WARN at 40 stays in the returned
+ *     report but does not fail the run), or
  *   - `message === "config-validation"` (Renovate's canonical config-failure
  *     marker — it can appear with lower levels but still means the run was
  *     effectively a no-op), or
@@ -117,7 +118,7 @@ function collectReportProblems(report: unknown): CollectedReportProblems {
         if (!raw || typeof raw !== "object") continue;
         const p = raw as Record<string, unknown>;
         const level = typeof p.level === "number" ? p.level : 0;
-        const isErrorLevel = level >= 40;
+        const isErrorLevel = level >= 50;
         const isConfigValidation = p.message === "config-validation";
         const hasValidationError =
           typeof p.validationError === "string" && p.validationError.length > 0;
