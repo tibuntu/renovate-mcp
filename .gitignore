@@ -9,3 +9,5 @@ coverage/
 .serena/
 .planning/
 docs/superpowers/
+*.tgz
+.superpowers/
