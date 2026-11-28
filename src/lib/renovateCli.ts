@@ -156,7 +156,6 @@ export interface RunOptions {
    * buggy observer can't crash the child-process pipeline.
    */
   onStdoutLine?: (line: string) => void;
-  onStderrLine?: (line: string) => void;
   /** Aborting kills the child's process group, like a timeout, and rejects with `CommandAbortedError`. */
   signal?: AbortSignal;
 }
@@ -207,7 +206,6 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
     const stdoutBuf = new TailBuffer();
     const stderrBuf = new TailBuffer();
     let stdoutLineBuf = "";
-    let stderrLineBuf = "";
     let timer: NodeJS.Timeout | undefined;
     let killed = false;
     let aborted = false;
@@ -264,7 +262,6 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
     });
     child.stderr.on("data", (chunk: string) => {
       stderrBuf.push(chunk);
-      stderrLineBuf = emitLines(chunk, stderrLineBuf, opts.onStderrLine);
     });
     child.on("error", (err) => {
       if (timer) clearTimeout(timer);
@@ -280,13 +277,6 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
       if (stdoutLineBuf && opts.onStdoutLine) {
         try {
           opts.onStdoutLine(stdoutLineBuf);
-        } catch {
-          // ignore
-        }
-      }
-      if (stderrLineBuf && opts.onStderrLine) {
-        try {
-          opts.onStderrLine(stderrLineBuf);
         } catch {
           // ignore
         }
