@@ -640,8 +640,11 @@ export function inspectPlatformContext(env: NodeJS.ProcessEnv): PlatformContext 
   const notes: string[] = [];
 
   if (renovatePlatformRaw && !allowedPlatform) {
+    const resolveHint = isHostedPlatform(renovatePlatformRaw)
+      ? ` For presets on ${renovatePlatformRaw}, pass \`platform\` to \`resolve_config\`.`
+      : "";
     notes.push(
-      `\`RENOVATE_PLATFORM=${renovatePlatformRaw}\` is outside the \`dry_run\` schema enum (\`local\`/\`github\`/\`gitlab\`). The env fallback ignores it, so \`dry_run\` will silently use \`local\` — pass \`platform\` explicitly when calling \`dry_run\` if you need a different value.`,
+      `\`RENOVATE_PLATFORM=${renovatePlatformRaw}\` is outside the \`dry_run\` schema enum (\`local\`/\`github\`/\`gitlab\`). The env fallback ignores it, so \`dry_run\` supports only \`local\`/\`github\`/\`gitlab\` and runs as \`local\`.${resolveHint}`,
     );
   }
 

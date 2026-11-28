@@ -450,6 +450,17 @@ describe("inspectPlatformContext", () => {
     expect(ctx.notes.some((n) => n.includes("outside the `dry_run` schema enum"))).toBe(true);
   });
 
+  it("does not tell the user to pass a dry_run platform the schema rejects", () => {
+    const hosted = inspectPlatformContext({ ...clean(), RENOVATE_PLATFORM: "bitbucket" });
+    const note = hosted.notes.find((n) => n.includes("outside the `dry_run` schema enum"))!;
+    expect(note).not.toContain("pass `platform` explicitly when calling `dry_run`");
+    expect(note).toContain("runs as `local`");
+    expect(note).toContain("pass `platform` to `resolve_config`");
+    const other = inspectPlatformContext({ ...clean(), RENOVATE_PLATFORM: "azure" });
+    const otherNote = other.notes.find((n) => n.includes("outside the `dry_run` schema enum"))!;
+    expect(otherNote).not.toContain("resolve_config");
+  });
+
   it("warns when platform=gitlab has no GITLAB_TOKEN nor RENOVATE_TOKEN", () => {
     const ctx = inspectPlatformContext({ ...clean(), RENOVATE_PLATFORM: "gitlab" });
     expect(ctx.notes.some((n) => n.includes("`RENOVATE_PLATFORM=gitlab`") && n.includes("authenticate"))).toBe(true);
