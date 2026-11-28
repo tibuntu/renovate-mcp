@@ -32,7 +32,7 @@ This reverses two earlier rules. `RENOVATE_TOKEN` no longer wins for every platf
 [{ "matchHost": "gitlab.example.com", "hostType": "gitlab", "tokenEnv": "ACME_GITLAB_TOKEN" }]
 ```
 
-`matchHost` is a bare lowercase host (subdomains match too, as in Renovate) or an `https://` URL prefix without credentials; `hostType` is a lowercase Renovate host type; `tokenEnv` is a variable name. At most 256 entries; every entry must have exactly these three keys. One malformed entry rejects the whole variable, and every fetch-enabled call then returns `isError` instead of fetching. The error names the entry index and field, never the value. An entry whose `tokenEnv` is unset is skipped.
+`matchHost` is a bare lowercase host (subdomains match too, as in Renovate) or an `https://` URL prefix without credentials. `hostType` is a lowercase Renovate host type. `tokenEnv` is a variable name. At most 256 entries; every entry must have exactly these three keys. One malformed entry rejects the whole variable, and every fetch-enabled call then returns `isError` instead of fetching. The error names the entry index and field, never the value. An entry whose `tokenEnv` is unset is skipped.
 
 **`dry_run`** applies the same binding to the Renovate it spawns. Renovate reads only `RENOVATE_TOKEN` as its platform token and deletes `GITHUB_TOKEN` / `GITLAB_TOKEN` / `BITBUCKET_TOKEN` from its env, so:
 
