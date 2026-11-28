@@ -150,8 +150,8 @@ function planEdits(
     const allKeys = new Set([...existingKeys, ...nextKeys]);
 
     for (const key of allKeys) {
-      const inExisting = key in existingObj;
-      const inNext = key in nextConfig;
+      const inExisting = Object.hasOwn(existingObj, key);
+      const inNext = Object.hasOwn(nextConfig, key);
       const path = [...parentPath, key];
 
       if (inExisting && !inNext) {
@@ -172,8 +172,8 @@ function planEdits(
       }
     }
   } else {
-    // Shouldn't normally hit this — we only call with a top-level object.
-    // Defensive fallback: replace the whole value.
+    // Reached when the existing value is not an object: a missing `renovate`
+    // key in package.json, or defensively at any depth. Replace the whole value.
     edits.push({ kind: "set", path: parentPath, value: nextConfig });
   }
 
