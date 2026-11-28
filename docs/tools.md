@@ -322,9 +322,9 @@ Each side accepts either the inline report (raw `{ repositories }` or a full `dr
 
 Renovate's `branches info extended` upgrades carry no `manager`, which `dry_run_diff` and `annotate_dry_run` key on, so the tool fills it in from the extracted dep with the same `packageFile` and `depName`. The logger redacts secrets itself and does not truncate these payloads. A log with neither line is an `isError` that names `LOG_LEVEL=debug` and `LOG_FORMAT=json`. Fetching logs (Mend Developer Portal, a CI system) is out of scope: download the log and pass its path.
 
-Updates are keyed by `(manager, packageFile, depName)` so a version bump on the same dep shows up once under `changed` rather than twice as `removed + added`. Compared per identity: `newValue`, `newVersion`, `updateType`, `branchName`, `groupName`, `schedule`.
+Updates pair on `(manager, packageFile, depName)` so a version bump on the same dep shows up once under `changed` rather than twice as `removed + added`; when a report holds several updates for one dep (e.g. a minor and a major under `separateMajorMinor`), those pair on `updateType` too, so each is added, removed or changed on its own. Compared per identity: `newValue`, `newVersion`, `updateType`, `branchName`, `groupName`, `schedule`.
 
-A repository whose report has no `branches` (a `--platform=local` run) is read from `packageFiles[*].deps[].updates[]` instead, so branch-only fields (`groupName`, `branchResult`) are absent there; a repository with branches is read from branches only. Deps with a `skipReason` and no `updates` produce no entries.
+A repository with no `branches` (e.g. a `--platform=local` run) is read from `packageFiles[*].deps[].updates[]` instead, so branch-only fields (`groupName`, `branchResult`) are absent there; a repository with branches is read from branches only. Deps with a `skipReason` and no `updates` produce no entries.
 
 Useful when iterating on a config to see exactly what each tweak did.
 
@@ -386,7 +386,7 @@ Three situations are surfaced as `warnings`: when `semanticCommits` is `"auto"` 
 
 Attribute each proposed update in a `dry_run` report to the `packageRules` that caused it — "which of my rules produced these updates?". Stateless and offline: run [`dry_run`](#dry_run) first, then pass its report here.
 
-Takes a report (inline `report` — raw `{ repositories }` or a full `dry_run` summary with a `report` key — `reportPath` **or** `logPath`, a Renovate debug log from a real bot run; the same shapes as [`dry_run_diff`](#dry_run_diff)) **plus** a config source (`repoPath` or `configContent`, with the same `externalPresets` / `endpoint` / `platform` opt-ins as [`resolve_config`](#resolve_config)). Updates are deduplicated by `(manager, packageFile, depName)` and each is matched — using the **real facts already in the report** — against the config's effective `packageRules` in a single worker round-trip.
+Takes a report (inline `report` — raw `{ repositories }` or a full `dry_run` summary with a `report` key — `reportPath` **or** `logPath`, a Renovate debug log from a real bot run; the same shapes as [`dry_run_diff`](#dry_run_diff)) **plus** a config source (`repoPath` or `configContent`, with the same `externalPresets` / `endpoint` / `platform` opt-ins as [`resolve_config`](#resolve_config)). Updates are deduplicated by `(manager, packageFile, depName, updateType, newVersion)` (a dep's minor and major updates are kept apart) and each is matched — using the **real facts already in the report** — against the config's effective `packageRules` in a single worker round-trip.
 
 **Inputs:**
 
