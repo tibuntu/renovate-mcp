@@ -188,6 +188,11 @@ describe("collectMergeSteps — ignorePresets", () => {
 describe("collectMergeSteps — nested extends", () => {
   const nested = (w: { preset: string; message: string }[]) => w.filter((x) => x.preset === "<nested-extends>");
 
+  it("findNestedExtends skips keys Renovate does not resolve, at any depth", () => {
+    expect(findNestedExtends({ onboardingConfig: { extends: ["x"] } })).toEqual([]);
+    expect(findNestedExtends({ packageRules: [{ content: { extends: ["x"] } }] })).toEqual([]);
+  });
+
   it("findNestedExtends reports arrays and objects, never the root", () => {
     expect(
       findNestedExtends({
