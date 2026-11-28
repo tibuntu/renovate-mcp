@@ -2,7 +2,7 @@
 
 [![npm](https://img.shields.io/npm/v/renovate-mcp.svg)](https://www.npmjs.com/package/renovate-mcp)
 [![CI](https://github.com/tibuntu/renovate-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/tibuntu/renovate-mcp/actions/workflows/ci.yml)
-[![Node ≥ 24](https://img.shields.io/node/v/renovate-mcp.svg)](https://nodejs.org/)
+[![Node ^24.22.3 || ^26.13.1](https://img.shields.io/node/v/renovate-mcp.svg)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
 An MCP server for designing [Renovate](https://github.com/renovatebot/renovate) configurations interactively. Point it at a local repo and let an LLM help you read, validate, preview, and save `renovate.json`.
