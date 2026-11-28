@@ -1,8 +1,6 @@
 import { describe, it, expect } from "vitest";
-import {
-  lintConfig,
-  PACKAGE_RULE_ACTION_KEYS,
-} from "../../src/lib/configLinter.js";
+import { readFileSync } from "node:fs";
+import { lintConfig } from "../../src/lib/configLinter.js";
 
 describe("lintConfig", () => {
   it("returns no findings for a clean config", () => {
@@ -605,68 +603,39 @@ describe("lintConfig", () => {
     });
   });
 
-  describe("PACKAGE_RULE_ACTION_KEYS allow-list", () => {
-    it("is a non-empty ReadonlySet of strings", () => {
-      expect(PACKAGE_RULE_ACTION_KEYS).toBeInstanceOf(Set);
-      expect(PACKAGE_RULE_ACTION_KEYS.size).toBeGreaterThan(0);
+  describe("M3 false positives", () => {
+    const actionFinds = (rule: unknown) =>
+      lintConfig({ packageRules: [rule] }).filter((f) => f.ruleId === "package-rule-without-action");
+    const regexFinds = (rule: unknown) =>
+      lintConfig({ packageRules: [rule] }).filter((f) => f.ruleId === "unwrapped-regex");
+
+    it.each([
+      { matchPackageNames: ["a"], major: { enabled: false } },
+      { matchPackageNames: ["a"], abandonmentThreshold: "1 year" },
+      { matchPackageNames: ["a"], ignoreTests: true },
+    ])("counts any non-selector key as an action: %j", (rule) => {
+      expect(actionFinds(rule)).toEqual([]);
     });
 
-    it("includes the canonical action keys", () => {
-      for (const key of [
-        "enabled",
-        "groupName",
-        "automerge",
-        "addLabels",
-        "labels",
-        "prPriority",
-        "schedule",
-        "allowedVersions",
-        "replacementName",
-        // Added after a real false positive: a packageRule whose only action
-        // was `postUpgradeTasks` got flagged as "no action keys". These keys
-        // are all valid in packageRules per Renovate's option metadata and
-        // ARE meaningful actions, so they must not be treated as selectors.
-        "postUpgradeTasks",
-        "rebaseWhen",
-        "rebaseLabel",
-        "lockFileMaintenance",
-        "bumpVersion",
-        "additionalBranchPrefix",
-        "milestone",
-        "prTitle",
-        "platformAutomerge",
-        "prBodyColumns",
-        "prBodyNotes",
-        "stopUpdatingLabel",
-        "keepUpdatedLabel",
-        "reviewersFromCodeOwners",
-        "assigneesFromCodeOwners",
-      ]) {
-        expect(PACKAGE_RULE_ACTION_KEYS.has(key)).toBe(true);
-      }
+    it("still flags a description-only rule", () => {
+      expect(actionFinds({ matchPackageNames: ["a"], description: "x" })).toHaveLength(1);
     });
 
-    it("excludes options Renovate only honours at the top level", () => {
-      // Pinned by the drift guard in allowListDrift.test.ts: Renovate's own validator
-      // warns when these appear inside a packageRule, so they are not actions there.
-      for (const key of ["vulnerabilityAlerts", "dependencyDashboardLabels"]) {
-        expect(PACKAGE_RULE_ACTION_KEYS.has(key)).toBe(false);
-      }
+    it("does not flag a version-range bracket or glob class", () => {
+      expect(regexFinds({ matchCurrentVersion: "[1.0,2.0]", enabled: false })).toEqual([]);
+      expect(regexFinds({ matchPackageNames: ["@scope/[ab]*"], enabled: false })).toEqual([]);
     });
 
-    it("excludes selectors and metadata", () => {
-      for (const key of [
-        "matchPackageNames",
-        "matchDepNames",
-        "matchUpdateTypes",
-        "matchManagers",
-        "excludePackageNames",
-        "paths",
-        "excludePaths",
-        "description",
-      ]) {
-        expect(PACKAGE_RULE_ACTION_KEYS.has(key)).toBe(false);
-      }
+    it("still flags a regex-looking value, with glob wording", () => {
+      const f = regexFinds({ matchPackageNames: ["^foo\\d+$"], enabled: false });
+      expect(f).toHaveLength(1);
+      expect(f[0]!.message).toContain("glob");
+      expect(f[0]!.message).not.toContain("exact-match string");
+    });
+
+    it("the repo's own renovate.json has no package-rule-without-action finding", () => {
+      const cfg = JSON.parse(readFileSync(new URL("../../renovate.json", import.meta.url), "utf8"));
+      expect(lintConfig(cfg).filter((f) => f.ruleId === "package-rule-without-action")).toEqual([]);
     });
   });
 

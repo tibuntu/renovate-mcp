@@ -3,13 +3,9 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { getConfigFileNames } from "renovate/dist/config/app-strings.js";
-import { getOptions } from "renovate/dist/config/options/index.js";
 import { removedPresets } from "renovate/dist/config/presets/common.js";
 
-import {
-  LATER_TEXT_ANCHOR_TOKENS,
-  PACKAGE_RULE_ACTION_KEYS,
-} from "../../src/lib/configLinter.js";
+import { LATER_TEXT_ANCHOR_TOKENS } from "../../src/lib/configLinter.js";
 import { CONFIG_FILE_NAMES } from "../../src/lib/configLocations.js";
 import { parsePreset } from "../../src/lib/presetResolver.js";
 import { PRESETS, REMOVED_PRESETS } from "../../src/data/presets.generated.js";
@@ -25,45 +21,6 @@ import { BRANCH_RESULT_HINTS, SKIP_HINTS } from "../../src/lib/dependencyExplain
 
 const require = createRequire(import.meta.url);
 const renovatePkg = require.resolve("renovate/package.json");
-const isSelector = (key: string): boolean => /^(match|exclude)/.test(key);
-
-describe("PACKAGE_RULE_ACTION_KEYS vs Renovate's option registry", () => {
-  const options = new Map(getOptions().map((o) => [o.name, o]));
-
-  it("every entry is a real, non-global option that Renovate honours inside packageRules", () => {
-    for (const key of PACKAGE_RULE_ACTION_KEYS) {
-      const option = options.get(key);
-      expect(option, key).toBeDefined();
-      expect(option?.globalOnly, key).toBeFalsy();
-      expect(isSelector(key), key).toBe(false);
-      // `scopes` is where Renovate declares an option's valid locations (renovate#43020,
-      // still being rolled out): absent means "anywhere", present must name packageRules.
-      const scopes = option?.scopes ?? [];
-      if (scopes.length > 0) {
-        expect(
-          scopes.some((s) => s === "packageRule" || s === "any"),
-          `${key} scopes: ${scopes.join(", ")}`,
-        ).toBe(true);
-      }
-    }
-  });
-
-  it("Renovate still declares `scopes` on its options (sanity: the check above is live)", () => {
-    // vitest strips types, so a renamed field would make `option?.scopes` undefined for
-    // every key and the scopes check would skip silently instead of failing.
-    expect([...options.values()].some((o) => (o.scopes ?? []).length > 0)).toBe(true);
-  });
-
-  it("every packageRules-only option that is not a selector is an action key", () => {
-    const expected = [...options.values()]
-      .filter((o) => o.parents?.includes("packageRules") && !isSelector(o.name))
-      .map((o) => o.name);
-    expect(expected.length).toBeGreaterThan(0); // sanity: the oracle still has teeth
-    for (const name of expected) {
-      expect(PACKAGE_RULE_ACTION_KEYS.has(name), name).toBe(true);
-    }
-  });
-});
 
 describe("LATER_TEXT_ANCHOR_TOKENS vs @breejs/later's text grammar", () => {
   // Renovate's own copy of later, resolved from its package so a non-hoisted install
