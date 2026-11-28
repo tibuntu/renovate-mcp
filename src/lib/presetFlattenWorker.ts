@@ -15,10 +15,6 @@ import { isRecord } from "./util.js";
  * never imports `renovate`. No preview fallback: a worker failure is a refusal.
  */
 
-// Renovate's `parsePreset` source detection, shared with resolve_config so
-// both tools agree on which entries are local presets.
-export { isLocalPreset };
-
 /** Keys whose object values Renovate's resolver does not descend into. */
 const UNRESOLVED_KEYS = ["content", "onboardingConfig"];
 
