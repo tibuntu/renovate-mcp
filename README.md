@@ -232,7 +232,7 @@ A transcript-style walkthrough: design a Dockerfile custom manager from scratch,
 > **You:** Rewrite `matchStrings` to anchor on the renovate comment, then `FROM <image>:<version>` on the next line.
 >
 > **Claude** calls `preview_custom_manager` again with the fixed regex.
-> → 4 files, 4 line hits. Extracted: `postgres:15.3-alpine`, `redis:7.2`, `nginx:1.25`, `node:20.11`. Named groups `depName` and `currentValue` populated on every hit.
+> → 4 files, 4 line hits. Extracted: `postgres:15.3-alpine`, `redis:7.2`, `nginx:1.25`, `node:20.11`. Named groups `depName` and `currentValue` populated on every hit, plus `datasource` captured from the `datasource=docker` comment, so each dep survives Renovate's validity check.
 >
 > **You:** Good. Validate the full config inline, with this `customManagers` entry alongside my existing `extends`.
 >

@@ -270,6 +270,7 @@ describe("previewCustomManager", () => {
         "entry (?<depName>\\w+)=(?<currentValue>\\w+)",
       ],
       matchStringsStrategy: "recursive",
+      datasourceTemplate: "docker",
     });
     expect(result.extractedDeps).toEqual([
       expect.objectContaining({ depName: "foo", currentValue: "inner" }),
@@ -600,6 +601,7 @@ describe("managerFilePatterns", () => {
       customType: "regex",
       managerFilePatterns: ["**/Chart.yaml"],
       matchStrings,
+      datasourceTemplate: "docker",
     });
     expect([...result.filesMatched].sort()).toEqual(["Chart.yaml", "sub/Chart.yaml"]);
     expect(result.warnings).toEqual([]);
@@ -748,6 +750,7 @@ describe("managerFilePatterns", () => {
       customType: "regex",
       fileMatch: ["(^|/)Dockerfile$"],
       matchStrings,
+      datasourceTemplate: "docker",
     });
     expect([...result.filesMatched].sort()).toEqual(["Dockerfile", "sub/Dockerfile"]);
     expect(result.warnings).toEqual([
@@ -791,5 +794,95 @@ describe("minimatch major matches Renovate's pin", () => {
         `${theirs.dependencies?.minimatch}; keep our package.json range and ` +
         `renovate.json's minimatch allowedVersions on Renovate's major.`,
     ).toBe(major(theirs.dependencies?.minimatch));
+  });
+});
+
+describe("dep validity (Renovate isValidDependency)", () => {
+  let repo: string;
+  beforeEach(async () => {
+    repo = await mkdtemp(path.join(tmpdir(), "validity-"));
+  });
+  afterEach(async () => {
+    await rm(repo, { recursive: true, force: true });
+  });
+  const WARN =
+    "f.txt: 1 extracted dep(s) discarded — Renovate drops a dep without depName/packageName, currentValue/currentDigest, or datasource (missing: datasource).";
+  const base = {
+    customType: "regex" as const,
+    managerFilePatterns: ["/f\\.txt$/"],
+    matchStrings: ["(?<depName>\\w+)=(?<currentValue>\\S+)"],
+  };
+
+  it("any: no datasource → hit kept, dep dropped, one warning", async () => {
+    await writeFile(path.join(repo, "f.txt"), "foo=1.0\n");
+    const r = await previewCustomManager(repo, base);
+    expect(r.hits).toHaveLength(1);
+    expect(r.extractedDeps).toEqual([]);
+    expect(r.warnings).toEqual([WARN]);
+  });
+
+  it("datasourceTemplate fills the datasource → dep kept", async () => {
+    await writeFile(path.join(repo, "f.txt"), "foo=1.0\n");
+    const r = await previewCustomManager(repo, { ...base, datasourceTemplate: "docker" });
+    expect(r.extractedDeps).toEqual([expect.objectContaining({ depName: "foo", datasource: "docker" })]);
+    expect(r.warnings).toEqual([]);
+  });
+
+  it("recursive: invalid dep dropped with the same warning", async () => {
+    await writeFile(path.join(repo, "f.txt"), "foo=1.0\n");
+    const r = await previewCustomManager(repo, {
+      ...base,
+      matchStrings: ["foo=\\S+", "(?<depName>\\w+)=(?<currentValue>\\S+)"],
+      matchStringsStrategy: "recursive",
+    });
+    expect(r.extractedDeps).toEqual([]);
+    expect(r.warnings).toEqual([WARN]);
+  });
+
+  it("regex templates see packageFile (basename) and packageFileDir like Renovate", async () => {
+    await mkdir(path.join(repo, "sub"), { recursive: true });
+    await writeFile(path.join(repo, "sub", "f.txt"), "foo=1.0\n");
+    await writeFile(path.join(repo, "f.txt"), "foo=1.0\n");
+    const r = await previewCustomManager(repo, {
+      ...base,
+      datasourceTemplate: "docker",
+      depNameTemplate: "{{packageFileDir}}/{{packageFile}}",
+    });
+    expect(r.extractedDeps.map((d) => d.depName).sort()).toEqual(["./f.txt", "sub/f.txt"]);
+    expect(r.warnings).toEqual([]);
+  });
+
+  it("strategy warnings come before the discarded warning", async () => {
+    await writeFile(path.join(repo, "f.txt"), "foo=1.0\nbar=2.0\n");
+    const r = await previewCustomManager(repo, base, { maxHitsPerFile: 1 });
+    expect(r.warnings).toEqual([expect.stringContaining("capped at 1 hits"), WARN]);
+  });
+
+  it("jsonata: invalid dep dropped with the same warning", async () => {
+    await writeFile(path.join(repo, "f.txt"), '{"n":"foo","v":"1"}');
+    const r = await previewCustomManager(repo, {
+      customType: "jsonata",
+      fileFormat: "json",
+      managerFilePatterns: ["/f\\.txt$/"],
+      matchStrings: ['{ "depName": n, "currentValue": v }'],
+    });
+    expect(r.extractedDeps).toEqual([]);
+    expect(r.warnings).toEqual([WARN]);
+  });
+
+  it("aggregates one warning per file across dropped deps and lists the union of missing fields", async () => {
+    // foo lacks only datasource; bar also lacks currentValue.
+    await writeFile(path.join(repo, "f.txt"), "foo=1.0\nbar=\n");
+    const r = await previewCustomManager(repo, {
+      ...base,
+      matchStrings: ["(?<depName>\\w+)=(?<currentValue>\\S*)"],
+    });
+    expect(r.extractedDeps).toEqual([]);
+    expect(r.warnings).toEqual([
+      WARN.replace("1 extracted", "2 extracted").replace(
+        "missing: datasource",
+        "missing: datasource, currentValue/currentDigest",
+      ),
+    ]);
   });
 });
