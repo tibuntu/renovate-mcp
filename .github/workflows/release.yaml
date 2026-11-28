@@ -3,9 +3,11 @@ on:
     branches:
       - main
 
-permissions:
-  contents: write
-  pull-requests: write
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+permissions: {}
 
 name: release-please
 
