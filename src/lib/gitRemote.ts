@@ -121,6 +121,10 @@ export function parseGitConfigOriginUrl(content: string): string | null {
 export const HOSTED_PLATFORMS = ["github", "gitlab", "gitea", "forgejo", "bitbucket"] as const;
 export type HostedPlatform = (typeof HOSTED_PLATFORMS)[number];
 
+/** The `platform` values `dry_run` accepts: `local` plus the two hosted platforms it can run remotely. */
+export const DRY_RUN_PLATFORMS = ["local", "github", "gitlab"] as const;
+export type DryRunPlatform = (typeof DRY_RUN_PLATFORMS)[number];
+
 export type RemoteClassification = HostedPlatform | "self-hosted" | "unknown";
 export type SelfHostedFlavor = "github" | "gitlab" | "gitea" | "forgejo" | "unknown";
 
