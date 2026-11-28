@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, rm, writeFile, readFile, chmod, access, symlink } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, readFile, chmod, mkdir, access, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { startServer, type McpSession } from "../helpers/mcpSession.js";
@@ -525,6 +525,27 @@ process.exit(0);
 
     expect(res.result?.isError).toBe(true);
     expect(res.result!.content[0]!.text).toMatch(/`repository` is required/);
+  });
+
+  it("reports a pre-spawn failure (unwritable TMPDIR) as dry_run failed, not as a missing binary", async () => {
+    const fakeBin = await makeArgvEnvDump(repo);
+    const lockedTmp = path.join(repo, "locked-tmp");
+    await mkdir(lockedTmp);
+    await chmod(lockedTmp, 0o500);
+    try {
+      session = await startServer({ RENOVATE_BIN: fakeBin, TMPDIR: lockedTmp });
+      const res = await session.request<{
+        content: Array<{ type: string; text: string }>;
+        isError?: boolean;
+      }>("tools/call", { name: "dry_run", arguments: { repoPath: repo } });
+
+      expect(res.result?.isError).toBe(true);
+      const text = res.result!.content[0]!.text;
+      expect(text).toMatch(/^dry_run failed:/);
+      expect(text).not.toMatch(/check_setup/);
+    } finally {
+      await chmod(lockedTmp, 0o700); // so afterEach's rm can clean up
+    }
   });
 
   it.each([

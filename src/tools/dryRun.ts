@@ -9,6 +9,7 @@ import {
   resolveRenovateTool,
   formatMissingBinaryError,
   formatTimeoutError,
+  CommandAbortedError,
   CommandTimeoutError,
   trackTemp,
   untrackTemp,
@@ -601,6 +602,8 @@ export function registerDryRun(server: McpServer): void {
         }).catch(() => undefined);
       };
 
+      // Set right before run(): only errors thrown after this point can be spawn failures.
+      let spawned = false;
       try {
         // Pre-create the report file with mode 0600 so the on-disk JSON is
         // not world-readable while Renovate is running. Renovate's report
@@ -720,6 +723,7 @@ export function registerDryRun(server: McpServer): void {
           );
         }
 
+        spawned = true;
         const result = await run(tool.cmd, [...tool.prefixArgs, ...args], {
           cwd: copy?.dir ?? repoPath,
           env: childEnv,
@@ -732,6 +736,8 @@ export function registerDryRun(server: McpServer): void {
               }
             : undefined,
         });
+        // The missing-binary text is only for errors thrown by the spawn itself.
+        spawned = false;
 
         if (heartbeat) {
           clearInterval(heartbeat);
@@ -897,7 +903,11 @@ export function registerDryRun(server: McpServer): void {
               text: clean(
                 err instanceof CommandTimeoutError
                   ? formatTimeoutError("renovate", err)
-                  : formatMissingBinaryError("renovate", err as Error),
+                  : err instanceof CommandAbortedError
+                    ? "dry_run cancelled."
+                    : spawned
+                      ? formatMissingBinaryError("renovate", err as Error)
+                      : `dry_run failed: ${(err as Error).message}`,
               ),
             },
           ],
