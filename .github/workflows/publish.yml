@@ -13,6 +13,8 @@ name: Publish to npm
 # fire a second, redundant publish run alongside the dispatch below. Both race
 # to `npm publish`; the loser 403s ("cannot publish over previously published
 # versions"), producing a spurious CI-failure email on every release.
+# The concurrency group below only stops two publish runs racing in parallel;
+# a second run would still fail with a 403, so this warning still applies.
 on:
   workflow_dispatch:
     inputs:
@@ -23,6 +25,10 @@ on:
           Optional release tag to check out (e.g. v0.9.1). Only needed when
           backfilling a release whose tagged workflow file pre-dates the
           workflow_dispatch trigger. Leave empty for normal dispatch.
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
 
 jobs:
   publish:
