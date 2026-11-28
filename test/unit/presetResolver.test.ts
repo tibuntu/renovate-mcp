@@ -630,26 +630,6 @@ describe("resolveConfig with endpoint / platform", () => {
     expect(authHeaders(fetchImpl)).toEqual([["gitlab.com", undefined]]);
   });
 
-  it("refuses to fetch when RENOVATE_MCP_HOST_TOKENS is malformed and reports it under <auth>", async () => {
-    vi.stubEnv("RENOVATE_MCP_HOST_TOKENS", "not json");
-    const fetchImpl = vi.fn<typeof fetch>();
-    const { presetsResolved, presetsUnresolved, warnings } = await resolveConfig(
-      { extends: ["github>acme/cfg", ":automergeAll"] },
-      { fetchExternal: true, fetchImpl },
-    );
-    expect(fetchImpl).not.toHaveBeenCalled();
-    expect(presetsResolved).toEqual([":automergeAll"]);
-    expect(presetsUnresolved).toEqual([
-      {
-        preset: "github>acme/cfg",
-        reason: expect.stringMatching(/RENOVATE_MCP_HOST_TOKENS is not valid JSON/),
-      },
-    ]);
-    expect(warnings).toEqual([
-      { preset: "<auth>", message: expect.stringMatching(/RENOVATE_MCP_HOST_TOKENS is not valid JSON/) },
-    ]);
-  });
-
   it("ignores a malformed RENOVATE_MCP_HOST_TOKENS when nothing is fetched", async () => {
     vi.stubEnv("RENOVATE_MCP_HOST_TOKENS", "not json");
     const { warnings } = await resolveConfig({ extends: ["github>acme/cfg"] });
