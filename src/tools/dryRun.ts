@@ -392,6 +392,18 @@ export function registerDryRun(server: McpServer): void {
           ],
         };
       }
+      // https only, but no private-range check: validateEndpoint would also refuse self-hosted private hosts.
+      if (apiUrl && new URL(apiUrl).protocol !== "https:") {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text: "`RENOVATE_ENDPOINT` on the MCP server must use https: plain http would send the token in cleartext.",
+            },
+          ],
+        };
+      }
       const envCredential = apiUrl
         ? selectToken(apiUrl, effectivePlatform as "github" | "gitlab", process.env, { githubComToken: false })
         : undefined;

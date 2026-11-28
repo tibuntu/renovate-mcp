@@ -88,6 +88,8 @@ Anything that isn't an `https://` URL with a non-empty public host is refused:
 
 Self-hosted GitHub Enterprise / GitLab / Gitea / Forgejo on public-DNS https URLs is unaffected.
 
+The env endpoint `RENOVATE_ENDPOINT` is held only to `https:` on a remote `dry_run`: a plain-`http:` value is refused before Renovate is spawned, since the token would travel in cleartext. The private-range check above is not applied to it, so a self-hosted endpoint on a private IP over https still works. The `endpoint` input keeps the full check.
+
 ## Redirects and auth headers
 
 External preset fetches refuse to follow HTTP redirects (`redirect: "manual"`) and never attach `Authorization: Bearer …` / `Authorization: Basic …` / `PRIVATE-TOKEN: …` headers to non-`https://` URLs.
