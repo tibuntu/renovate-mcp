@@ -53,7 +53,7 @@ body:
     attributes:
       label: Node version
       description: Output of `node --version` (must be 24.22.3+ or 26.13.1+).
-      placeholder: v24.11.0
+      placeholder: v24.22.3
     validations:
       required: true
   - type: textarea
