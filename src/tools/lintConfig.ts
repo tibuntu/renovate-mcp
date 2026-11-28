@@ -1,9 +1,7 @@
-import { promises as fs } from "node:fs";
-import JSON5 from "json5";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { lintConfig } from "../lib/configLinter.js";
 import { configRecord, pathString } from "../lib/inputLimits.js";
-import { OFFLINE_READ_ONLY_ANNOTATIONS } from "../lib/toolInputs.js";
+import { loadConfigFile, OFFLINE_READ_ONLY_ANNOTATIONS } from "../lib/toolInputs.js";
 import { z } from "zod";
 
 export function registerLintConfig(server: McpServer): void {
@@ -22,44 +20,12 @@ export function registerLintConfig(server: McpServer): void {
       }),
     },
     async ({ configPath, configContent }) => {
-      if (!configPath && !configContent) {
-        return {
-          isError: true,
-          content: [
-            { type: "text", text: "Provide either configPath or configContent." },
-          ],
-        };
-      }
-      if (configPath && configContent) {
-        return {
-          isError: true,
-          content: [{ type: "text", text: "Pass either configPath or configContent, not both." }],
-        };
+      const loaded = await loadConfigFile({ configPath, configContent });
+      if (!loaded.ok) {
+        return { isError: true, content: [{ type: "text", text: loaded.error }] };
       }
 
-      let config: unknown;
-      if (configContent) {
-        config = configContent;
-      } else {
-        try {
-          const raw = await fs.readFile(configPath!, "utf8");
-          // JSON5 is a superset of the JSONC Renovate accepts in any config
-          // file, so one parser covers .json / .json5 / extensionless alike.
-          config = JSON5.parse(raw);
-        } catch (err) {
-          return {
-            isError: true,
-            content: [
-              {
-                type: "text",
-                text: `Failed to read or parse config at ${configPath}: ${(err as Error).message}`,
-              },
-            ],
-          };
-        }
-      }
-
-      const findings = lintConfig(config);
+      const findings = lintConfig(loaded.config);
 
       return {
         content: [

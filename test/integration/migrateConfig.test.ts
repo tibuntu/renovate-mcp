@@ -111,7 +111,42 @@ describe("migrate_config", () => {
 
     expect(res.result?.isError).toBe(true);
     expect(res.result!.content[0]!.text).toContain(
-      "Provide either configPath or configContent",
+      "Pass exactly one of `configPath` or `configContent`.",
     );
+  });
+
+  it("refuses an empty configPath together with configContent", async () => {
+    session = await startServer({}, { requestTimeoutMs: REQUEST_TIMEOUT_MS });
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "migrate_config",
+      arguments: { configPath: "", configContent: { extends: ["config:base"] } },
+    });
+    expect(res.result?.isError).toBe(true);
+    expect(res.result!.content[0]!.text).toContain("Pass exactly one of");
+  });
+
+  it("refuses a relative configPath", async () => {
+    session = await startServer({}, { requestTimeoutMs: REQUEST_TIMEOUT_MS });
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", { name: "migrate_config", arguments: { configPath: "renovate.json" } });
+    expect(res.result?.isError).toBe(true);
+    expect(res.result!.content[0]!.text).toContain("must be an absolute path");
+  });
+
+  it("refuses a config file that is not a JSON object", async () => {
+    const file = path.join(repo, "arr.json");
+    await writeFile(file, "[]");
+    session = await startServer({}, { requestTimeoutMs: REQUEST_TIMEOUT_MS });
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", { name: "migrate_config", arguments: { configPath: file } });
+    expect(res.result?.isError).toBe(true);
+    expect(res.result!.content[0]!.text).toContain("must be a JSON object");
   });
 });
