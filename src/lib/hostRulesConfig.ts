@@ -1,7 +1,7 @@
-import { trackTemp, untrackTemp } from "./renovateCli.js";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
+import { trackTemp, untrackTemp } from "./renovateCli.js";
 
 export type HostRule = Record<string, unknown>;
 
