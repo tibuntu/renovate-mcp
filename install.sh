@@ -88,7 +88,7 @@ case "$(uname -s)" in
   *)
     warn "renovate-mcp supports Linux and macOS only (package.json declares os: [darwin, linux])."
     info "On Windows, run this installer inside WSL2."
-    exit 0
+    exit 1
     ;;
 esac
 
