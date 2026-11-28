@@ -28,10 +28,15 @@ const PLATFORM_ENV_KEYS = [
   "FORGEJO_TOKEN",
   "BITBUCKET_TOKEN",
   "RENOVATE_MCP_HOST_TOKENS",
+  "RENOVATE_BIN",
+  "RENOVATE_CONFIG_VALIDATOR_BIN",
 ] as const;
 
 afterEach(() => {
-  process.env = { ...originalEnv };
+  for (const key of PLATFORM_ENV_KEYS) {
+    delete process.env[key];
+    if (originalEnv[key] !== undefined) process.env[key] = originalEnv[key];
+  }
 });
 
 const tempDirs: string[] = [];
