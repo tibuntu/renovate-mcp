@@ -1,7 +1,7 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { checkSetup, describeSetup } from "../../src/lib/setupCheck.js";
 import type { EndpointProbeResult } from "../../src/lib/endpointProbe.js";
 
@@ -32,11 +32,17 @@ afterEach(() => {
   }
 });
 
+const tempDirs: string[] = [];
+afterAll(() => {
+  for (const d of tempDirs) rmSync(d, { recursive: true, force: true });
+});
+
 function makeRepo(opts: {
   originUrl?: string;
   renovateConfig?: Record<string, unknown>;
 }): string {
   const dir = mkdtempSync(path.join(tmpdir(), "setup-check-repo-"));
+  tempDirs.push(dir);
   if (opts.originUrl) {
     mkdirSync(path.join(dir, ".git"), { recursive: true });
     writeFileSync(
