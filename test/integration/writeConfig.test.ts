@@ -138,6 +138,70 @@ describe("write_config", () => {
     expect(files.some((f) => f.includes(".renovate-mcp-tmp"))).toBe(false);
   });
 
+  it("removes directories it created for a refused write", async () => {
+    const validator = await makeFakeValidator(repo, "fake-fail.mjs", 1);
+    session = await startServer({ RENOVATE_CONFIG_VALIDATOR_BIN: validator });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "write_config",
+      arguments: {
+        repoPath: repo,
+        filename: ".github/renovate.json",
+        config: { extends: ["config:recommended"] },
+      },
+    });
+
+    expect(res.result?.isError).toBe(true);
+    expect(JSON.parse(res.result!.content[0]!.text).wrote).toBe(false);
+    expect(await readdir(repo)).not.toContain(".github");
+  });
+
+  it("keeps a pre-existing directory when the write is refused", async () => {
+    const validator = await makeFakeValidator(repo, "fake-fail.mjs", 1);
+    session = await startServer({ RENOVATE_CONFIG_VALIDATOR_BIN: validator });
+    await mkdir(path.join(repo, ".github"));
+    await writeFile(path.join(repo, ".github", "CODEOWNERS"), "* @me\n");
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "write_config",
+      arguments: {
+        repoPath: repo,
+        filename: ".github/renovate.json",
+        config: { extends: ["config:recommended"] },
+      },
+    });
+
+    expect(res.result?.isError).toBe(true);
+    expect(await readdir(path.join(repo, ".github"))).toEqual(["CODEOWNERS"]);
+  });
+
+  it("creates the directory and writes when validation passes", async () => {
+    const validator = await makeFakeValidator(repo, "fake-pass.mjs", 0);
+    session = await startServer({ RENOVATE_CONFIG_VALIDATOR_BIN: validator });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "write_config",
+      arguments: {
+        repoPath: repo,
+        filename: ".github/renovate.json",
+        config: { extends: ["config:recommended"] },
+      },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    const written = JSON.parse(await readFile(path.join(repo, ".github", "renovate.json"), "utf8"));
+    expect(written).toMatchObject({ extends: ["config:recommended"] });
+  });
+
   it("does not follow a pre-existing symlink at the legacy temp path (issue #129)", async () => {
     // Threat model: an attacker plants a symlink at the deterministic legacy
     // temp path pointing at a sentinel outside the repo. Two combined defenses
