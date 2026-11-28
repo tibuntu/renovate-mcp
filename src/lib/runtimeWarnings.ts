@@ -27,7 +27,6 @@ export interface RuntimeWarning {
 }
 
 const MAX_DETAIL_LENGTH = 300;
-const MAX_WARNINGS = 10;
 
 const RE2_FIX_HINT =
   "The RE2 native module bundled with Renovate failed to load (likely after a Node version upgrade). Renovate is falling back to JavaScript `RegExp`, which is significantly slower for regex-heavy operations. To restore vectorized regex: reinstall renovate-mcp (which reinstalls the bundled `renovate` and rebuilds its native deps), or run `npm rebuild re2` inside the renovate-mcp install's `node_modules/renovate`. If `RENOVATE_BIN` points at a different Renovate install, run `npm rebuild re2` there instead.";
@@ -52,7 +51,6 @@ export function detectRuntimeWarnings(output: string): RuntimeWarning[] {
 
   const pushRe2 = (detail?: string): void => {
     if (seen.has("re2-unusable")) return;
-    if (warnings.length >= MAX_WARNINGS) return;
     seen.add("re2-unusable");
     const w: RuntimeWarning = { kind: "re2-unusable", message: RE2_MESSAGE, fix: RE2_FIX_HINT };
     if (detail) w.detail = detail;
@@ -62,7 +60,6 @@ export function detectRuntimeWarnings(output: string): RuntimeWarning[] {
   for (const rawLine of output.split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line) continue;
-    if (warnings.length >= MAX_WARNINGS) break;
 
     if (line.startsWith("{")) {
       try {
