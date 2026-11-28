@@ -125,8 +125,8 @@ Claude Desktop reads `~/Library/Application Support/Claude/claude_desktop_config
 {
   "mcpServers": {
     "renovate": {
-      "command": "/Users/you/.nvm/versions/node/v24.14.1/bin/node",
-      "args": ["/Users/you/.nvm/versions/node/v24.14.1/lib/node_modules/renovate-mcp/dist/index.js"]
+      "command": "/Users/you/.nvm/versions/node/v24.22.3/bin/node",
+      "args": ["/Users/you/.nvm/versions/node/v24.22.3/lib/node_modules/renovate-mcp/dist/index.js"]
     }
   }
 }

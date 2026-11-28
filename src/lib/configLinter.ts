@@ -700,7 +700,7 @@ function checkPattern(raw: string, path: string, findings: LintFinding[]): void 
       severity: "warn",
       path,
       value: raw,
-      message: `Value contains regex metacharacters but is not wrapped in '/…/', so Renovate matches it as a glob (or exact string), not a regex. Wrap it as '/${stripped}/' (or '!/${stripped}/' to negate) if a regex match was intended.`,
+      message: `Value contains regex metacharacters but is not wrapped in '/…/', so Renovate matches it as a glob, version range or exact string, not a regex. Wrap it as '/${stripped}/' (or '!/${stripped}/' to negate) if a regex match was intended.`,
     });
   }
 }
