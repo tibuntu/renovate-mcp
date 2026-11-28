@@ -33,6 +33,11 @@ export function checkSnapshotVersions(input: {
   snapshots: readonly CheckInputSnapshot[];
 }): CheckResult;
 
+export function checkInstalledMatchesPin(input: {
+  installed: string;
+  pinned: string | undefined;
+}): string | null;
+
 export function loadSnapshots(
   repoRoot: string,
 ): Promise<CheckInputSnapshot[]>;
