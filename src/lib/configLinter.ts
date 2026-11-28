@@ -847,6 +847,8 @@ function hasStrongRegexSignal(s: string): boolean {
     /\\[dwsbDWSB]/.test(s) ||
     /\.[+*?]/.test(s) ||
     /\\\./.test(s) ||
-    /\(\?[:!=<]/.test(s)
+    /\(\?[:!=<]/.test(s) ||
+    // `]+` and `]{n}` are regex quantifiers on a class; `]*` / `]?` are valid globs and `]+(` is an extglob.
+    /\](?:\+(?!\()|\{\d+(?:,\d*)?\})/.test(s)
   );
 }
