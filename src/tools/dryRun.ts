@@ -380,7 +380,8 @@ export function registerDryRun(server: McpServer): void {
       const apiUrl = isRemotePlatform ? (route.endpoint ?? DEFAULT_API_URL[effectivePlatform]) : undefined;
       // The `endpoint` input already passed validateEndpoint (https-only) above, so only
       // `RENOVATE_ENDPOINT` can fail the two checks below.
-      if (apiUrl && !URL.canParse(apiUrl)) {
+      const parsedApiUrl = apiUrl ? URL.parse(apiUrl) : null;
+      if (apiUrl && !parsedApiUrl) {
         return {
           isError: true,
           content: [
@@ -392,7 +393,7 @@ export function registerDryRun(server: McpServer): void {
         };
       }
       // https only, but no private-range check: validateEndpoint would also refuse self-hosted private hosts.
-      if (apiUrl && new URL(apiUrl).protocol !== "https:") {
+      if (parsedApiUrl && parsedApiUrl.protocol !== "https:") {
         return {
           isError: true,
           content: [
