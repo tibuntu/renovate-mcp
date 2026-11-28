@@ -171,6 +171,9 @@ describe("readLogPath: memory", () => {
 // forces dryRun to "lookup"), so `branches` is [] in the report and the
 // `branches info extended` line is not emitted at all.
 const renovateBin = resolveBundledBinary("renovate");
+// In CI `renovate` is a runtime dependency, so a failed lookup there is a
+// regression, not a reason to silently skip the oracle.
+it.runIf(process.env.CI)("bundled renovate resolves", () => expect(renovateBin).not.toBeNull());
 describe.skipIf(!renovateBin)("readLogPath: oracle against a real local run", () => {
   it("packageFiles deep-equals the report file; branches are empty on both sides", async () => {
     const repo = path.join(scratch, "repo");
