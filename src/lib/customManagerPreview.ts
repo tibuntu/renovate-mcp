@@ -157,11 +157,45 @@ export async function previewCustomManager(
       maxHitsPerFile,
     );
     result.hits.push(...fileResult.hits);
-    result.extractedDeps.push(...fileResult.deps);
     result.warnings.push(...fileResult.warnings);
+    result.extractedDeps.push(...keepValidDeps(rel, fileResult.deps, result.warnings));
   }
 
   return result;
+}
+
+const isNonBlank = (v: unknown): boolean => typeof v === "string" && v.trim() !== "";
+
+/** Port of Renovate's `isValidDependency` (manager/custom/utils.ts), as the missing-field list. */
+export function missingFields(dep: Partial<ExtractedDep>): string[] {
+  const missing: string[] = [];
+  if (!isNonBlank(dep.depName) && !isNonBlank(dep.packageName)) missing.push("depName/packageName");
+  if (!isNonBlank(dep.currentValue) && !isNonBlank(dep.currentDigest)) {
+    missing.push("currentValue/currentDigest");
+  }
+  if (!isNonBlank(dep.datasource)) missing.push("datasource");
+  return missing;
+}
+
+export function isValidDependency(dep: Partial<ExtractedDep>): boolean {
+  return missingFields(dep).length === 0;
+}
+
+/** Drops deps Renovate would discard; one aggregated warning per file. */
+function keepValidDeps(rel: string, deps: ExtractedDep[], warnings: string[]): ExtractedDep[] {
+  const missing = new Set<string>();
+  const kept = deps.filter((d) => {
+    const m = missingFields(d);
+    m.forEach((f) => missing.add(f));
+    return m.length === 0;
+  });
+  const n = deps.length - kept.length;
+  if (n > 0) {
+    warnings.push(
+      `${rel}: ${n} extracted dep(s) discarded — Renovate drops a dep without depName/packageName, currentValue/currentDigest, or datasource (missing: ${[...missing].join(", ")}).`,
+    );
+  }
+  return kept;
 }
 
 function emptyResult(): PreviewResult {
@@ -391,6 +425,7 @@ async function previewJsonataManager(
   // surface from the worker.
   const { extractedDeps, warnings } = result;
   for await (const { rel, content } of matchedFiles(repoPath, manager, options, result)) {
+    const fileDeps: ExtractedDep[] = [];
     const parsed = await parseStructured(content, fileFormat);
     if (!parsed.ok) {
       warnings.push(
@@ -427,9 +462,10 @@ async function previewJsonataManager(
         continue;
       }
       for (const obj of normalized.objects) {
-        extractedDeps.push(buildJsonataDep(rel, obj, manager));
+        fileDeps.push(buildJsonataDep(rel, obj, manager));
       }
     }
+    extractedDeps.push(...keepValidDeps(rel, fileDeps, warnings));
   }
 
   // JSONata path has no per-line concept; `hits` stays empty by design.
@@ -618,8 +654,8 @@ async function applyAny(
 }
 
 /**
- * Mirrors Renovate's `handleCombination`: every matchString must hit at least
- * once for the file to produce a dep; all matches' named groups are merged
+ * Mirrors Renovate's `handleCombination`: a file produces a dep unless no
+ * matchString matched at all; all matches' named groups are merged
  * (later matches override earlier on key conflicts) into a single dep. We still
  * surface every match as a `hit` so the user can see which lines contributed,
  * but `extractedDeps` collapses to one entry per file.
@@ -648,10 +684,6 @@ async function applyCombination(
       return { hits: [], deps: [], warnings };
     }
     if (!res.ok) throw new Error(`Regex worker error: ${res.error}`);
-    if (res.matches.length === 0) {
-      // Combination requires every matchString to hit at least once.
-      return { hits: [], deps: [], warnings };
-    }
     perStringMatches.push(res.matches);
     for (const m of res.matches) {
       hits.push({
@@ -663,6 +695,10 @@ async function applyCombination(
       });
     }
   }
+
+  // Like Renovate, no match at all means no dep; a partial match still merges
+  // and the validity filter decides.
+  if (hits.length === 0) return { hits, deps: [], warnings };
 
   // Merge groups in match order across all matchStrings (later overrides earlier).
   const mergedGroups: Record<string, string> = {};
@@ -785,11 +821,18 @@ function buildExtractedDep(
       if (v !== undefined) dep[depKey] = v;
     }
   }
-  // Templates override matching named groups.
+  // Templates override matching named groups. As in Renovate's regex
+  // `createDependency`, they also see packageFile (basename) / packageFileDir,
+  // which win over same-named groups.
+  const bag = {
+    ...groups,
+    packageFile: path.posix.basename(file),
+    packageFileDir: path.posix.dirname(file),
+  };
   for (const [tmplKey, depKey] of TEMPLATE_FIELD_MAP) {
     const tmpl = manager[tmplKey];
     if (typeof tmpl === "string") {
-      dep[depKey] = applyTemplate(tmpl, groups);
+      dep[depKey] = applyTemplate(tmpl, bag);
     }
   }
   return dep as unknown as ExtractedDep;

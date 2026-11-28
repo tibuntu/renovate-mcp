@@ -406,6 +406,7 @@ describe("previewCustomManager (jsonata branch — end-to-end)", () => {
       fileFormat: "yaml",
       managerFilePatterns: ["/\\.yaml$/"],
       matchStrings: ['packages.{ "depName": name, "currentValue": version }'],
+      datasourceTemplate: "npm",
     });
     expect(result.filesMatched.sort()).toEqual(["bad.yaml", "good.yaml"]);
     expect(result.extractedDeps).toHaveLength(1);
@@ -448,6 +449,7 @@ describe("previewCustomManager (jsonata branch — end-to-end)", () => {
       fileFormat: "yaml",
       managerFilePatterns: ["**/Chart.yaml"],
       matchStrings: ['dependencies.{ "depName": name, "currentValue": version }'],
+      datasourceTemplate: "helm",
     });
     expect(result.warnings).toEqual([]);
     expect(result.filesMatched).toEqual(["charts/app/Chart.yaml"]);
