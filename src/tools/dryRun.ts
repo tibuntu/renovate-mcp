@@ -38,7 +38,7 @@ import {
   buildDryRunHeartbeatMessage,
 } from "../lib/dryRunProgress.js";
 import { classifyReportProblem } from "../lib/runtimeWarnings.js";
-import { readArray, readRecord } from "../lib/dryRunDiff.js";
+import { collectReportUpgrades, readArray, readRecord } from "../lib/dryRunDiff.js";
 import {
   BASE_BRANCHES_MAX_ITEMS,
   BRANCH_NAME_MAX_BYTES,
@@ -146,14 +146,13 @@ function countRepositories(report: unknown): number {
 }
 
 /**
- * Every `repositories[*].branches[*].upgrades[]` entry. Not
- * `collectProposedUpdates(report).length`: that drops upgrades without a
- * `depName` (lockFileMaintenance), which this count includes.
+ * Branch upgrades, or `packageFiles[*][].deps[].updates[]` for a repo with no
+ * branches (a `platform=local` run). Not `collectProposedUpdates(report).length`:
+ * that drops upgrades without a `depName` (lockFileMaintenance), which this
+ * count includes.
  */
 function countUpdates(report: unknown): number {
-  return Object.values(readRecord(report, "repositories") ?? {})
-    .flatMap((repo) => readArray(repo, "branches") ?? [])
-    .reduce<number>((n, branch) => n + (readArray(branch, "upgrades")?.length ?? 0), 0);
+  return collectReportUpgrades(report).length;
 }
 
 export function registerDryRun(server: McpServer): void {
@@ -314,7 +313,6 @@ export function registerDryRun(server: McpServer): void {
       }
 
       const reportPath = path.join(tmpdir(), `renovate-mcp-report-${randomUUID()}.json`);
-      trackTemp(reportPath);
       const tool = resolveRenovateTool("renovate");
       const ruleList: HostRule[] = hostRules ?? [];
       // When the caller doesn't pass `platform`, fall back to RENOVATE_PLATFORM
@@ -610,6 +608,7 @@ export function registerDryRun(server: McpServer): void {
         // the path already exists (e.g. UUID collision), which is the safer
         // default than silently inheriting whatever mode it had.
         await fs.writeFile(reportPath, "", { flag: "wx", mode: 0o600 });
+        trackTemp(reportPath); // only now is it ours to sweep
 
         let flattened: { flattenedPresets: string[]; keptExtends: string[] } | undefined;
         if (copy?.flatten) {
