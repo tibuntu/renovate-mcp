@@ -314,3 +314,58 @@ describe("local-platform reports (no branches)", () => {
     expect(diffDryRunReports(r, r).summary).toEqual({ added: 0, removed: 0, changed: 0, unchanged: 0 });
   });
 });
+
+const LODASH_MINOR = { manager: "npm", packageFile: "package.json", depName: "lodash", updateType: "minor", newVersion: "4.18.0" };
+const LODASH_MAJOR = { manager: "npm", packageFile: "package.json", depName: "lodash", updateType: "major", newVersion: "5.0.0" };
+
+function branchReport(...upgradeLists: Array<Array<Record<string, unknown>>>): unknown {
+  return {
+    repositories: {
+      "o/r": { branches: upgradeLists.map((upgrades, i) => ({ branchName: `b${i}`, upgrades })) },
+    },
+  };
+}
+
+describe("collision-aware pairing", () => {
+  it("keeps a dep's major and minor updates apart", () => {
+    const d = diffDryRunReports(branchReport([LODASH_MINOR, LODASH_MAJOR]), branchReport([LODASH_MINOR]));
+    expect(d.summary).toEqual({ added: 0, removed: 1, changed: 0, unchanged: 1 });
+    expect(d.removed[0]!.updateType).toBe("major");
+  });
+
+  it("still pairs a lone update across a version bump as changed", () => {
+    const d = diffDryRunReports(
+      branchReport([LODASH_MINOR]),
+      branchReport([{ ...LODASH_MINOR, newVersion: "4.19.0" }]),
+    );
+    expect(d.summary).toEqual({ added: 0, removed: 0, changed: 1, unchanged: 0 });
+  });
+
+  it("counts an update repeated across branches once", () => {
+    const r = branchReport([LODASH_MINOR], [LODASH_MINOR]);
+    expect(diffDryRunReports(r, r).summary).toEqual({ added: 0, removed: 0, changed: 0, unchanged: 1 });
+  });
+
+  it("keeps minor and major apart in a local-shaped report", () => {
+    const dep = (updates: Array<Record<string, unknown>>) => ({ depName: "lodash", updates });
+    const minor = { updateType: "minor", newVersion: "4.18.0" };
+    const major = { updateType: "major", newVersion: "5.0.0" };
+    const d = diffDryRunReports(localReport([dep([minor, major])]), localReport([dep([minor])]));
+    expect(d.summary).toEqual({ added: 0, removed: 1, changed: 0, unchanged: 1 });
+    expect(d.removed[0]!.updateType).toBe("major");
+  });
+
+  it("reads only branch upgrades when a repo has both branches and packageFiles updates", () => {
+    const report = {
+      repositories: {
+        "o/r": {
+          branches: [{ branchName: "b", upgrades: [LODASH_MINOR] }],
+          packageFiles: {
+            npm: [{ packageFile: "package.json", deps: [{ depName: "lodash", updates: [{ updateType: "minor" }, { updateType: "major" }] }] }],
+          },
+        },
+      },
+    };
+    expect(collectProposedUpdates(report)).toHaveLength(1);
+  });
+});

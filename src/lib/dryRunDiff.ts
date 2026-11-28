@@ -82,6 +82,8 @@ export function extractReport(input: unknown): unknown {
   return input;
 }
 
+export type ReportUpgrade = { upgrade: Record<string, unknown>; branch?: Record<string, unknown> };
+
 /**
  * Yield every upgrade in the report. A repository with branches is read from
  * `branches[*].upgrades[]` only (what would actually become a PR), each entry
@@ -92,8 +94,8 @@ export function extractReport(input: unknown): unknown {
  */
 export function collectReportUpgrades(
   report: unknown,
-): Array<{ upgrade: Record<string, unknown>; branch?: Record<string, unknown> }> {
-  const out: Array<{ upgrade: Record<string, unknown>; branch?: Record<string, unknown> }> = [];
+): ReportUpgrade[] {
+  const out: ReportUpgrade[] = [];
   const repositories = readRecord(report, "repositories");
   if (!repositories) return out;
 
@@ -191,18 +193,37 @@ export function identityKey(u: { manager: string; packageFile: string; depName: 
   return `${u.manager}\u0000${u.packageFile}\u0000${u.depName}`;
 }
 
-function indexByIdentity<T extends { manager: string; packageFile: string; depName: string }>(
-  updates: T[],
-): Map<string, T> {
-  const map = new Map<string, T>();
-  for (const u of updates) {
-    // If multiple upgrades share the same identity (e.g. a dep listed in
-    // two branches), keep the first — the diff is over the *set* of
-    // proposed updates, not their grouping.
-    const key = identityKey(u);
-    if (!map.has(key)) map.set(key, u);
-  }
-  return map;
+type IdentityFields = { manager: string; packageFile: string; depName: string; updateType?: string };
+
+/**
+ * Index both sides on a shared pairing key. The coarse `identityKey` is used
+ * while neither side holds more than one entry for it (so a version bump
+ * pairs as `changed`); otherwise every entry of that group is keyed on
+ * `identityKey + updateType` so a dep's minor and major updates stay apart.
+ * First entry wins on a repeat (a dep listed in two branches counts once).
+ */
+function indexForPairing<T extends IdentityFields>(
+  before: T[],
+  after: T[],
+): [Map<string, T>, Map<string, T>] {
+  const count = (list: T[]): Map<string, number> => {
+    const m = new Map<string, number>();
+    for (const u of list) m.set(identityKey(u), (m.get(identityKey(u)) ?? 0) + 1);
+    return m;
+  };
+  const bc = count(before);
+  const ac = count(after);
+  const index = (list: T[]): Map<string, T> => {
+    const map = new Map<string, T>();
+    for (const u of list) {
+      const k = identityKey(u);
+      const coarse = (bc.get(k) ?? 0) <= 1 && (ac.get(k) ?? 0) <= 1;
+      const key = coarse ? k : `${k}\u0000${u.updateType ?? ""}`;
+      if (!map.has(key)) map.set(key, u);
+    }
+    return map;
+  };
+  return [index(before), index(after)];
 }
 
 function diffFields(before: ProposedUpdate, after: ProposedUpdate): FieldChange[] {
@@ -224,53 +245,60 @@ export function diffDryRunReports(beforeInput: unknown, afterInput: unknown): Dr
   const beforeUpdates = collectProposedUpdates(beforeReport);
   const afterUpdates = collectProposedUpdates(afterReport);
 
-  const beforeIdx = indexByIdentity(beforeUpdates);
-  const afterIdx = indexByIdentity(afterUpdates);
+  const [beforeIdx, afterIdx] = indexForPairing(beforeUpdates, afterUpdates);
 
-  const added: ProposedUpdate[] = [];
-  const removed: ProposedUpdate[] = [];
-  const changed: ChangedUpdate[] = [];
+  const added: Array<[string, ProposedUpdate]> = [];
+  const removed: Array<[string, ProposedUpdate]> = [];
+  const changed: Array<[string, ChangedUpdate]> = [];
   let unchanged = 0;
 
   for (const [key, after] of afterIdx) {
     const before = beforeIdx.get(key);
     if (!before) {
-      added.push(after);
+      added.push([key, after]);
       continue;
     }
     const changes = diffFields(before, after);
     if (changes.length === 0) {
       unchanged += 1;
     } else {
-      changed.push({
+      changed.push([key, {
         manager: after.manager,
         packageFile: after.packageFile,
         depName: after.depName,
         before,
         after,
         changes,
-      });
+      }]);
     }
   }
   for (const [key, before] of beforeIdx) {
-    if (!afterIdx.has(key)) removed.push(before);
+    if (!afterIdx.has(key)) removed.push([key, before]);
   }
 
-  // Stable ordering for deterministic output.
-  const byIdentity = (a: ProposedUpdate, b: ProposedUpdate): number =>
-    identityKey(a).localeCompare(identityKey(b));
-  added.sort(byIdentity);
-  removed.sort(byIdentity);
-  changed.sort((a, b) => identityKey(a).localeCompare(identityKey(b)));
+  // Stable ordering for deterministic output, on the key each entry paired on.
+  const byKey = (a: [string, unknown], b: [string, unknown]): number => a[0].localeCompare(b[0]);
+  added.sort(byKey);
+  removed.sort(byKey);
+  changed.sort(byKey);
+  const addedU = added.map(([, u]) => u);
+  const removedU = removed.map(([, u]) => u);
+  const changedU = changed.map(([, c]) => c);
 
   const summary = {
-    added: added.length,
-    removed: removed.length,
-    changed: changed.length,
+    added: addedU.length,
+    removed: removedU.length,
+    changed: changedU.length,
     unchanged,
   };
 
-  return { summary, added, removed, changed, text: renderText(summary, added, removed, changed) };
+  return {
+    summary,
+    added: addedU,
+    removed: removedU,
+    changed: changedU,
+    text: renderText(summary, addedU, removedU, changedU),
+  };
 }
 
 function renderText(
@@ -301,7 +329,7 @@ function renderText(
   if (changed.length > 0) {
     lines.push("", "Changed:");
     for (const c of changed) {
-      lines.push(`  ~ ${identityLabel(c)}`);
+      lines.push(`  ~ ${identityLabel(c)}${c.after.updateType && c.before.updateType === c.after.updateType ? ` [${c.after.updateType}]` : ""}`);
       for (const ch of c.changes) {
         lines.push(`      ${ch.field}: ${formatValue(ch.before)} → ${formatValue(ch.after)}`);
       }

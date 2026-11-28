@@ -133,7 +133,7 @@ export function registerAnnotateDryRun(server: McpServer): void {
       const seen = new Set<string>();
       const entries: UpdateEntry[] = [];
       for (const e of entriesRaw) {
-        const key = identityKey(e.display);
+        const key = `${identityKey(e.display)}\u0000${String(e.display.updateType ?? "")}\u0000${String(e.display.newVersion ?? "")}`;
         if (seen.has(key)) continue;
         seen.add(key);
         entries.push(e);

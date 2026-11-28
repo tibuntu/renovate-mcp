@@ -203,6 +203,27 @@ describe("annotate_dry_run", () => {
     expect(result.content[0]!.text).toMatch(/Provide either repoPath or configContent/);
   });
 
+  it("annotates every update of a dep, not just the first", async () => {
+    session = await startServer({});
+    const result = await call({
+      report: {
+        repositories: {
+          "owner/repo": {
+            branches: [
+              { upgrades: [LODASH] },
+              { upgrades: [{ ...LODASH, updateType: "major", newVersion: "5.0.0" }] },
+            ],
+          },
+        },
+      },
+      configContent: { packageRules: [{ matchUpdateTypes: ["major"], automerge: false }] },
+    });
+    expect(result.isError).toBeFalsy();
+    const body = JSON.parse(result.content[0]!.text) as Body;
+    expect(body.updateCount).toBe(2);
+    expect(body.rulesNeverMatched).toEqual([]);
+  });
+
   it("advertises the tool in the server instructions", async () => {
     session = await startServer({});
     expect(session.instructions).toContain("annotate_dry_run");
