@@ -29,7 +29,7 @@ export function registerExplainDependency(server: McpServer): void {
       title: "Explain why a dependency was or wasn't updated",
       annotations: OFFLINE_READ_ONLY_ANNOTATIONS,
       description:
-        "Answer \"why was/wasn't dependency X updated?\" from an existing `dry_run` report — offline, no CLI. Finds every extracted occurrence of the dependency under `packageFiles` (matched case-insensitively against `depName` and `packageName`; exact by default, `partial: true` for substring) and returns per hit its `skipReason` / `skipStage`, proposed `updates`, and `warnings`, plus a one-line `verdict` (`not found in report`, `skipped: <reason>`, `up to date`, or `N update(s) available`, followed by `held: <result>` when a branch result shows the update was held back), remedy `hints`, and `relatedProblems` (report/repo `problems` entries mentioning the dep). Pass the report inline (`report`, raw or a full `dry_run` summary) via `reportPath` (pair with `dry_run`'s reportOutputPath) or as `logPath` (a Renovate JSON-lines debug log from a real bot run, `LOG_LEVEL=debug LOG_FORMAT=json`). Optionally add a config source (`repoPath` or `configContent`) to attach `matchedRules` — the packageRules that matched each hit, evaluated with Renovate's real matchers in a worker thread.",
+        "Answer \"why was/wasn't dependency X updated?\" from an existing `dry_run` report — offline, no CLI. Finds every extracted occurrence of the dependency under `packageFiles` (matched case-insensitively against `depName` and `packageName`; exact by default, `partial: true` for substring) and returns per hit its `skipReason` / `skipStage`, proposed `updates`, and `warnings`, plus a one-line `verdict` (`not found in report`, `skipped: <reason>`, `extracted; no lookup ran`, `up to date`, or `N update(s) available`, followed by `held: <result>` when a branch result shows the update was held back), remedy `hints`, and `relatedProblems` (report/repo `problems` entries mentioning the dep). Pass the report inline (`report`, raw or a full `dry_run` summary) via `reportPath` (pair with `dry_run`'s reportOutputPath) or as `logPath` (a Renovate JSON-lines debug log from a real bot run, `LOG_LEVEL=debug LOG_FORMAT=json`). Optionally add a config source (`repoPath` or `configContent`) to attach `matchedRules` — the packageRules that matched each hit, evaluated with Renovate's real matchers in a worker thread.",
       inputSchema: z.object({
         report: reportRecord(
           "A Renovate dry-run report — the raw report (`{ repositories }`) or a full `dry_run` summary (`{ report }`); the tool unwraps `report` automatically. Use instead of reportPath.",
@@ -63,7 +63,7 @@ export function registerExplainDependency(server: McpServer): void {
 
       const explanation = explainDependency(reportValue, { depName, partial, manager });
       const warnings: string[] = [];
-      let hits: Array<DependencyHit & { matchedRules?: unknown[] }> = explanation.hits;
+      let hits: Array<DependencyHit & { matchedRules?: unknown[]; unevaluatable?: unknown[] }> = explanation.hits;
       let matchQuality: string | undefined;
       let configPath: string | undefined;
       let source: Record<string, unknown> | undefined;
@@ -81,10 +81,14 @@ export function registerExplainDependency(server: McpServer): void {
         });
         const analysis = await analyzePackageRules(packageRules, hits.map(contextOf));
         matchQuality = analysis.matchQuality;
-        hits = hits.map((hit, i) => ({
-          ...hit,
-          matchedRules: (analysis.contexts[i]?.rules ?? []).filter((r) => r.matched).map(toMatchedRule),
-        }));
+        hits = hits.map((hit, i) => {
+          const rules = analysis.contexts[i]?.rules ?? [];
+          return {
+            ...hit,
+            matchedRules: rules.filter((r) => r.matched).map(toMatchedRule),
+            unevaluatable: rules.flatMap((r) => r.unevaluatable.map((u) => ({ ruleIndex: r.index, ...u }))),
+          };
+        });
         warnings.push(...analysis.warnings, ...presetWarnings);
         if (packageRules.length === 0) warnings.push("The resolved config has no packageRules.");
         if (analysis.matchQuality === "preview") warnings.push(PREVIEW_NOTE);

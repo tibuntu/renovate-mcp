@@ -166,7 +166,7 @@ describe("explainDependency — verdicts", () => {
 
   it("hints that no lookup ran when a hit carries no updates array at all", () => {
     const out = explainDependency(report([{ depName: "lodash", currentValue: "^4.0.0" }]), { depName: "lodash" });
-    expect(out.verdict).toBe("up to date");
+    expect(out.verdict).toBe("extracted; no lookup ran");
     expect(out.hints.join("\n")).toMatch(/extract/);
   });
 
