@@ -1000,6 +1000,81 @@ process.exit(0);
     expect(res.result?.content[0]?.text).toMatch(/`RENOVATE_ENDPOINT` on the MCP server is not a valid URL/);
   });
 
+  it("refuses a plain-http RENOVATE_ENDPOINT on a remote run before spawning Renovate", async () => {
+    const argvDump = path.join(repo, "argv.json");
+    session = await startServer({
+      RENOVATE_BIN: await makeArgvEnvDump(repo),
+      RENOVATE_PLATFORM: "gitlab",
+      RENOVATE_ENDPOINT: "http://gitlab.example.com/api/v4",
+      GITLAB_TOKEN: "glpat-self-hosted",
+      FAKE_RENOVATE_ARGV_DUMP: argvDump,
+    });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: { repoPath: repo, repository: "devops/gitops" },
+    });
+
+    expect(res.result?.isError).toBe(true);
+    expect(res.result?.content[0]?.text).toMatch(/`RENOVATE_ENDPOINT`/);
+    expect(res.result?.content[0]?.text).toMatch(/https/);
+    // The server's startup probe runs `--version`; a dry run would overwrite the dump with its own args.
+    const dumped = await readFile(argvDump, "utf8").then(
+      (s) => JSON.parse(s) as { args: string[] },
+      () => ({ args: [] as string[] }),
+    );
+    expect(dumped.args.filter((a) => a !== "--version")).toEqual([]);
+  });
+
+  it("accepts an upper-case HTTPS:// RENOVATE_ENDPOINT on a remote run", async () => {
+    const argvDump = path.join(repo, "argv.json");
+    session = await startServer({
+      RENOVATE_BIN: await makeArgvEnvDump(repo),
+      RENOVATE_PLATFORM: "gitlab",
+      RENOVATE_ENDPOINT: "HTTPS://gitlab.example.com/api/v4",
+      GITLAB_TOKEN: "glpat-self-hosted",
+      FAKE_RENOVATE_ARGV_DUMP: argvDump,
+    });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: { repoPath: repo, repository: "devops/gitops" },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    const dumped = JSON.parse(await readFile(argvDump, "utf8")) as { args: string[] };
+    expect(dumped.args.some((a) => a.startsWith("--report-path="))).toBe(true);
+  });
+
+  it("accepts an https RENOVATE_ENDPOINT on a private IP on a remote run", async () => {
+    const argvDump = path.join(repo, "argv.json");
+    session = await startServer({
+      RENOVATE_BIN: await makeArgvEnvDump(repo),
+      RENOVATE_PLATFORM: "gitlab",
+      RENOVATE_ENDPOINT: "https://10.0.0.5/api/v4/",
+      GITLAB_TOKEN: "glpat-self-hosted",
+      FAKE_RENOVATE_ARGV_DUMP: argvDump,
+    });
+
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "dry_run",
+      arguments: { repoPath: repo, repository: "devops/gitops" },
+    });
+
+    expect(res.result?.isError).toBeFalsy();
+    const dumped = JSON.parse(await readFile(argvDump, "utf8")) as { args: string[] };
+    expect(dumped.args.some((a) => a.startsWith("--report-path="))).toBe(true);
+  });
+
   it("binds GITLAB_TOKEN to RENOVATE_ENDPOINT when the endpoint input is unset and the platform input equals RENOVATE_PLATFORM", async () => {
     const argvDump = path.join(repo, "argv.json");
     const fakeBin = await makeArgvEnvDump(repo);
