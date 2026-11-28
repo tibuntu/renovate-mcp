@@ -2,7 +2,7 @@ import { validateEndpoint } from "./endpointValidator.js";
 import { classifyRemoteHost, parseRemoteUrl, readOriginRemote, type HostedPlatform } from "./gitRemote.js";
 import { homeScope, matchesHost, PUBLIC_HOST, type TokenScope } from "./hostTokens.js";
 import { DEFAULT_WORKER_TIMEOUT_MS, runRenovateWorker } from "./renovateWorker.js";
-import { isLocalPreset } from "./presetResolver.js";
+import { isLocalPreset, UNRESOLVED_KEYS } from "./presetResolver.js";
 import { isRecord } from "./util.js";
 
 /**
@@ -14,9 +14,6 @@ import { isRecord } from "./util.js";
  * Same worker-isolation invariant as the other carve-outs: the main process
  * never imports `renovate`. No preview fallback: a worker failure is a refusal.
  */
-
-/** Keys whose object values Renovate's resolver does not descend into. */
-const UNRESOLVED_KEYS = ["content", "onboardingConfig"];
 
 /**
  * Every local preset in `config`, at the places `resolveConfigPresets` resolves

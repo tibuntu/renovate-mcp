@@ -46,6 +46,9 @@ const NESTED_EXTENDS_SOURCE = "<nested-extends>";
  * (`packageRules[0].extends`, `lockFileMaintenance.extends`). The root's own
  * `extends` is never reported; the `extends` value itself is not descended.
  */
+/** Keys Renovate's resolver never descends into (opaque payloads, not config). */
+export const UNRESOLVED_KEYS = ["content", "onboardingConfig"];
+
 export function findNestedExtends(value: unknown, path = ""): string[] {
   if (Array.isArray(value)) {
     return value.flatMap((v, i) => findNestedExtends(v, `${path}[${i}]`));
@@ -53,6 +56,7 @@ export function findNestedExtends(value: unknown, path = ""): string[] {
   if (value === null || typeof value !== "object") return [];
   return Object.entries(value).flatMap(([k, v]) => {
     const here = path ? `${path}.${k}` : k;
+    if (UNRESOLVED_KEYS.includes(k)) return [];
     if (k === "extends") return path ? [here] : [];
     return findNestedExtends(v, here);
   });
