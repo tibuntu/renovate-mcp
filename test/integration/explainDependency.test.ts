@@ -130,6 +130,22 @@ describe("explain_dependency", () => {
     ]);
   });
 
+  it("lists rules the report cannot decide under each hit's unevaluatable", async () => {
+    session = await startServer({});
+    const result = await call({
+      report: reportWith({ depName: "foo", packageName: "foo", currentVersion: "1.0.0", datasource: "npm", updates: [] }),
+      configContent: { packageRules: [{ matchPackageNames: ["foo"], matchUpdateTypes: ["major"], enabled: false }] },
+      depName: "foo",
+    });
+    expect(result.isError).toBeFalsy();
+    const body = JSON.parse(result.content[0]!.text) as Body & {
+      hits: Array<{ unevaluatable?: Array<{ ruleIndex: number; matcher: string; reason: string }> }>;
+    };
+    expect(body.hits[0]!.unevaluatable).toEqual([
+      expect.objectContaining({ ruleIndex: 0, matcher: "matchUpdateTypes", reason: "missing-input-field" }),
+    ]);
+  });
+
   it("returns not found with coverage hints", async () => {
     session = await startServer({});
     const result = await call({ report: reportWith(LODASH), depName: "left-pad" });

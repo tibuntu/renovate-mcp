@@ -230,7 +230,7 @@ function verdictFor(hits: DependencyHit[]): string {
   const live = hits.filter((h) => !h.skipReason);
   const updateCount = live.reduce((n, h) => n + (h.updates?.length ?? 0), 0);
   if (updateCount > 0) parts.push(`${updateCount} update${updateCount === 1 ? "" : "s"} available`);
-  else if (live.length > 0) parts.push("up to date");
+  else if (live.length > 0) parts.push(live.every((h) => h.updates === undefined) ? "extracted; no lookup ran" : "up to date");
   for (const result of heldResults(hits)) parts.push(`held: ${result}`);
   return parts.join("; ");
 }
