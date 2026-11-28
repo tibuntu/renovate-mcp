@@ -10,6 +10,8 @@ import {
   formatTimeoutError,
   CommandTimeoutError,
   validatorTimeoutMs,
+  trackTemp,
+  untrackTemp,
 } from "../lib/renovateCli.js";
 import type { RuntimeWarning } from "../lib/runtimeWarnings.js";
 import { configRecord, filenameString, pathString } from "../lib/inputLimits.js";
@@ -192,6 +194,7 @@ export function registerWriteConfig(server: McpServer): void {
       // try: on EEXIST the entry at tmp is not ours, so `finally` must not
       // unlink it.
       const fh = await fs.open(tmp, "wx", targetMode === undefined ? 0o666 : 0o600);
+      trackTemp(tmp); // only now: we created it
 
       try {
         try {
@@ -205,6 +208,7 @@ export function registerWriteConfig(server: McpServer): void {
             flag: "wx",
             mode: 0o600,
           });
+          trackTemp(sliceTmp);
         }
         let valid = false;
         let validationOutput = "";
@@ -280,7 +284,11 @@ export function registerWriteConfig(server: McpServer): void {
         // No-op when rename already moved tmp (ENOENT); otherwise cleans up on
         // validation failure or a mid-flight rename error (see #57).
         await fs.unlink(tmp).catch(() => undefined);
-        if (sliceTmp) await fs.unlink(sliceTmp).catch(() => undefined);
+        untrackTemp(tmp);
+        if (sliceTmp) {
+          await fs.unlink(sliceTmp).catch(() => undefined);
+          untrackTemp(sliceTmp);
+        }
       }
     },
   );

@@ -1,3 +1,4 @@
+import { trackTemp, untrackTemp } from "./renovateCli.js";
 import { constants, promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -103,7 +104,13 @@ export async function copyRepo(repoPath: string, limits: CopyLimits = {}): Promi
     };
   }
 
-  const dir = await fs.realpath(await fs.mkdtemp(path.join(tmpdir(), "renovate-mcp-dryrun-")));
+  const created = await fs.mkdtemp(path.join(tmpdir(), "renovate-mcp-dryrun-"));
+  trackTemp(created);
+  const dir = await fs.realpath(created);
+  if (dir !== created) {
+    untrackTemp(created);
+    trackTemp(dir);
+  }
   try {
     await eachLimited(entries, async (entry) => {
       const dest = path.join(dir, entry.rel);
@@ -164,4 +171,5 @@ export async function writeFlattenedConfig(
 /** Remove a copy made by `copyRepo`; a missing directory is fine. */
 export async function removeRepoCopy(dir: string): Promise<void> {
   await fs.rm(dir, { recursive: true, force: true });
+  untrackTemp(dir);
 }
