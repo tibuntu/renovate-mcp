@@ -1,9 +1,7 @@
-import { promises as fs } from "node:fs";
 import type { McpServer } from "@modelcontextprotocol/server";
-import JSON5 from "json5";
 import { runMigration } from "../lib/migrationWorker.js";
 import { configRecord, pathString } from "../lib/inputLimits.js";
-import { OFFLINE_READ_ONLY_ANNOTATIONS } from "../lib/toolInputs.js";
+import { loadConfigFile, OFFLINE_READ_ONLY_ANNOTATIONS } from "../lib/toolInputs.js";
 import { z } from "zod";
 
 export function registerMigrateConfig(server: McpServer): void {
@@ -22,43 +20,11 @@ export function registerMigrateConfig(server: McpServer): void {
       }),
     },
     async ({ configPath, configContent }) => {
-      if (!configPath && !configContent) {
-        return {
-          isError: true,
-          content: [
-            {
-              type: "text",
-              text: "Provide either configPath or configContent.",
-            },
-          ],
-        };
+      const loaded = await loadConfigFile({ configPath, configContent });
+      if (!loaded.ok) {
+        return { isError: true, content: [{ type: "text", text: loaded.error }] };
       }
-      if (configPath && configContent) {
-        return {
-          isError: true,
-          content: [{ type: "text", text: "Pass either configPath or configContent, not both." }],
-        };
-      }
-
-      let input: Record<string, unknown>;
-      if (configContent) {
-        input = configContent;
-      } else {
-        try {
-          const raw = await fs.readFile(configPath!, "utf8");
-          input = JSON5.parse(raw) as Record<string, unknown>;
-        } catch (err) {
-          return {
-            isError: true,
-            content: [
-              {
-                type: "text",
-                text: `Could not read config from ${configPath}: ${(err as Error).message}`,
-              },
-            ],
-          };
-        }
-      }
+      const input = loaded.config;
 
       try {
         const { isMigrated, migratedConfig } = await runMigration(input);

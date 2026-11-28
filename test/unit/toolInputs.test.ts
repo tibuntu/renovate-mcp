@@ -2,7 +2,13 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { assertRepoDir, hostTokensError, loadConfigSource } from "../../src/lib/toolInputs.js";
+import {
+  assertRepoDir,
+  checkConfigFileInput,
+  hostTokensError,
+  loadConfigFile,
+  loadConfigSource,
+} from "../../src/lib/toolInputs.js";
 
 let repo: string;
 
@@ -105,5 +111,75 @@ describe("hostTokensError", () => {
       JSON.stringify([{ matchHost: "gitlab.example.com", hostType: "gitlab", tokenEnv: "ACME" }]),
     );
     expect(hostTokensError(true)).toBeNull();
+  });
+});
+
+const ONE_OF = "Pass exactly one of `configPath` or `configContent`.";
+const ABSOLUTE = "`configPath` must be an absolute path.";
+
+describe("checkConfigFileInput", () => {
+  it("requires exactly one source, by presence rather than truthiness", () => {
+    expect(checkConfigFileInput({})).toBe(ONE_OF);
+    expect(checkConfigFileInput({ configPath: "/a.json", configContent: {} })).toBe(ONE_OF);
+    expect(checkConfigFileInput({ configPath: "", configContent: {} })).toBe(ONE_OF);
+  });
+
+  it("requires an absolute configPath", () => {
+    expect(checkConfigFileInput({ configPath: "rel/renovate.json" })).toBe(ABSOLUTE);
+    expect(checkConfigFileInput({ configPath: "" })).toBe(ABSOLUTE);
+    expect(checkConfigFileInput({ configPath: "/abs/renovate.json" })).toBeNull();
+    expect(checkConfigFileInput({ configContent: {} })).toBeNull();
+  });
+});
+
+describe("loadConfigFile", () => {
+  it("returns inline content as-is", async () => {
+    expect(await loadConfigFile({ configContent: { a: 1 } })).toEqual({
+      ok: true,
+      config: { a: 1 },
+    });
+  });
+
+  it("parses a JSON5 file", async () => {
+    const file = path.join(repo, "renovate.json5");
+    await writeFile(file, "{ extends: ['config:base'], // c\n}");
+    expect(await loadConfigFile({ configPath: file })).toEqual({
+      ok: true,
+      config: { extends: ["config:base"] },
+      path: file,
+    });
+  });
+
+  it("refuses both, neither and an empty configPath with the same text", async () => {
+    const both = { ok: false, error: ONE_OF };
+    expect(await loadConfigFile({})).toEqual(both);
+    expect(await loadConfigFile({ configPath: "", configContent: {} })).toEqual(both);
+  });
+
+  it("refuses a relative configPath", async () => {
+    expect(await loadConfigFile({ configPath: "renovate.json" })).toEqual({
+      ok: false,
+      error: ABSOLUTE,
+    });
+  });
+
+  it("reports unreadable and unparseable files with the path", async () => {
+    const missing = path.join(repo, "missing.json");
+    const res = await loadConfigFile({ configPath: missing });
+    expect(res.ok).toBe(false);
+    expect(!res.ok && res.error).toContain(`Could not read or parse config at ${missing}: `);
+    const bad = path.join(repo, "bad.json");
+    await writeFile(bad, "{ nope");
+    const res2 = await loadConfigFile({ configPath: bad });
+    expect(!res2.ok && res2.error).toContain(`Could not read or parse config at ${bad}: `);
+  });
+
+  it("refuses a non-object file", async () => {
+    const file = path.join(repo, "arr.json");
+    await writeFile(file, "[]");
+    expect(await loadConfigFile({ configPath: file })).toEqual({
+      ok: false,
+      error: `Config at ${file} must be a JSON object.`,
+    });
   });
 });

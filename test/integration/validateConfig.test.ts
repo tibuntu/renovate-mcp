@@ -152,8 +152,31 @@ process.exit(0);
 
     expect(res.result?.isError).toBe(true);
     expect(res.result!.content[0]!.text).toContain(
-      "Provide either configPath or configContent",
+      "Pass exactly one of `configPath` or `configContent`.",
     );
+  });
+
+  it("refuses an empty configPath together with configContent", async () => {
+    session = await startServer({}, { requestTimeoutMs: 30_000 });
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", {
+      name: "validate_config",
+      arguments: { configPath: "", configContent: {} },
+    });
+    expect(res.result?.isError).toBe(true);
+    expect(res.result!.content[0]!.text).toContain("Pass exactly one of");
+  });
+
+  it("refuses a relative configPath", async () => {
+    session = await startServer({}, { requestTimeoutMs: 30_000 });
+    const res = await session.request<{
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    }>("tools/call", { name: "validate_config", arguments: { configPath: "renovate.json" } });
+    expect(res.result?.isError).toBe(true);
+    expect(res.result!.content[0]!.text).toContain("must be an absolute path");
   });
 
   it("wraps spawn failures via formatMissingBinaryError when the validator is not found", async () => {

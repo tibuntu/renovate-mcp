@@ -13,7 +13,7 @@ import {
   validatorTimeoutMs,
 } from "../lib/renovateCli.js";
 import { configRecord, pathString } from "../lib/inputLimits.js";
-import { configPathFormatError, OFFLINE_READ_ONLY_ANNOTATIONS } from "../lib/toolInputs.js";
+import { checkConfigFileInput, configPathFormatError, OFFLINE_READ_ONLY_ANNOTATIONS } from "../lib/toolInputs.js";
 
 export function registerValidateConfig(server: McpServer): void {
   server.registerTool(
@@ -41,28 +41,16 @@ export function registerValidateConfig(server: McpServer): void {
       }),
     },
     async ({ configPath, configContent, configType, strict }) => {
-      if (!configPath && !configContent) {
-        return {
-          isError: true,
-          content: [
-            { type: "text", text: "Provide either configPath or configContent." },
-          ],
-        };
-      }
-      if (configPath && configContent) {
-        return {
-          isError: true,
-          content: [{ type: "text", text: "Pass either configPath or configContent, not both." }],
-        };
-      }
+      const inputError = checkConfigFileInput({ configPath, configContent });
+      if (inputError) return { isError: true, content: [{ type: "text", text: inputError }] };
 
-      const formatError = configPath ? configPathFormatError(configPath) : null;
+      const formatError = configPath !== undefined ? configPathFormatError(configPath) : null;
       if (formatError) return { isError: true, content: [{ type: "text", text: formatError }] };
 
-      // Resolved here: the validator runs in an empty scratch directory.
-      let target = configPath && path.resolve(configPath);
+      // Absolute (checked above): the validator runs in an empty scratch directory.
+      let target: string | undefined = configPath;
       let cleanup: (() => Promise<void>) | undefined;
-      if (!target) {
+      if (target === undefined) {
         const tmp = path.join(tmpdir(), `renovate-mcp-${randomUUID()}.json`);
         await fs.writeFile(tmp, JSON.stringify(configContent, null, 2), {
           flag: "wx",

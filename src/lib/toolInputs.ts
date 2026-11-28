@@ -1,8 +1,10 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import JSON5 from "json5";
 import type { ToolAnnotations } from "@modelcontextprotocol/server";
 import { locateConfig } from "./configLocations.js";
 import { parseHostTokens } from "./hostTokens.js";
+import { isRecord } from "./util.js";
 
 // MCP tool annotations (documented in docs/tools.md). Every tool except
 // write_config is read-only; "open world" marks tools that can reach the
@@ -58,6 +60,56 @@ export async function loadConfigSource(input: {
   const located = await locateConfig(repoPath);
   if (!located) return { error: `${NO_CONFIG_FOUND} in ${repoPath}.` };
   return { config: located.config, path: located.relPath };
+}
+
+/**
+ * Null when exactly one of `configPath` / `configContent` is present and a
+ * given `configPath` is absolute, else the error text. Presence, not
+ * truthiness: `configPath: ""` is a bad path, not a missing one.
+ */
+export function checkConfigFileInput(input: {
+  configPath?: string;
+  configContent?: unknown;
+}): string | null {
+  const { configPath, configContent } = input;
+  if ((configPath === undefined) === (configContent === undefined)) {
+    return "Pass exactly one of `configPath` or `configContent`.";
+  }
+  if (configPath !== undefined && !path.isAbsolute(configPath)) {
+    return "`configPath` must be an absolute path.";
+  }
+  return null;
+}
+
+/** A `configPath` file (JSON, JSONC or JSON5) or inline `configContent`, as a config object. */
+export async function loadConfigFile(input: {
+  configPath?: string;
+  configContent?: unknown;
+}): Promise<
+  { ok: true; config: Record<string, unknown>; path?: string } | { ok: false; error: string }
+> {
+  const inputError = checkConfigFileInput(input);
+  if (inputError) return { ok: false, error: inputError };
+  const { configPath, configContent } = input;
+  if (configPath === undefined) {
+    return isRecord(configContent)
+      ? { ok: true, config: configContent }
+      : { ok: false, error: "`configContent` must be a JSON object." };
+  }
+  let parsed: unknown;
+  try {
+    // JSON5 is a superset of the JSONC Renovate accepts in any config file.
+    parsed = JSON5.parse(await fs.readFile(configPath, "utf8"));
+  } catch (err) {
+    return {
+      ok: false,
+      error: `Could not read or parse config at ${configPath}: ${(err as Error).message}`,
+    };
+  }
+  if (!isRecord(parsed)) {
+    return { ok: false, error: `Config at ${configPath} must be a JSON object.` };
+  }
+  return { ok: true, config: parsed, path: configPath };
 }
 
 /**

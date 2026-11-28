@@ -394,7 +394,7 @@ describe("lint_config end-to-end", () => {
       arguments: { configPath },
     });
     expect(res.result?.isError).toBe(true);
-    expect(res.result?.content[0]?.text).toContain("Failed to read or parse config at");
+    expect(res.result?.content[0]?.text).toContain("Could not read or parse config at");
     expect(res.result?.content[0]?.text).toContain(configPath);
     expect(res.result?.content[0]?.text).toContain("JSON5:");
   });
@@ -406,7 +406,17 @@ describe("lint_config end-to-end", () => {
       content: Array<{ type: string; text: string }>;
     }>("tools/call", { name: "lint_config", arguments: {} });
     expect(res.result?.isError).toBe(true);
-    expect(res.result?.content[0]?.text).toContain("Provide either configPath");
+    expect(res.result?.content[0]?.text).toContain("Pass exactly one of");
+  });
+
+  it("refuses a relative configPath", async () => {
+    session = await startServer();
+    const res = await session.request<{
+      isError?: boolean;
+      content: Array<{ type: string; text: string }>;
+    }>("tools/call", { name: "lint_config", arguments: { configPath: "renovate.json" } });
+    expect(res.result?.isError).toBe(true);
+    expect(res.result?.content[0]?.text).toContain("must be an absolute path");
   });
 
   it("flags a deprecated key and points the user at migrate_config", async () => {
