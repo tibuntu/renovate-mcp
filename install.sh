@@ -7,7 +7,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/tibuntu/renovate-mcp/main/install.sh | bash
 #   curl -fsSL https://raw.githubusercontent.com/tibuntu/renovate-mcp/main/install.sh | bash -s -- --global
 #   curl -fsSL https://raw.githubusercontent.com/tibuntu/renovate-mcp/main/install.sh | bash -s -- --no-mcp-add
-#   curl -fsSL https://raw.githubusercontent.com/tibuntu/renovate-mcp/main/install.sh | bash -s -- --version=2.2.3 # x-release-please-version
+#   curl -fsSL https://raw.githubusercontent.com/tibuntu/renovate-mcp/main/install.sh | bash -s -- --version=2.2.4 # x-release-please-version
 #
 # Flags and env overrides: see usage() below (`--help`).
 

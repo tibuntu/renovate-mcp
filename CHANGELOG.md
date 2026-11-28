@@ -1,5 +1,41 @@
 # Changelog
 
+## [2.2.4](https://github.com/tibuntu/renovate-mcp/compare/v2.2.3...v2.2.4) (2026-11-28)
+
+
+### Bug Fixes
+
+* **check_setup:** hint when repoPath is relative or missing ([f1bcd50](https://github.com/tibuntu/renovate-mcp/commit/f1bcd501d74885127193370445bc6e0d75deb3a7))
+* **check_setup:** honour every hosted RENOVATE_PLATFORM value ([061cefb](https://github.com/tibuntu/renovate-mcp/commit/061cefb185dbebc7dda411dde3703ab03c122b35))
+* **check_setup:** stop suggesting dry_run platforms it rejects ([c97201e](https://github.com/tibuntu/renovate-mcp/commit/c97201eb252401d86b66a92a1cb5bff95eac4275))
+* **deps:** match Renovate's engines.node range ([99d53ea](https://github.com/tibuntu/renovate-mcp/commit/99d53ea477fad2c004b5bcdb5391e3c30e647b64))
+* **deps:** raise Node floor to 24.22.3 and bump minimatch to v11 for renovate 45 ([b87bf76](https://github.com/tibuntu/renovate-mcp/commit/b87bf76395adfda08de57dad8852c0db3e4d89e2))
+* **deps:** update dependency renovate to v45 ([eff75cc](https://github.com/tibuntu/renovate-mcp/commit/eff75cce676762f5f275ac236968d44221568709))
+* **dry_run_diff:** keep a dependency's major and minor updates apart ([e1c140a](https://github.com/tibuntu/renovate-mcp/commit/e1c140a852ebfce74b92a79cf01a978f729a693c))
+* **dry_run_diff:** pair a dependency repeated across base branches as one ([977ac77](https://github.com/tibuntu/renovate-mcp/commit/977ac77e7647706c90072a3080bfd4de41a69c75))
+* **dry_run_diff:** read updates from packageFiles when a local report has no branches ([5420b68](https://github.com/tibuntu/renovate-mcp/commit/5420b68139e4cea94eca2511cdde8dcea37b3b36))
+* **dry_run:** count local-report updates in the collapsed summary ([dc1ae16](https://github.com/tibuntu/renovate-mcp/commit/dc1ae16494d3931107e7c1d5cf9ab4d599863dd2))
+* **dry_run:** keep warn-level node-environment notices in environmentWarnings ([a313088](https://github.com/tibuntu/renovate-mcp/commit/a3130880d032e4707100faf21328fb1050fbe6dc))
+* **dry_run:** refuse a non-https RENOVATE_ENDPOINT on remote runs ([03ea036](https://github.com/tibuntu/renovate-mcp/commit/03ea036a11d44bf9ca4577165c41c6ecae817bfb))
+* **dry_run:** report non-spawn failures as such, not as a missing binary ([65860d3](https://github.com/tibuntu/renovate-mcp/commit/65860d35e832a1e2960fdf6632902ed912270da9))
+* **dry_run:** skip a symlink that vanishes during the repo copy ([2d71196](https://github.com/tibuntu/renovate-mcp/commit/2d7119655f3db3d265eaabe4c38c6839983b2618))
+* **dry_run:** treat only error-level report problems as fatal ([0fea9e9](https://github.com/tibuntu/renovate-mcp/commit/0fea9e9245132fb303c7dc6a4b5bd2f7d5259526))
+* **explain_dependency:** report unevaluatable rules and extract-only verdicts ([6696c6e](https://github.com/tibuntu/renovate-mcp/commit/6696c6ec3c5b9e9cbc7c22f89f9b26ac6a09f132))
+* **install:** exit non-zero on an unsupported OS ([1eda2ac](https://github.com/tibuntu/renovate-mcp/commit/1eda2ac419cd3a8d4bc57ffc6056dffe26c7082e))
+* **install:** prompt via /dev/tty under curl | bash and default to a global install ([8f003a4](https://github.com/tibuntu/renovate-mcp/commit/8f003a4ab856f247d1238dd5ce195005155cc637))
+* **lint_config:** flag bracket-plus-quantifier regexes as unwrapped ([1b4d178](https://github.com/tibuntu/renovate-mcp/commit/1b4d178c907e3d3d6c5e3c330ef6c9d91477dd66))
+* **lint:** count any non-selector key as a packageRules action and stop flagging glob classes ([cd77d20](https://github.com/tibuntu/renovate-mcp/commit/cd77d20df96a912115020255e2acd983edf18f19))
+* **preview_custom_manager:** accept RE2's leading inline flags ([04d9268](https://github.com/tibuntu/renovate-mcp/commit/04d9268d7a9110b80114ca1ea65e6f54ef0f980f))
+* **preview_custom_manager:** let a nested .gitignore negation re-include a file ([3b64f6b](https://github.com/tibuntu/renovate-mcp/commit/3b64f6ba86b9065e877942e3d1450a23bca2d3b0))
+* **renovate-cli:** remove temp files and token configs on SIGINT/SIGTERM ([daa9f03](https://github.com/tibuntu/renovate-mcp/commit/daa9f0399d7cb15970f94870c1e264fb06b752a8))
+* **resolve_config:** leave onboardingConfig and content out of the nested-extends check ([2ff1ee0](https://github.com/tibuntu/renovate-mcp/commit/2ff1ee0ef312bab287c5d44a87954bb869409ce4))
+* **resolve_config:** warn when nested extends stay unexpanded ([a89feb5](https://github.com/tibuntu/renovate-mcp/commit/a89feb53f7836f2757a34e5db344aad1cbfc7f8a))
+* **scripts:** catch a stale node_modules before blaming the snapshots ([e33de79](https://github.com/tibuntu/renovate-mcp/commit/e33de79eb9b883d6802f2aeb44fffdf0597017fe))
+* **tools:** share one configPath/configContent loader across lint, migrate and validate ([fe26708](https://github.com/tibuntu/renovate-mcp/commit/fe26708538f3d3c9150fa71b31f9106f0ac098b9))
+* **write_config:** ignore inherited keys when planning round-trip edits ([2e7d482](https://github.com/tibuntu/renovate-mcp/commit/2e7d48282524d113fa2fd881312d0e823210d978))
+* **write_config:** remove directories created for a refused write ([6872e44](https://github.com/tibuntu/renovate-mcp/commit/6872e44a1223337f5210f6002b5810627bca0401))
+* **write_config:** round-trip edits inside nested objects ([d0b2cdb](https://github.com/tibuntu/renovate-mcp/commit/d0b2cdb2f22c5e05ee2acea43ad953c94c7fa67c))
+
 ## [2.2.3](https://github.com/tibuntu/renovate-mcp/compare/v2.2.2...v2.2.3) (2026-11-27)
 
 
