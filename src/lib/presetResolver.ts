@@ -1,7 +1,7 @@
 import { PRESETS, REMOVED_PRESETS } from "../data/presets.generated.js";
 import { fetchExternalPreset, type FetchResult } from "./externalPresetFetcher.js";
 import { HOSTED_PLATFORMS, type HostedPlatform } from "./gitRemote.js";
-import { homeScope, parseHostTokens } from "./hostTokens.js";
+import { homeScope } from "./hostTokens.js";
 import { runMerge } from "./mergeWorker.js";
 import { isRecord } from "./util.js";
 
@@ -37,13 +37,6 @@ export interface ResolveResult {
  * never collides with one.
  */
 export const OWN_SOURCE = "<own>";
-
-/**
- * `PresetWarning.preset` of a credential-configuration problem (a malformed
- * `RENOVATE_MCP_HOST_TOKENS`). Nothing is fetched while it stands; tools turn
- * it into an `isError`.
- */
-const AUTH_SOURCE = "<auth>";
 
 /** `PresetWarning.preset` of the aggregated nested-`extends` notice. */
 const NESTED_EXTENDS_SOURCE = "<nested-extends>";
@@ -90,7 +83,11 @@ export const FETCH_PLATFORMS = HOSTED_PLATFORMS;
 export type FetchPlatform = HostedPlatform;
 
 export interface ResolveOptions {
-  /** When true, fetch external presets (github>, gitlab>, gitea>, forgejo>, …) over the network. */
+  /**
+   * When true, fetch external presets (github>, gitlab>, gitea>, forgejo>, …) over the network.
+   * Callers must reject a malformed `RENOVATE_MCP_HOST_TOKENS` with `hostTokensError` before
+   * passing true: the resolver no longer checks it itself.
+   */
   fetchExternal?: boolean;
   /** Per-request fetch timeout; forwarded to the external fetcher. */
   timeoutMs?: number;
@@ -193,8 +190,6 @@ interface ExpandContext extends CollectResult {
   endpoint: string | undefined;
   platform: FetchPlatform | undefined;
   fetchImpl: typeof fetch | undefined;
-  /** Set when credentials are misconfigured; nothing is fetched then. */
-  authError: string | undefined;
   cache: Map<string, Promise<FetchResult>>;
   /** Preset keys on the current expansion path, for cycle detection. */
   stack: string[];
@@ -275,16 +270,8 @@ export async function collectMergeSteps(
     endpoint: scope.endpoint,
     platform: scope.platform,
     fetchImpl: options.fetchImpl,
-    authError: undefined,
     cache: new Map(),
   };
-  if (ctx.fetchExternal) {
-    const hostTokens = parseHostTokens();
-    if (!hostTokens.ok) {
-      ctx.authError = hostTokens.error;
-      ctx.warnings.push({ preset: AUTH_SOURCE, message: hostTokens.error });
-    }
-  }
 
   await collectSteps(config, null, [], [], ctx);
   const nested = ctx.steps.flatMap((s) =>
@@ -526,11 +513,6 @@ async function loadPresetBody(
       reason:
         "External preset (github>, gitlab>, gitea>, forgejo>, or local> routed via `platform`). Fetching requires network access and potentially credentials; pass externalPresets: true to enable.",
     });
-    return null;
-  }
-
-  if (ctx.authError) {
-    unresolvedList.push({ preset: parsed.original, reason: `Not fetched: ${ctx.authError}` });
     return null;
   }
 
