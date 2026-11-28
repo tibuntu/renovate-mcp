@@ -1,3 +1,4 @@
+import { trackTemp, untrackTemp } from "./renovateCli.js";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
@@ -20,6 +21,7 @@ export type HostRule = Record<string, unknown>;
  */
 export async function writeHostRulesConfig(hostRules: HostRule[]): Promise<string> {
   const dir = await fs.mkdtemp(path.join(tmpdir(), "renovate-mcp-hostrules-"));
+  trackTemp(dir);
   const tmpPath = path.join(dir, "config.json");
   await fs.writeFile(tmpPath, JSON.stringify({ hostRules }, null, 2), { flag: "wx", mode: 0o600 });
   return tmpPath;
@@ -27,7 +29,9 @@ export async function writeHostRulesConfig(hostRules: HostRule[]): Promise<strin
 
 /** Remove a file written by `writeHostRulesConfig` together with its directory. */
 export async function removeHostRulesConfig(filePath: string): Promise<void> {
-  await fs.rm(path.dirname(filePath), { recursive: true, force: true });
+  const dir = path.dirname(filePath);
+  await fs.rm(dir, { recursive: true, force: true });
+  untrackTemp(dir);
 }
 
 const SECRET_KEYS = ["token", "password"] as const;

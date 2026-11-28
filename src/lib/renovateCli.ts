@@ -98,16 +98,49 @@ export function killLiveChildren(): void {
   liveChildren.clear();
 }
 
+/** Temp paths (dirs or files) to delete if the server dies before its `finally` blocks run. */
+const liveTemps = new Set<string>();
+
+/**
+ * Register a path this process created so SIGINT/SIGTERM/exit removes it
+ * (`process.exit` in a signal handler skips pending `finally` blocks). Only
+ * track paths we created: the sweep is a recursive force remove.
+ */
+export function trackTemp(p: string): void {
+  liveTemps.add(p);
+  installExitHooks();
+}
+
+export function untrackTemp(p: string): void {
+  liveTemps.delete(p);
+}
+
+function sweepTemps(): void {
+  for (const p of liveTemps) {
+    try {
+      fs.rmSync(p, { recursive: true, force: true });
+    } catch {
+      // best effort
+    }
+  }
+  liveTemps.clear();
+}
+
 function installExitHooks(): void {
   if (exitHooksInstalled) return;
   exitHooksInstalled = true;
-  process.once("exit", killLiveChildren);
+  process.once("exit", () => {
+    killLiveChildren();
+    sweepTemps();
+  });
   process.once("SIGINT", () => {
     killLiveChildren();
+    sweepTemps();
     process.exit(130);
   });
   process.once("SIGTERM", () => {
     killLiveChildren();
+    sweepTemps();
     process.exit(143);
   });
 }
@@ -149,8 +182,11 @@ export function run(cmd: string, args: string[], opts: RunOptions = {}): Promise
     // private, empty one instead of the server's own (often a project root).
     // A relative binary override still resolves against the server's cwd.
     const scratchCwd = opts.cwd ? undefined : fs.mkdtempSync(path.join(tmpdir(), "renovate-mcp-cwd-"));
+    if (scratchCwd) trackTemp(scratchCwd);
     const removeScratch = () => {
-      if (scratchCwd) fs.rmSync(scratchCwd, { recursive: true, force: true });
+      if (!scratchCwd) return;
+      fs.rmSync(scratchCwd, { recursive: true, force: true });
+      untrackTemp(scratchCwd);
     };
     if (scratchCwd && !path.isAbsolute(cmd) && /[\\/]/.test(cmd)) cmd = path.resolve(cmd);
     // `detached` makes the child a process-group leader so a timeout can kill

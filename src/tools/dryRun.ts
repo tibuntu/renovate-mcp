@@ -10,6 +10,8 @@ import {
   formatMissingBinaryError,
   formatTimeoutError,
   CommandTimeoutError,
+  trackTemp,
+  untrackTemp,
 } from "../lib/renovateCli.js";
 import { buildHostTokenRules, githubComTokenVar, homeScope, matchesHost, selectToken, tokenHost, type TokenScope } from "../lib/hostTokens.js";
 import { HOSTED_PLATFORMS } from "../lib/gitRemote.js";
@@ -312,6 +314,7 @@ export function registerDryRun(server: McpServer): void {
       }
 
       const reportPath = path.join(tmpdir(), `renovate-mcp-report-${randomUUID()}.json`);
+      trackTemp(reportPath);
       const tool = resolveRenovateTool("renovate");
       const ruleList: HostRule[] = hostRules ?? [];
       // When the caller doesn't pass `platform`, fall back to RENOVATE_PLATFORM
@@ -889,6 +892,7 @@ export function registerDryRun(server: McpServer): void {
       } finally {
         if (heartbeat) clearInterval(heartbeat);
         await fs.unlink(reportPath).catch(() => undefined);
+        untrackTemp(reportPath);
         if (hostRulesConfigPath) await removeHostRulesConfig(hostRulesConfigPath);
         if (copy) await removeRepoCopy(copy.dir);
       }

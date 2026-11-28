@@ -2,6 +2,9 @@ import { describe, it, expect, afterEach, beforeEach } from "vitest";
 import { mkdtemp, rm, writeFile, chmod } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 import {
   resolveRenovateTool,
   formatMissingBinaryError,
@@ -353,5 +356,58 @@ describe("formatMissingBinaryError", () => {
       new Error("spawn ENOENT"),
     );
     expect(msg).toContain("RENOVATE_CONFIG_VALIDATOR_BIN");
+  });
+});
+
+describe("signal cleanup of tracked temp paths", () => {
+  const distUrl = pathToFileURL(path.resolve("dist/lib/renovateCli.js")).href;
+
+  function spawnChild(script: string) {
+    const child = spawn(process.execPath, ["--input-type=module", "-e", script], {
+      stdio: ["ignore", "pipe", "inherit"],
+    });
+    const ready = new Promise<string>((resolve) => {
+      let buf = "";
+      child.stdout.on("data", (d) => {
+        buf += d;
+        if (buf.includes("\n")) resolve(buf.trim());
+      });
+    });
+    const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) =>
+      child.on("exit", (code, signal) => resolve({ code, signal })),
+    );
+    return { child, ready, exited };
+  }
+
+  it("removes tracked temp paths on SIGTERM", async () => {
+    const { child, ready, exited } = spawnChild(
+      `import fs from "node:fs"; import os from "node:os"; import path from "node:path";
+       import { trackTemp } from ${JSON.stringify(distUrl)};
+       const d = fs.mkdtempSync(path.join(os.tmpdir(), "renovate-mcp-sigtest-"));
+       fs.writeFileSync(path.join(d, "f"), "x");
+       trackTemp(d);
+       console.log(d);
+       setInterval(() => {}, 1000);`,
+    );
+    const dir = await ready;
+    expect(existsSync(dir)).toBe(true);
+    child.kill("SIGTERM");
+    const { code, signal } = await exited;
+    expect(code).toBe(143);
+    expect(signal).toBeNull();
+    expect(existsSync(dir)).toBe(false);
+  });
+
+  it("exits cleanly on SIGTERM with nothing tracked", async () => {
+    const { child, ready, exited } = spawnChild(
+      `import { trackTemp, untrackTemp } from ${JSON.stringify(distUrl)};
+       trackTemp("/nonexistent/renovate-mcp-x"); untrackTemp("/nonexistent/renovate-mcp-x");
+       console.log("ready");
+       setInterval(() => {}, 1000);`,
+    );
+    await ready;
+    child.kill("SIGTERM");
+    const { code } = await exited;
+    expect(code).toBe(143);
   });
 });
