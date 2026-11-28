@@ -45,6 +45,26 @@ export const OWN_SOURCE = "<own>";
  */
 const AUTH_SOURCE = "<auth>";
 
+/** `PresetWarning.preset` of the aggregated nested-`extends` notice. */
+const NESTED_EXTENDS_SOURCE = "<nested-extends>";
+
+/**
+ * Paths of every object below the root that carries an `extends` key
+ * (`packageRules[0].extends`, `lockFileMaintenance.extends`). The root's own
+ * `extends` is never reported; the `extends` value itself is not descended.
+ */
+export function findNestedExtends(value: unknown, path = ""): string[] {
+  if (Array.isArray(value)) {
+    return value.flatMap((v, i) => findNestedExtends(v, `${path}[${i}]`));
+  }
+  if (value === null || typeof value !== "object") return [];
+  return Object.entries(value).flatMap(([k, v]) => {
+    const here = path ? `${path}.${k}` : k;
+    if (k === "extends") return path ? [here] : [];
+    return findNestedExtends(v, here);
+  });
+}
+
 export interface MergeStep {
   /** Preset entry exactly as written in `extends`, or OWN_SOURCE for own keys. */
   label: string;
@@ -267,6 +287,15 @@ export async function collectMergeSteps(
   }
 
   await collectSteps(config, null, [], [], ctx);
+  const nested = ctx.steps.flatMap((s) =>
+    findNestedExtends(s.config).map((p) => `${s.label}: ${p}`),
+  );
+  if (nested.length > 0) {
+    ctx.warnings.push({
+      preset: NESTED_EXTENDS_SOURCE,
+      message: `${nested.length} nested \`extends\` left unexpanded (e.g. ${nested.slice(0, 3).join(", ")}). Renovate expands \`extends\` inside packageRules, lockFileMaintenance and other objects; this tool shows them verbatim, so the settings they would pull in are missing here. Run dry_run for full fidelity.`,
+    });
+  }
   const { steps, presetsResolved, presetsUnresolved, warnings } = ctx;
   return { steps, presetsResolved, presetsUnresolved, warnings };
 }
