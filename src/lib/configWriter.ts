@@ -16,7 +16,6 @@ import {
   modify,
   applyEdits,
   getNodeValue,
-  ParseErrorCode,
   type ParseError,
   type JSONPath,
   type Edit,
@@ -202,15 +201,7 @@ export function serializeConfig(args: SerializeArgs): SerializeResult {
   const parseErrors: ParseError[] = [];
   const root = parseTree(existing, parseErrors, { allowTrailingComma: true });
 
-  const fatalErrors = parseErrors.filter(
-    // Any reported parse error at this point means the file is not safe to
-    // round-trip — even errors that would scan-only (e.g. InvalidCommentToken
-    // when comments are disallowed) signal structural unknowns. With
-    // allowTrailingComma=true on a JSONC file, this list is empty in practice.
-    (e) => e.error !== ParseErrorCode.InvalidCommentToken,
-  );
-
-  if (!root || root.type !== "object" || fatalErrors.length > 0) {
+  if (!root || root.type !== "object" || parseErrors.length > 0) {
     if (isJson5Target(args.targetPath)) {
       return {
         refuse: true,
