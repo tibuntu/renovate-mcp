@@ -557,3 +557,64 @@ describe("serializeConfig — package.json#renovate", () => {
     expect(result.hint).toContain("does not rewrite package.json");
   });
 });
+
+describe("serializeConfig — nested objects", () => {
+  it("preserves a comment inside a nested object when a sibling key changes", () => {
+    const existing = [
+      "{",
+      '  "lockFileMaintenance": {',
+      "    // keep",
+      '    "enabled": true,',
+      '    "schedule": ["before 4am"]',
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+
+    const result = serializeConfig({
+      targetPath: "renovate.json",
+      nextConfig: { lockFileMaintenance: { enabled: true, schedule: ["after 5am"] } },
+      existing,
+    });
+
+    if ("refuse" in result) throw new Error(`unexpected refusal: ${result.reason}`);
+    expect(result.bytes).toContain("// keep");
+    expect(result.bytes).toContain('"after 5am"');
+  });
+
+  it("leaves package.json untouched when the renovate slice is unchanged", () => {
+    const existing =
+      '{\n  "name": "my-app",\n  "renovate": { "extends":   ["config:recommended"],   "schedule": ["before 5am"] }\n}\n';
+
+    const result = serializeConfig({
+      targetPath: "/x/package.json",
+      nextConfig: { extends: ["config:recommended"], schedule: ["before 5am"] },
+      existing,
+    });
+
+    if ("refuse" in result) throw new Error(`unexpected refusal: ${result.reason}`);
+    expect(result.bytes).toBe(existing);
+  });
+
+  it("keeps an unchanged nested object byte-identical", () => {
+    const existing = [
+      "{",
+      '  "lockFileMaintenance": {',
+      "    // keep",
+      '    "enabled": true',
+      "  },",
+      '  "automerge": false',
+      "}",
+      "",
+    ].join("\n");
+
+    const result = serializeConfig({
+      targetPath: "renovate.json",
+      nextConfig: { lockFileMaintenance: { enabled: true }, automerge: false },
+      existing,
+    });
+
+    if ("refuse" in result) throw new Error(`unexpected refusal: ${result.reason}`);
+    expect(result.bytes).toBe(existing);
+  });
+});
