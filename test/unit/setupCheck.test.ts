@@ -731,9 +731,13 @@ describe("engines.node floor matches Renovate's", () => {
     const read = (p: string) => JSON.parse(readFileSync(path.join(root, p), "utf8"));
     const ours: string = read("package.json").engines.node;
     const theirs: string = read("node_modules/renovate/package.json").engines.node;
-    expect(
-      versionSatisfiesRange(ours.replace(/^>=/, ""), theirs),
-      `Renovate's engines.node is now ${theirs}; raise our engines.node (${ours}), .nvmrc and the README's Node requirement to match.`,
-    ).toBe(true);
+    // Each floor of our range (24.22.3 and 26.13.1) must satisfy Renovate's range.
+    for (const floor of ["v24.22.3", "v26.13.1"]) {
+      expect(
+        versionSatisfiesRange(floor, theirs),
+        `Renovate's engines.node is now ${theirs}; raise our engines.node (${ours}) and the README's Node requirement to match.`,
+      ).toBe(true);
+    }
+    expect(ours).toBe(theirs);
   });
 });

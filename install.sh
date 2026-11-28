@@ -95,15 +95,15 @@ esac
 step "Checking requirements..."
 
 if ! command -v node >/dev/null 2>&1; then
-  err "Node.js not found. renovate-mcp requires Node.js >= 24.11."
+  err "Node.js not found. renovate-mcp requires Node.js 24.22.3+ or 26.13.1+."
   printf '  Install with fnm: %scurl -fsSL https://fnm.vercel.app/install | bash && fnm install 24%s\n' "$BOLD" "$NC"
   exit 1
 fi
 
 NODE_VERSION="$(node -v | sed 's/^v//')"
-# Mirrors package.json's engines.node (>=24.11.0).
-if ! node -e 'const [a, b] = process.versions.node.split(".").map(Number); process.exit(a > 24 || (a === 24 && b >= 11) ? 0 : 1)'; then
-  err "Node.js >= 24.11 required (found v${NODE_VERSION})."
+# Mirrors package.json's engines.node (^24.22.3 || ^26.13.1); rejects 25.x.
+if ! node -e 'const [a,b,c]=process.versions.node.split(".").map(Number); const ok=(a===24&&(b>22||(b===22&&c>=3)))||(a===26&&(b>13||(b===13&&c>=1))); process.exit(ok?0:1)'; then
+  err "Node.js 24.22.3+ (24.x) or 26.13.1+ (26.x) required (found v${NODE_VERSION})."
   printf '  Upgrade with fnm: %sfnm install 24 && fnm use 24%s\n' "$BOLD" "$NC"
   exit 1
 fi
