@@ -122,6 +122,30 @@ describe("lintConfig", () => {
       }).filter((f) => f.ruleId === RULE);
       expect(findings).toEqual([]);
     });
+
+    it.each(["foo[0-9]+", "v[0-9]{2}", "x[a-z]{1,3}"])("flags bracket-plus-quantifier %s", (v) => {
+      const findings = lintConfig({ packageRules: [{ matchPackageNames: [v] }] }).filter(
+        (f) => f.ruleId === RULE,
+      );
+      expect(findings).toHaveLength(1);
+    });
+
+    it.each(["@scope/[ab]*", "[ab]?", "pkg-[ab]+(x)", "[ab]{c,d}"])(
+      "does not flag glob or extglob bracket syntax %s",
+      (v) => {
+        const findings = lintConfig({ packageRules: [{ matchPackageNames: [v] }] }).filter(
+          (f) => f.ruleId === RULE,
+        );
+        expect(findings).toEqual([]);
+      },
+    );
+
+    it("does not flag a Maven-style version range", () => {
+      const findings = lintConfig({ packageRules: [{ matchCurrentVersion: "[1.0,2.0]" }] }).filter(
+        (f) => f.ruleId === RULE,
+      );
+      expect(findings).toEqual([]);
+    });
   });
 
   describe("matchManagers-unknown-name", () => {
