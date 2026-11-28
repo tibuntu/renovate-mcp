@@ -15,7 +15,7 @@ import {
   untrackTemp,
 } from "../lib/renovateCli.js";
 import { buildHostTokenRules, githubComTokenVar, homeScope, matchesHost, selectToken, tokenHost, type TokenScope } from "../lib/hostTokens.js";
-import { HOSTED_PLATFORMS } from "../lib/gitRemote.js";
+import { DRY_RUN_PLATFORMS, HOSTED_PLATFORMS, type DryRunPlatform } from "../lib/gitRemote.js";
 import {
   findLocalPresets,
   flattenLocalPresets,
@@ -183,7 +183,7 @@ export function registerDryRun(server: McpServer): void {
           .default(5 * 60_000)
           .describe("Max wait time in ms (default 5 minutes, capped at 15)"),
         platform: z
-          .enum(["local", "github", "gitlab"])
+          .enum(DRY_RUN_PLATFORMS)
           .optional()
           .describe(
             "Renovate platform to run as. When unset, falls back to `RENOVATE_PLATFORM` from the MCP server's env (if it's one of `local`/`github`/`gitlab`), then to `local`. Default `local` runs against the filesystem at `repoPath`. Set `github` or `gitlab` (with `endpoint` + `token` + `repository`) to run a full remote dry-run — this is what you need when your config extends `local>` presets that live on a private GitHub Enterprise / self-hosted GitLab. Still no PRs opened because `--dry-run` is always set.",
@@ -324,10 +324,7 @@ export function registerDryRun(server: McpServer): void {
       // to local mode. Only the platforms in this tool's schema are honored
       // from env; anything else (e.g. `bitbucket`) must be passed explicitly.
       const envPlatform = process.env.RENOVATE_PLATFORM;
-      const envPlatformAllowed: "local" | "github" | "gitlab" | undefined =
-        envPlatform === "local" || envPlatform === "github" || envPlatform === "gitlab"
-          ? envPlatform
-          : undefined;
+      const envPlatformAllowed: DryRunPlatform | undefined = DRY_RUN_PLATFORMS.find((p) => p === envPlatform);
       const platformSource: "input" | "env" | "default" = platform
         ? "input"
         : envPlatformAllowed

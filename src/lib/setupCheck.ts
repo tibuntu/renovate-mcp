@@ -20,6 +20,8 @@ import {
   type ClassifiedRemote,
   type ParsedRemote,
   HOSTED_PLATFORMS,
+  DRY_RUN_PLATFORMS,
+  type DryRunPlatform,
   type HostedPlatform,
 } from "./gitRemote.js";
 import { run, resolveRenovateTool } from "./renovateCli.js";
@@ -58,10 +60,6 @@ export interface BinaryStatus {
    */
   runtimeWarnings?: RuntimeWarning[];
 }
-
-export type DryRunPlatform = "local" | "github" | "gitlab";
-
-const DRY_RUN_PLATFORMS: readonly DryRunPlatform[] = ["local", "github", "gitlab"] as const;
 
 export interface PlatformContext {
   /** Raw `RENOVATE_PLATFORM` value from the MCP server's env, or null. */
