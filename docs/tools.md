@@ -178,6 +178,12 @@ Preview a `customManagers` entry against a local repo. For `customType: "regex"`
 
 `repoPath` follows the [Common input rules](#common-input-rules) — a missing repo is an `isError`, never a silent `filesWalked: 0`.
 
+**Inputs:**
+
+- `repoPath` (required, string, max 4096 bytes) — absolute path to the repository root.
+- `manager` (required, object) — a single `customManagers` entry: `customType` (string) and `matchStrings` (non-empty string array) are required; `managerFilePatterns` (non-empty string array), the deprecated `fileMatch` (non-empty string array), `matchStringsStrategy` (string), `fileFormat` (`"json"`, `"yaml"` or `"toml"`, for `customType: "jsonata"`) and the `*Template` fields (`depName`, `packageName`, `currentValue`, `currentDigest`, `datasource`, `versioning`, `registryUrl`, `depType`, `extractVersion`, `autoReplaceString`; all optional strings) are optional.
+- `maxFilesWalked` (optional, positive integer, max 100000, default 2000), `maxFilesMatched` (optional, positive integer, max 100000, default 500), `maxHitsPerFile` (optional, positive integer, max 10000, default 100), `matchTimeoutMs` (optional, positive integer, max 60000, default 2000) and `maxFileBytes` (optional, positive integer, max 1 GiB, default 5 MiB) — the five safety caps. What each bounds is described in [operations.md](operations.md#preview_custom_manager-caps--timeouts).
+
 **File selection (`managerFilePatterns`):** entries are matched against POSIX-style paths relative to `repoPath` exactly like Renovate's extract phase (`getMatchingFiles` in `workers/repository/extract/file-match.js`): every entry is evaluated on its own and the results are unioned, so a file is selected when *any* entry matches it. Per entry: `*` matches everything; `/…/` (or `/…/i` for case-insensitive) is a regex, and `!/…/` matches the files the regex does *not* match; anything else is a glob evaluated with `minimatch` using `{ dot: true, nocase: true }` (so `**/*.yml` also matches `.github/workflows/ci.yml`, and `dockerfile` matches `Dockerfile`), with minimatch's own leading-`!` negation. Because entries are unioned, a `!` pattern adds files rather than excluding them — `["**/*.yaml", "!**/vendor/**"]` selects every YAML file *plus* every file outside `vendor/` — so exclude with Renovate's top-level `ignorePaths` instead (which this preview does not apply; confirm with `dry_run`). Regex entries still run in the worker under `matchTimeoutMs`; globs are evaluated in-process. An invalid `/…/` regex is reported as an error (`Invalid regex in managerFilePatterns[i] …`) that also says what Renovate would do: silently treat the entry as a glob, which almost certainly matches nothing.
 
 **Deprecated `fileMatch`:** the pre-Renovate-44 `fileMatch` (bare regex strings) is still accepted. Each entry is converted to `/…/` exactly like Renovate's own `FileMatchMigration` — when both are given, the converted `fileMatch` entries are appended to `managerFilePatterns` — and the result carries the warning `fileMatch is deprecated in Renovate 44; use managerFilePatterns (each entry became /…/). Run migrate_config to convert the config.` The input schema requires at least one of the two.
@@ -491,6 +497,14 @@ Runs in an isolated worker thread so the main MCP server process never imports t
 ## `write_config`
 
 Validate, then atomically write a config to disk. A failed validation must never leave a broken config on disk.
+
+**Inputs:**
+
+- `repoPath` (required, string, max 4096 bytes) — absolute path to the repository root.
+- `config` (required, object, at most 1,000,000 bytes serialized) — the Renovate config to write.
+- `filename` (optional, string, max 512 bytes, default `renovate.json`) — target path relative to `repoPath`; one that escapes `repoPath` is refused.
+- `force` (optional, boolean, default false) — write even if validation fails. Requires `confirmForce`.
+- `confirmForce` (optional) — must be the literal `"YES_OVERRIDE_VALIDATION"` when `force` is true; without it the call returns `isError` with `reason: "force-confirmation-missing"`.
 
 `repoPath` follows the [Common input rules](#common-input-rules): the repository directory must already exist (the tool creates subdirectories named by `filename`, never the repo itself), and a symlinked target file is written through rather than replaced (a dangling link is replaced by a regular file; `package.json` / `.json5` handling follows the requested `filename`). An existing target keeps its permission bits on overwrite, and a new file gets the default mode for the process umask.
 
