@@ -30,6 +30,8 @@ on:
       - '.github/workflows/dependency-review.yml'
       - '.github/workflows/publish.yml'
       - '.github/workflows/release.yaml'
+      - '.github/workflows/claude-code-review.yml'
+      - '.github/workflows/nightly-real-renovate.yml'
 
 permissions: {}
 
