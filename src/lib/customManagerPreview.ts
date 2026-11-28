@@ -144,6 +144,7 @@ export async function previewCustomManager(
 
   // Surface malformed user regexes eagerly, before we do any filesystem work.
   // The Worker path otherwise reports these as generic worker errors.
+  manager = { ...manager, matchStrings: manager.matchStrings.map(normaliseInlineFlags) };
   for (const src of manager.matchStrings) validateRegex(src);
 
   for await (const { rel, content } of matchedFiles(repoPath, manager, options, result)) {
@@ -804,6 +805,15 @@ function applyTemplate(tmpl: string, groups: Record<string, string>): string {
   return tmpl.replace(/\{\{\s*([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\}\}/g, (_, name) =>
     groups[name] ?? "",
   );
+}
+
+/**
+ * RE2 (what Renovate compiles matchStrings with) accepts a leading `(?m)`;
+ * JS needs the scoped form `(?m:…)`. Applied once, to the manager's matchStrings.
+ */
+export function normaliseInlineFlags(source: string): string {
+  const m = /^\(\?([ims]+)\)/.exec(source);
+  return m ? `(?${m[1]}:${source.slice(m[0].length)})` : source;
 }
 
 function validateRegex(source: string): void {
