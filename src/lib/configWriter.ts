@@ -48,7 +48,7 @@ export function isPackageJsonTarget(targetPath: string): boolean {
 export type SerializeArgs = {
   /**
    * The on-disk path the bytes will eventually be written to. Used by the
-   * round-trip branch (04-02 / 04-03) to drive extension-based behavior
+   * round-trip branch to drive extension-based behavior
    * (e.g. detecting `.json5` for the JSONC-compatibility refusal). Unused on
    * the fresh-write path.
    */
@@ -99,15 +99,6 @@ const PACKAGE_JSON_MISSING_HINT =
   "write_config will not create a package.json just to hold Renovate config. " +
   "Write renovate.json instead (omit filename, or pass filename: 'renovate.json').";
 
-// Parse errors of these codes are non-fatal in JSONC: `allowTrailingComma`
-// makes the parser still emit `InvalidCommentToken` / `TrailingCommaExpected`-
-// adjacent codes as `ParseError`s in some library versions. We tolerate codes
-// that purely describe JSONC-permitted syntax. Any other code → refuse.
-//
-// Empirically (jsonc-parser 3.3): with `allowTrailingComma: true` and the
-// default `disallowComments: false`, a well-formed JSONC document yields an
-// empty errors array. So treating ANY error as fatal is the safe default.
-
 function deepEqual(a: unknown, b: unknown): boolean {
   // Structural comparison for config-shaped data (no functions / Dates / Maps).
   // Not `util.isDeepStrictEqual`: that is prototype-strict, and the values on
@@ -116,13 +107,12 @@ function deepEqual(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+// Accepts `null` as well as `Object.prototype`: jsonc-parser's `getNodeValue`
+// builds nested objects with a null prototype, and those must still recurse.
 function isPlainObject(v: unknown): v is Record<string, unknown> {
-  return (
-    typeof v === "object" &&
-    v !== null &&
-    !Array.isArray(v) &&
-    Object.getPrototypeOf(v) === Object.prototype
-  );
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
+  const proto = Object.getPrototypeOf(v);
+  return proto === Object.prototype || proto === null;
 }
 
 /**
@@ -237,10 +227,9 @@ export function serializeConfig(args: SerializeArgs): SerializeResult {
 
   // The object form of the existing document, for the diff walk. jsonc-parser's
   // `getNodeValue` builds it straight from the node tree (JSONC-aware — no
-  // `JSON.parse` of a slice that may hold comments or trailing commas). The
-  // spread gives the top level an ordinary prototype so `planEdits` walks it
-  // key by key; nested objects keep `getNodeValue`'s null prototype and are
-  // therefore replaced atomically, like arrays.
+  // `JSON.parse` of a slice that may hold comments or trailing commas). Nested
+  // objects keep its null prototype; `isPlainObject` accepts that, so `planEdits`
+  // recurses into them and only the changed keys are edited.
   const existingObj: Record<string, unknown> = { ...getNodeValue(root) };
 
   // package.json: diff against the `renovate` slice only. `planEdits` already
