@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -20,6 +21,11 @@ const renovateBin = resolveBundledBinary("renovate");
 const MARKER = "config-js-loaded";
 const markerScript = (name: string) =>
   `require("node:fs").writeFileSync(require("node:path").join(__dirname, ${JSON.stringify(name)}), "");\nmodule.exports = {};\n`;
+
+// In CI `renovate` is a runtime dependency, so a failed lookup there is a
+// regression, not a reason to silently skip every test in this file.
+it.runIf(process.env.CI)("bundled renovate resolves", () => expect(renovateBin).not.toBeNull());
+it.runIf(process.env.CI)("bundled renovate-config-validator resolves", () => expect(validatorBin).not.toBeNull());
 
 let repo: string;
 let session: McpSession | undefined;
@@ -62,6 +68,18 @@ describe.skipIf(!validatorBin)("validator spawns ignore the server's working dir
     const { isError } = await call("write_config", { repoPath: repo, config: { extends: ["config:recommended"] } });
     expect(isError).toBeFalsy();
     expect(existsSync(path.join(repo, MARKER))).toBe(false);
+  }, 60_000);
+});
+
+describe.skipIf(!validatorBin)("control: the config.js fixture is loaded when nothing isolates it", () => {
+  it("spawning the validator directly in the fixture dir creates the marker", async () => {
+    const env = { ...process.env };
+    delete env.RENOVATE_CONFIG_FILE;
+    await new Promise<void>((resolve) => {
+      // Exit code is irrelevant; only the loader's side effect matters.
+      execFile(validatorBin!, ["--version"], { cwd: repo, env, timeout: 60_000 }, () => resolve());
+    });
+    expect(existsSync(path.join(repo, MARKER))).toBe(true);
   }, 60_000);
 });
 
