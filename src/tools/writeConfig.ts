@@ -168,126 +168,139 @@ export function registerWriteConfig(server: McpServer): void {
       const sliceTmp = packageJson
         ? `${target}.renovate-mcp-slice-${randomUUID()}.json`
         : undefined;
-      await fs.mkdir(path.dirname(target), { recursive: true });
-
-      // rename() keeps tmp's inode, so tmp's mode becomes the target's. Capture
-      // an existing regular file's permission bits so an overwrite does not
-      // silently tighten e.g. 0644 to 0600. `stat` (not `lstat`): `target` is
-      // already a realpath, and a dangling link must read as ENOENT (new file).
-      // A concurrent chmod between this stat and the rename is lost; benign.
-      let targetMode: number | undefined = undefined;
+      // First directory mkdir created (undefined when all existed): a write
+      // that ends without renaming removes these again, deepest first.
+      const createdRoot = await fs.mkdir(path.dirname(target), { recursive: true });
+      let renamed = false;
       try {
-        const st = await fs.stat(target);
-        if (st.isFile()) targetMode = st.mode & 0o777;
-      } catch (err) {
-        if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
-      }
-
-      // Create tmp 0o600 when copying a mode over it (owner-only until the
-      // fchmod below); for a new file ask for 0o666 so the kernel applies the
-      // process umask, avoiding the deprecated no-arg process.umask(). While the
-      // validator runs, tmp is as readable as the written file would be (also
-      // when validation then refuses the write); it never exceeds that. The
-      // mode is set through the open handle (fchmod), never `fs.chmod(tmp)`,
-      // which would re-resolve the path and follow a symlink swapped in at
-      // that name. The open stays outside the
-      // try: on EEXIST the entry at tmp is not ours, so `finally` must not
-      // unlink it.
-      const fh = await fs.open(tmp, "wx", targetMode === undefined ? 0o666 : 0o600);
-      trackTemp(tmp); // only now: we created it
-
-      try {
+        // rename() keeps tmp's inode, so tmp's mode becomes the target's. Capture
+        // an existing regular file's permission bits so an overwrite does not
+        // silently tighten e.g. 0644 to 0600. `stat` (not `lstat`): `target` is
+        // already a realpath, and a dangling link must read as ENOENT (new file).
+        // A concurrent chmod between this stat and the rename is lost; benign.
+        let targetMode: number | undefined = undefined;
         try {
-          await fh.writeFile(payload);
-          if (targetMode !== undefined) await fh.chmod(targetMode);
-        } finally {
-          await fh.close();
-        }
-        if (sliceTmp) {
-          await fs.writeFile(sliceTmp, JSON.stringify(config, null, 2) + "\n", {
-            flag: "wx",
-            mode: 0o600,
-          });
-          trackTemp(sliceTmp);
-        }
-        let valid = false;
-        let validationOutput = "";
-        let validatorMissing = false;
-        let validatorTimedOut = false;
-        let runtimeWarnings: RuntimeWarning[] = [];
-        try {
-          const tool = resolveRenovateTool("renovate-config-validator");
-          // --no-global (after the file): validate as a repo config, not as
-          // global self-hosted config — see validateConfig.ts.
-          const v = await run(tool.cmd, [...tool.prefixArgs, sliceTmp ?? tmp, "--no-global"], {
-            timeoutMs: validatorTimeoutMs(),
-          });
-          validationOutput = (v.stdout + v.stderr).trim();
-          valid = v.exitCode === 0;
-          runtimeWarnings = v.runtimeWarnings;
+          const st = await fs.stat(target);
+          if (st.isFile()) targetMode = st.mode & 0o777;
         } catch (err) {
-          if (err instanceof CommandTimeoutError) {
-            // The validator ran but overran its budget — its own refusal
-            // reason below, never "validator-unavailable".
-            validatorTimedOut = true;
-            validationOutput = formatTimeoutError("renovate-config-validator", err);
-          } else {
-            validatorMissing = true;
-            validationOutput = formatMissingBinaryError("renovate-config-validator", err as Error);
-          }
+          if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
         }
 
-        if (!valid && !force) {
-          const [reason, hint] = validatorMissing
-            ? [
-                "validator-unavailable",
-                "The bundled renovate-config-validator failed to spawn. Set RENOVATE_CONFIG_VALIDATOR_BIN to a working binary or reinstall renovate-mcp, then retry. Pass force=true to skip validation entirely.",
-              ]
-            : validatorTimedOut
+        // Create tmp 0o600 when copying a mode over it (owner-only until the
+        // fchmod below); for a new file ask for 0o666 so the kernel applies the
+        // process umask, avoiding the deprecated no-arg process.umask(). While the
+        // validator runs, tmp is as readable as the written file would be (also
+        // when validation then refuses the write); it never exceeds that. The
+        // mode is set through the open handle (fchmod), never `fs.chmod(tmp)`,
+        // which would re-resolve the path and follow a symlink swapped in at
+        // that name. The open stays outside the
+        // try: on EEXIST the entry at tmp is not ours, so `finally` must not
+        // unlink it.
+        const fh = await fs.open(tmp, "wx", targetMode === undefined ? 0o666 : 0o600);
+        trackTemp(tmp); // only now: we created it
+
+        try {
+          try {
+            await fh.writeFile(payload);
+            if (targetMode !== undefined) await fh.chmod(targetMode);
+          } finally {
+            await fh.close();
+          }
+          if (sliceTmp) {
+            await fs.writeFile(sliceTmp, JSON.stringify(config, null, 2) + "\n", {
+              flag: "wx",
+              mode: 0o600,
+            });
+            trackTemp(sliceTmp);
+          }
+          let valid = false;
+          let validationOutput = "";
+          let validatorMissing = false;
+          let validatorTimedOut = false;
+          let runtimeWarnings: RuntimeWarning[] = [];
+          try {
+            const tool = resolveRenovateTool("renovate-config-validator");
+            // --no-global (after the file): validate as a repo config, not as
+            // global self-hosted config — see validateConfig.ts.
+            const v = await run(tool.cmd, [...tool.prefixArgs, sliceTmp ?? tmp, "--no-global"], {
+              timeoutMs: validatorTimeoutMs(),
+            });
+            validationOutput = (v.stdout + v.stderr).trim();
+            valid = v.exitCode === 0;
+            runtimeWarnings = v.runtimeWarnings;
+          } catch (err) {
+            if (err instanceof CommandTimeoutError) {
+              // The validator ran but overran its budget — its own refusal
+              // reason below, never "validator-unavailable".
+              validatorTimedOut = true;
+              validationOutput = formatTimeoutError("renovate-config-validator", err);
+            } else {
+              validatorMissing = true;
+              validationOutput = formatMissingBinaryError("renovate-config-validator", err as Error);
+            }
+          }
+
+          if (!valid && !force) {
+            const [reason, hint] = validatorMissing
               ? [
-                  "validator-timeout",
-                  "The validator timed out; the config was NOT validated. Retry, or check machine load. Do not use force=true to bypass a timeout.",
+                  "validator-unavailable",
+                  "The bundled renovate-config-validator failed to spawn. Set RENOVATE_CONFIG_VALIDATOR_BIN to a working binary or reinstall renovate-mcp, then retry. Pass force=true to skip validation entirely.",
                 ]
-              : ["validation-failed", "Pass force=true to write anyway."];
-          const failPayload: Record<string, unknown> = { wrote: false, reason, validationOutput, hint };
-          if (runtimeWarnings.length > 0) failPayload.warnings = runtimeWarnings;
+              : validatorTimedOut
+                ? [
+                    "validator-timeout",
+                    "The validator timed out; the config was NOT validated. Retry, or check machine load. Do not use force=true to bypass a timeout.",
+                  ]
+                : ["validation-failed", "Pass force=true to write anyway."];
+            const failPayload: Record<string, unknown> = { wrote: false, reason, validationOutput, hint };
+            if (runtimeWarnings.length > 0) failPayload.warnings = runtimeWarnings;
+            return {
+              isError: true,
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify(failPayload, null, 2),
+                },
+              ],
+            };
+          }
+
+          await fs.rename(tmp, target);
+          renamed = true;
+          const okPayload: Record<string, unknown> = {
+            wrote: true,
+            path: rel,
+            mode: writeResult.mode,
+            bytes: Buffer.byteLength(payload),
+            valid,
+            validationOutput: valid ? undefined : validationOutput,
+          };
+          if (runtimeWarnings.length > 0) okPayload.warnings = runtimeWarnings;
           return {
-            isError: true,
             content: [
               {
                 type: "text",
-                text: JSON.stringify(failPayload, null, 2),
+                text: JSON.stringify(okPayload, null, 2),
               },
             ],
           };
+        } finally {
+          // No-op when rename already moved tmp (ENOENT); otherwise cleans up on
+          // validation failure or a mid-flight rename error (see #57).
+          await fs.unlink(tmp).catch(() => undefined);
+          untrackTemp(tmp);
+          if (sliceTmp) {
+            await fs.unlink(sliceTmp).catch(() => undefined);
+            untrackTemp(sliceTmp);
+          }
         }
-
-        await fs.rename(tmp, target);
-        const okPayload: Record<string, unknown> = {
-          wrote: true,
-          path: rel,
-          mode: writeResult.mode,
-          bytes: Buffer.byteLength(payload),
-          valid,
-          validationOutput: valid ? undefined : validationOutput,
-        };
-        if (runtimeWarnings.length > 0) okPayload.warnings = runtimeWarnings;
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(okPayload, null, 2),
-            },
-          ],
-        };
       } finally {
-        // No-op when rename already moved tmp (ENOENT); otherwise cleans up on
-        // validation failure or a mid-flight rename error (see #57).
-        await fs.unlink(tmp).catch(() => undefined);
-        untrackTemp(tmp);
-        if (sliceTmp) {
-          await fs.unlink(sliceTmp).catch(() => undefined);
-          untrackTemp(sliceTmp);
+        if (!renamed && createdRoot !== undefined) {
+          // Non-recursive rmdir never deletes content; stop at the first failure.
+          for (let dir = path.dirname(target); ; dir = path.dirname(dir)) {
+            if (await fs.rmdir(dir).then(() => false, () => true)) break;
+            if (dir === createdRoot) break;
+          }
         }
       }
     },
