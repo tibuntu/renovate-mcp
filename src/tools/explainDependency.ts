@@ -4,14 +4,19 @@ import {
   analyzePackageRules,
   resolvePackageRules,
   toMatchedRule,
+  type MatcherFinding,
 } from "../lib/packageRulesAnalysis.js";
 import { explainDependency, type DependencyHit } from "../lib/dependencyExplainer.js";
 import { resolveReportInput } from "../lib/reportInput.js";
 import { configRecord, pathString, reportRecord } from "../lib/inputLimits.js";
-import { loadConfigSource, OFFLINE_READ_ONLY_ANNOTATIONS } from "../lib/toolInputs.js";
+import {
+  loadConfigSource,
+  MATCH_PREVIEW_DISCLAIMER,
+  OFFLINE_READ_ONLY_ANNOTATIONS,
+} from "../lib/toolInputs.js";
 
-const PREVIEW_NOTE =
-  "The faithful matcher worker was unavailable, so matchedRules come from an approximate glob-only preview (matchPackageNames / matchDepNames / matchManagers / matchDatasources / matchFileNames / matchCategories only). Run dry_run for authoritative output.";
+type MatchedRule = ReturnType<typeof toMatchedRule>;
+type UnevaluatableEntry = MatcherFinding & { ruleIndex: number };
 
 /** Matcher-relevant facts a hit carries, in the shape the packageRules worker expects. */
 function contextOf(hit: DependencyHit): Record<string, unknown> {
@@ -63,7 +68,7 @@ export function registerExplainDependency(server: McpServer): void {
 
       const explanation = explainDependency(reportValue, { depName, partial, manager });
       const warnings: string[] = [];
-      let hits: Array<DependencyHit & { matchedRules?: unknown[]; unevaluatable?: unknown[] }> = explanation.hits;
+      let hits: Array<DependencyHit & { matchedRules?: MatchedRule[]; unevaluatable?: UnevaluatableEntry[] }> = explanation.hits;
       let matchQuality: string | undefined;
       let configPath: string | undefined;
       let source: Record<string, unknown> | undefined;
@@ -91,7 +96,7 @@ export function registerExplainDependency(server: McpServer): void {
         });
         warnings.push(...analysis.warnings, ...presetWarnings);
         if (packageRules.length === 0) warnings.push("The resolved config has no packageRules.");
-        if (analysis.matchQuality === "preview") warnings.push(PREVIEW_NOTE);
+        if (analysis.matchQuality === "preview") warnings.push(MATCH_PREVIEW_DISCLAIMER);
       }
 
       return {
