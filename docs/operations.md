@@ -68,7 +68,7 @@ The fix hint is to reinstall renovate-mcp (which reinstalls the bundled `renovat
 
 ## `dry_run` — `ok` semantics and benign-noise filtering
 
-`dry_run` returns a top-level `ok` boolean that is `false` whenever the CLI exited non-zero OR the structured report contains a validation/error-level problem (`level >= 40`, `message === "config-validation"`, or a non-empty `validationError` field). Renovate frequently writes exit-code 0 alongside report-level failures — trusting the exit code alone hides runs that did nothing.
+`dry_run` returns a top-level `ok` boolean that is `false` whenever the CLI exited non-zero OR the structured report contains a validation/error-level problem (`level >= 50`, i.e. bunyan ERROR/FATAL, `message === "config-validation"`, or a non-empty `validationError` field). Renovate frequently writes exit-code 0 alongside report-level failures — trusting the exit code alone hides runs that did nothing. WARN-level (`level: 40`) report problems stay visible in the returned report but do not fail the run.
 
 Two specific kinds of in-report problems are **filtered out** of `reportErrors` because they describe benign degradation rather than a failed run:
 
