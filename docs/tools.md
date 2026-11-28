@@ -324,6 +324,8 @@ Renovate's `branches info extended` upgrades carry no `manager`, which `dry_run_
 
 Updates are keyed by `(manager, packageFile, depName)` so a version bump on the same dep shows up once under `changed` rather than twice as `removed + added`. Compared per identity: `newValue`, `newVersion`, `updateType`, `branchName`, `groupName`, `schedule`.
 
+A repository whose report has no `branches` (a `--platform=local` run) is read from `packageFiles[*].deps[].updates[]` instead, so branch-only fields (`groupName`, `branchResult`) are absent there; a repository with branches is read from branches only. Deps with a `skipReason` and no `updates` produce no entries.
+
 Useful when iterating on a config to see exactly what each tweak did.
 
 ## `resolve_config_diff`
@@ -394,6 +396,8 @@ Takes a report (inline `report` — raw `{ repositories }` or a full `dry_run` s
 - `repoPath` (optional, string, max 4096 bytes) — locates and expands the repo's config for its `packageRules`. Use instead of `configContent`.
 - `configContent` (optional, object, max ~1,000,000 bytes serialized) — inline config whose `packageRules` to attribute against. Use instead of `repoPath`. (One of `repoPath` / `configContent` is required, never both — see [Common input rules](#common-input-rules).)
 - `externalPresets` (optional boolean, default `false`), `endpoint` (optional, string, max 2048 bytes), `platform` (optional, enum `"github"` | `"gitlab"` | `"gitea"` | `"forgejo"` | `"bitbucket"`) — same semantics as [`resolve_config`](#resolve_config).
+
+As in [`dry_run_diff`](#dry_run_diff), a report without `branches` (a `--platform=local` run) is read from `packageFiles[*].deps[].updates[]`, so `branchResult` / `prBlockedBy` are absent there.
 
 Returns one `annotation` per update (`manager`, `packageFile`, `depName`, `currentVersion`, `newVersion`, `updateType`, `branchResult` / `prBlockedBy` when the report records them for the update's branch (real bot runs, e.g. via `logPath`), plus `matchedRules` and `unevaluatable` with the same shapes as [`test_package_rules`](#test_package_rules)), and two aggregate signals:
 
