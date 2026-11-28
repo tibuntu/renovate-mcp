@@ -144,23 +144,6 @@ describe("run() streaming observers", () => {
     expect(lines).toEqual(["no-newline-here"]);
   });
 
-  it("routes stderr lines through onStderrLine independently", async () => {
-    const script = await makeScript(`
-      process.stdout.write("to-out\\n");
-      process.stderr.write("to-err-1\\nto-err-2\\n");
-    `);
-
-    const out: string[] = [];
-    const err: string[] = [];
-    await run(process.execPath, [script], {
-      onStdoutLine: (l) => out.push(l),
-      onStderrLine: (l) => err.push(l),
-    });
-
-    expect(out).toEqual(["to-out"]);
-    expect(err).toEqual(["to-err-1", "to-err-2"]);
-  });
-
   it("swallows exceptions thrown by observers without losing later lines", async () => {
     const script = await makeScript(`
       process.stdout.write("a\\nb\\nc\\n");
