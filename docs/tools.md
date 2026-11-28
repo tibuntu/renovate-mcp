@@ -153,6 +153,8 @@ Built-in presets expand against a committed snapshot of Renovate's catalogue (`s
 
 Merging uses Renovate's own `mergeChildConfig`, run in a worker thread so the main process never imports `renovate` — mergeable arrays (`packageRules`, `hostRules`, `addLabels`, …) concatenate, non-mergeable arrays (`assignees`, `labels`, `schedule`, …) overwrite, objects recurse, `constraints` object-merges, and `force` applies last. Responses carry `mergeQuality: "faithful"` plus a `disclaimer`. A config that pulls in ≥2 sources spawns the worker, so the first such call pays a one-time cold start (~1-3 s); configs that don't actually merge skip it. If the worker is unavailable the tool falls back to a simplified in-process merge (arrays concat, objects merge, scalars overwrite), appends a warning, and reports `mergeQuality: "preview"`. `resolve_config` still doesn't run datasource lookups — run `dry_run` for full config resolution.
 
+An `extends` nested inside another object (`packageRules[]`, `lockFileMaintenance`, …) is not expanded — Renovate would expand it, this tool shows it verbatim. Each call with any such `extends` (many built-in presets carry them, `config:recommended` included) carries one aggregated warning with `preset: "<nested-extends>"` naming the count and the first three `<source>: <path>` locations. The same warning appears in every tool built on the shared preset expansion: `resolve_config`, `explain_config`, `resolve_config_diff`, `test_package_rules`, `annotate_dry_run`, `explain_dependency` and `explain_paths`.
+
 `ignorePresets` is honoured like Renovate does it: the root's list (when non-empty) skips matching `extends` entries at every depth, otherwise a preset's own list applies to its subtree; entries match the raw `extends` string, and the list is dropped from the output at every level, the root included.
 
 Template substitution implements only positional `{{argN}}` placeholders. Under-argument cases (`{{arg2}}` referenced when only one arg was passed) substitute an empty string; non-positional tokens (`{{packageRules}}`, Handlebars helpers like `{{#if …}}`) pass through verbatim and are flagged in `warnings`.
@@ -167,7 +169,7 @@ Inverse of `resolve_config`: walk the same preset tree but annotate every leaf f
 
 Same offline-by-default behaviour and same `externalPresets` / `endpoint` / `platform` opt-ins (and the same token scoping) as `resolve_config`. Both tools share one expansion-and-merge core (`collectMergeSteps` plus the same worker-isolated faithful merge), so their resolved values are identical by construction. `explain_config` reconstructs provenance by diffing the merge's per-step snapshots: each contribution is pinned with a source name (literal `extends` entry, or `<own>` for the user's input config) and a `via` chain naming every parent preset traversed to reach it.
 
-`mergeQuality` is `"faithful"`, matching `resolve_config` (same worker-isolated merge, same `"preview"` fallback). One attribution nuance: a preset that re-asserts an already-set value is **not** listed as a separate contributor — attribution credits whoever *changed* the value.
+Nested `extends` stay unexpanded here too and carry the same `<nested-extends>` warning (see [`resolve_config`](#resolve_config)). `mergeQuality` is `"faithful"`, matching `resolve_config` (same worker-isolated merge, same `"preview"` fallback). One attribution nuance: a preset that re-asserts an already-set value is **not** listed as a separate contributor — attribution credits whoever *changed* the value.
 
 ## `preview_custom_manager`
 

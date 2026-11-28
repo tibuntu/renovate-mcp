@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { collectMergeSteps, OWN_SOURCE } from "../../src/lib/presetResolver.js";
+import { collectMergeSteps, findNestedExtends, OWN_SOURCE } from "../../src/lib/presetResolver.js";
 
 /**
  * collectMergeSteps is the shared expansion core: it flattens the preset tree
@@ -182,5 +182,38 @@ describe("collectMergeSteps — ignorePresets", () => {
       { fetchExternal: true },
     );
     expect(steps.map((s) => s.label)).toEqual([":automergeAll"]);
+  });
+});
+
+describe("collectMergeSteps — nested extends", () => {
+  const nested = (w: { preset: string; message: string }[]) => w.filter((x) => x.preset === "<nested-extends>");
+
+  it("findNestedExtends reports arrays and objects, never the root", () => {
+    expect(
+      findNestedExtends({
+        extends: ["x"],
+        packageRules: [{ a: 1 }, { extends: ["y"] }],
+        lockFileMaintenance: { extends: ["z"] },
+      }),
+    ).toEqual(["packageRules[1].extends", "lockFileMaintenance.extends"]);
+  });
+
+  it("warns once for a hand-written packageRules[].extends with no presets", async () => {
+    const { warnings } = await collectMergeSteps({
+      packageRules: [{ matchPackageNames: ["x"], extends: ["schedule:weekly"] }],
+    });
+    const w = nested(warnings);
+    expect(w).toHaveLength(1);
+    expect(w[0]!.message).toContain("<own>: packageRules[0].extends");
+  });
+
+  it("warns exactly once for config:recommended", async () => {
+    const { warnings } = await collectMergeSteps({ extends: ["config:recommended"] });
+    expect(nested(warnings)).toHaveLength(1);
+  });
+
+  it("does not warn when nothing is nested", async () => {
+    const { warnings } = await collectMergeSteps({ extends: [":semanticCommits"] });
+    expect(nested(warnings)).toHaveLength(0);
   });
 });
