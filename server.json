@@ -78,6 +78,27 @@
           "format": "string",
           "isRequired": false,
           "isSecret": false
+        },
+        {
+          "name": "RENOVATE_MCP_HOST_TOKENS",
+          "description": "JSON array of {matchHost, hostType, tokenEnv} entries binding extra host-scoped tokens by env var name (see docs/security.md).",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "RENOVATE_BIN",
+          "description": "Path of the renovate binary to spawn instead of the bundled one.",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "RENOVATE_CONFIG_VALIDATOR_BIN",
+          "description": "Path of the renovate-config-validator binary to spawn instead of the bundled one.",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": false
         }
       ]
     }
